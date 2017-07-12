@@ -1,0 +1,7 @@
+package: .
+ignore:
+- k8s-multi-cluster-ingress/app/mci/cmd
+- k8s-multi-cluster-ingress/cmd/mci/app
+import:
+- package: github.com/spf13/cobra
+- package: github.com/spf13/pflag
