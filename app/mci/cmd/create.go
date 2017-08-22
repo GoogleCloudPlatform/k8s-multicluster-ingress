@@ -17,7 +17,10 @@ package cmd
 import (
 	"fmt"
 	"io"
+	"os/exec"
+	"strings"
 
+	"github.com/golang/glog"
 	"github.com/spf13/cobra"
 )
 
@@ -29,19 +32,87 @@ var (
 	`
 )
 
+// Exported here to allow overriding in tests.
+var ExecuteCommand = func(args []string) (string, error) {
+	output, err := exec.Command(args[0], args[1:]...).CombinedOutput()
+	return strings.TrimSuffix(string(output), "\n"), err
+}
+
+type CreateOptions struct {
+	// Name of the YAML file containing ingress spec.
+	IngressFilename string
+	// Path to kubeconfig.
+	Kubeconfig string
+}
+
 func NewCmdCreate(out, err io.Writer) *cobra.Command {
-	return &cobra.Command{
+	var options CreateOptions
+
+	cmd := &cobra.Command{
 		Use:   "create",
 		Short: createShortDescription,
 		Long:  createLongDescription,
 		// TODO: Add an example.
 		Run: func(cmd *cobra.Command, args []string) {
-			RunCreate(cmd, out, err)
+			if err := ValidateArgs(&options, args); err != nil {
+				fmt.Printf("%s\n", err)
+			}
+			if err := RunCreate(&options); err != nil {
+				fmt.Printf("Error in creating ingress: %s\n", err)
+			}
 		},
 	}
+	AddFlags(cmd, &options)
+	return cmd
 }
 
-func RunCreate(cmd *cobra.Command, out, err io.Writer) {
-	// TODO: Add logic.
-	fmt.Println("Create called")
+func AddFlags(cmd *cobra.Command, options *CreateOptions) error {
+	cmd.Flags().StringVarP(&options.IngressFilename, "ingress", "i", options.IngressFilename, "filename containing ingress spec")
+	cmd.Flags().StringVarP(&options.Kubeconfig, "kubeconfig", "k", options.Kubeconfig, "path to kubeconfig")
+	// TODO Add a verbose flag that turns on glog logging.
+	return nil
+}
+
+func ValidateArgs(options *CreateOptions, args []string) error {
+	if len(args) != 0 {
+		return fmt.Errorf("Unexpected args: %v", args)
+	}
+	// Verify that the required params are not missing.
+	if options.IngressFilename == "" {
+		return fmt.Errorf("unexpected missing argument ingress")
+	}
+	return nil
+}
+
+func RunCreate(options *CreateOptions) error {
+	// Create ingress in all clusters.
+	kubectlArgs := []string{"kubectl"}
+	if options.Kubeconfig != "" {
+		kubectlArgs = append(kubectlArgs, fmt.Sprintf("--kubeconfig=%s", options.Kubeconfig))
+	}
+	contextArgs := append(kubectlArgs, []string{"config", "get-contexts", "-o=name"}...)
+	output, err := runCommand(contextArgs)
+	if err != nil {
+		return fmt.Errorf("error in getting contexts from kubeconfig: %s", err)
+	}
+	contexts := strings.Split(output, "\n")
+	createArgs := append(kubectlArgs, []string{"create", fmt.Sprintf("--filename=%s", options.IngressFilename)}...)
+	for _, c := range contexts {
+		fmt.Printf("Creating ingress in context: %s\n", c)
+		contextArgs := append(createArgs, fmt.Sprintf("--context=%s", c))
+		output, err = runCommand(contextArgs)
+		if err != nil {
+			return fmt.Errorf("error in creating ingress in cluster %s: %s", c, output)
+		}
+	}
+	return nil
+}
+
+func runCommand(args []string) (string, error) {
+	glog.V(3).Infof("Running command: %s\n", strings.Join(args, " "))
+	output, err := ExecuteCommand(args)
+	if err != nil {
+		glog.V(3).Infof("%s", output)
+	}
+	return output, err
 }
