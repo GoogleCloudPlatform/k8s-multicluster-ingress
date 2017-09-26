@@ -5,6 +5,9 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	kubeclient "k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/kubernetes/fake"
 )
 
 type ExpectedCommand struct {
@@ -14,8 +17,12 @@ type ExpectedCommand struct {
 }
 
 func run(expectedCmds []ExpectedCommand, runFn func() error) error {
+	getClientset = func(kubeconfigPath string) (kubeclient.Interface, error) {
+		return &fake.Clientset{}, nil
+	}
+
 	i := 0
-	ExecuteCommand = func(args []string) (string, error) {
+	executeCommand = func(args []string) (string, error) {
 		if i >= len(expectedCmds) {
 			return "", fmt.Errorf("unexpected command: %s", strings.Join(args, " "))
 		}
@@ -42,20 +49,26 @@ func TestValidateArgs(t *testing.T) {
 	if err := ValidateArgs(options, []string{}); err == nil {
 		t.Errorf("Expected error for missing ingress")
 	}
+	// ValidateArgs should return an error with missing load balancer name.
+	options.IngressFilename = "ingress.yaml"
+	if err := ValidateArgs(options, []string{}); err == nil {
+		t.Errorf("Expected error for missing load balancer name")
+	}
+
 	// ValidateArgs should succeed when IngressFilename is set.
 	options.IngressFilename = "ingress.yaml"
-	if err := ValidateArgs(options, []string{}); err != nil {
+	if err := ValidateArgs(options, []string{"lbname"}); err != nil {
 		t.Errorf("unexpected error from ValidateArgs: %s", err)
 	}
 }
 
 func TestRunCreate(t *testing.T) {
 	options := &CreateOptions{
-		IngressFilename: "ingress.yaml",
+		IngressFilename: "../../../testdata/ingress.yaml",
 		Kubeconfig:      "kubeconfig",
 	}
 	runFn := func() error {
-		return RunCreate(options)
+		return RunCreate(options, []string{"lbname"})
 	}
 	expectedCommands := []ExpectedCommand{
 		{
@@ -64,12 +77,12 @@ func TestRunCreate(t *testing.T) {
 			Err:    nil,
 		},
 		{
-			Args:   []string{"kubectl", "--kubeconfig=kubeconfig", "create", "--filename=ingress.yaml", "--context=context-1"},
+			Args:   []string{"kubectl", "--kubeconfig=kubeconfig", "create", "--filename=../../../testdata/ingress.yaml", "--context=context-1"},
 			Output: "ingress created",
 			Err:    nil,
 		},
 		{
-			Args:   []string{"kubectl", "--kubeconfig=kubeconfig", "create", "--filename=ingress.yaml", "--context=context-2"},
+			Args:   []string{"kubectl", "--kubeconfig=kubeconfig", "create", "--filename=../../../testdata/ingress.yaml", "--context=context-2"},
 			Output: "ingress created",
 			Err:    nil,
 		},
