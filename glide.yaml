@@ -2,6 +2,11 @@ package: .
 ignore:
 - k8s-multi-cluster-ingress/app/mci/cmd
 - k8s-multi-cluster-ingress/cmd/mci/app
+- k8s-multi-cluster-ingress/app/mci/pkg/gcp/interface
+- k8s-multi-cluster-ingress/app/mci/pkg/gcp/loadbalancer
+- k8s-multi-cluster-ingress/app/mci/pkg/gcp/namer
+- k8s-multi-cluster-ingress/app/mci/pkg/serviceport
+- k8s-multi-cluster-ingress/app/mci/pkg/gcp/healthcheck
 import:
 - package: github.com/spf13/cobra
 - package: github.com/spf13/pflag
