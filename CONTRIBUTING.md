@@ -21,3 +21,13 @@ All submissions, including submissions by project members, require review. We
 use GitHub pull requests for this purpose. Consult
 [GitHub Help](https://help.github.com/articles/about-pull-requests/) for more
 information on using pull requests.
+
+## Dependency management
+
+This project uses (glide)[https://github.com/Masterminds/glide] to manage
+project dependencies. All dependencies are checked into the `vendor/` directory.
+
+`vendor/` directory should only be updated by running
+`glide update --strip-vendor`. Running that command will also update
+`glide.lock`. `glide.yaml` can be updated manually to add/ignore any
+dependency.

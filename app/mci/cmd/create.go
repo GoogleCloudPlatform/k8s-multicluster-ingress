@@ -28,6 +28,7 @@ import (
 	kubeclient "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 
+	"k8s-multi-cluster-ingress/app/mci/pkg/gcp/cloudinterface"
 	gcplb "k8s-multi-cluster-ingress/app/mci/pkg/gcp/loadbalancer"
 )
 
@@ -69,6 +70,10 @@ type CreateOptions struct {
 	// Name of the load balancer.
 	// Required.
 	LBName string
+	// Name of the GCP project in which the load balancer should be configured.
+	// Required
+	// TODO: This should be optional. Figure it out from gcloud settings.
+	GCPProject string
 }
 
 func NewCmdCreate(out, err io.Writer) *cobra.Command {
@@ -81,10 +86,11 @@ func NewCmdCreate(out, err io.Writer) *cobra.Command {
 		// TODO: Add an example.
 		Run: func(cmd *cobra.Command, args []string) {
 			if err := ValidateArgs(&options, args); err != nil {
-				fmt.Printf("%s\n", err)
+				fmt.Println(err)
+				return
 			}
 			if err := RunCreate(&options, args); err != nil {
-				fmt.Printf("Error in creating ingress: %s\n", err)
+				fmt.Println("Error in creating load balancer:", err)
 			}
 		},
 	}
@@ -95,17 +101,21 @@ func NewCmdCreate(out, err io.Writer) *cobra.Command {
 func AddFlags(cmd *cobra.Command, options *CreateOptions) error {
 	cmd.Flags().StringVarP(&options.IngressFilename, "ingress", "i", options.IngressFilename, "filename containing ingress spec")
 	cmd.Flags().StringVarP(&options.Kubeconfig, "kubeconfig", "k", options.Kubeconfig, "path to kubeconfig")
+	cmd.Flags().StringVarP(&options.GCPProject, "gcp-project", "", options.GCPProject, "name of the gcp project")
 	// TODO Add a verbose flag that turns on glog logging.
 	return nil
 }
 
 func ValidateArgs(options *CreateOptions, args []string) error {
 	if len(args) != 1 {
-		return fmt.Errorf("Unexpected args: %v. Expected one arg as name of load balancer", args)
+		return fmt.Errorf("unexpected args: %v. Expected one arg as name of load balancer.", args)
 	}
 	// Verify that the required params are not missing.
 	if options.IngressFilename == "" {
-		return fmt.Errorf("unexpected missing argument ingress")
+		return fmt.Errorf("unexpected missing argument ingress.")
+	}
+	if options.GCPProject == "" {
+		return fmt.Errorf("unexpected missing argument gcp-project.")
 	}
 	return nil
 }
@@ -122,32 +132,64 @@ func RunCreate(options *CreateOptions, args []string) error {
 	if err != nil {
 		return fmt.Errorf("unexpected error in instantiating clientset: %v", err)
 	}
+	cloudInterface, err := cloudinterface.NewGCECloudInterface(options.GCPProject)
+	if err != nil {
+		return fmt.Errorf("error in creating cloud interface: %s", err)
+	}
 
 	// Create ingress in all clusters.
+	if err := createIngress(options.Kubeconfig, options.IngressFilename); err != nil {
+		return err
+	}
+
+	lbs := gcplb.NewLoadBalancerSyncer(options.LBName, clientset, cloudInterface)
+	return lbs.CreateLoadBalancer(&ing)
+}
+
+// Extracts the contexts from the given kubeconfig and creates ingress in those context clusters.
+func createIngress(kubeconfig, ingressFilename string) error {
+	// TODO: Allow users to specify the list of clusters to create the ingress in
+	// rather than assuming all contexts in kubeconfig.
+	clusters, err := getClusters(kubeconfig)
+	if err != nil {
+		return err
+	}
+	return createIngressInClusters(kubeconfig, ingressFilename, clusters)
+}
+
+// Extracts the list of contexts from the given kubeconfig.
+func getClusters(kubeconfig string) ([]string, error) {
 	kubectlArgs := []string{"kubectl"}
-	if options.Kubeconfig != "" {
-		kubectlArgs = append(kubectlArgs, fmt.Sprintf("--kubeconfig=%s", options.Kubeconfig))
+	if kubeconfig != "" {
+		kubectlArgs = append(kubectlArgs, fmt.Sprintf("--kubeconfig=%s", kubeconfig))
 	}
 	contextArgs := append(kubectlArgs, []string{"config", "get-contexts", "-o=name"}...)
 	output, err := runCommand(contextArgs)
 	if err != nil {
-		return fmt.Errorf("error in getting contexts from kubeconfig: %s", err)
+		return nil, fmt.Errorf("error in getting contexts from kubeconfig: %s", err)
 	}
-	contexts := strings.Split(output, "\n")
+	return strings.Split(output, "\n"), nil
+}
+
+// Creates the given ingress in the given list of clusters.
+func createIngressInClusters(kubeconfig, ingressFilename string, clusters []string) error {
+	kubectlArgs := []string{"kubectl"}
+	if kubeconfig != "" {
+		kubectlArgs = append(kubectlArgs, fmt.Sprintf("--kubeconfig=%s", kubeconfig))
+	}
 	// TODO: Validate and optionally add the gce-multi-cluster class annotation to the ingress YAML spec.
-	createArgs := append(kubectlArgs, []string{"create", fmt.Sprintf("--filename=%s", options.IngressFilename)}...)
-	for _, c := range contexts {
-		fmt.Printf("Creating ingress in context: %s\n", c)
+	createArgs := append(kubectlArgs, []string{"create", fmt.Sprintf("--filename=%s", ingressFilename)}...)
+	for _, c := range clusters {
+		fmt.Println("Creating ingress in context:", c)
 		contextArgs := append(createArgs, fmt.Sprintf("--context=%s", c))
-		output, err = runCommand(contextArgs)
+		output, err := runCommand(contextArgs)
 		if err != nil {
 			// TODO: Continue if this is an ingress already exists error.
+			glog.V(2).Infof("error in running command: %s", strings.Join(contextArgs, " "))
 			return fmt.Errorf("error in creating ingress in cluster %s: %s, output: %s", c, err, output)
 		}
 	}
-
-	lbs := gcplb.NewLoadBalancerSyncer(options.LBName, clientset)
-	return lbs.CreateLoadBalancer(&ing)
+	return nil
 }
 
 func runCommand(args []string) (string, error) {

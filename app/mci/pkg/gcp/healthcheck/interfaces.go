@@ -12,26 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package main
+package healthcheck
 
 import (
-	"flag"
-	"fmt"
-	"os"
-
-	"github.com/golang/glog"
-	"k8s-multi-cluster-ingress/cmd/mci/app"
+	sp "k8s-multi-cluster-ingress/app/mci/pkg/serviceport"
 )
 
-func main() {
-	// Workaround for https://github.com/kubernetes/kubernetes/issues/17162
-	flag.Parse()
-	if glog.V(2) {
-		flag.Set("logtostderr", "true")
-	}
-
-	if err := app.Run(); err != nil {
-		fmt.Println(err)
-		os.Exit(1)
-	}
+// HealthCheckSyncerInterface is an interface to manage GCP health checks.
+type HealthCheckSyncerInterface interface {
+	// EnsureHealthCheck ensures that the required health check exists.
+	EnsureHealthCheck(lbName string, ports []sp.ServicePort) error
 }

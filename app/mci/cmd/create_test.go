@@ -59,30 +59,49 @@ func run(expectedCmds []ExpectedCommand, runFn func() error) error {
 
 func TestValidateArgs(t *testing.T) {
 	// ValidateArgs should return an error with empty options.
-	options := &CreateOptions{}
-	if err := ValidateArgs(options, []string{}); err == nil {
-		t.Errorf("Expected error for missing ingress")
+	options := CreateOptions{}
+	if err := ValidateArgs(&options, []string{}); err == nil {
+		t.Errorf("Expected error for emtpy options")
 	}
+
 	// ValidateArgs should return an error with missing load balancer name.
-	options.IngressFilename = "ingress.yaml"
-	if err := ValidateArgs(options, []string{}); err == nil {
+	options = CreateOptions{
+		IngressFilename: "ingress.yaml",
+		GCPProject:      "gcp-project",
+	}
+	if err := ValidateArgs(&options, []string{}); err == nil {
 		t.Errorf("Expected error for missing load balancer name")
 	}
 
-	// ValidateArgs should succeed when IngressFilename is set.
-	options.IngressFilename = "ingress.yaml"
-	if err := ValidateArgs(options, []string{"lbname"}); err != nil {
+	// ValidateArgs should return an error with missing ingress.
+	options = CreateOptions{
+		GCPProject: "gcp-project",
+	}
+	if err := ValidateArgs(&options, []string{"lbname"}); err == nil {
+		t.Errorf("Expected error for missing ingress")
+	}
+
+	// ValidateArgs should return an error with missing gcp project.
+	options = CreateOptions{
+		IngressFilename: "ingress.yaml",
+	}
+	if err := ValidateArgs(&options, []string{"lbname"}); err == nil {
+		t.Errorf("Expected error for missing gcp project")
+	}
+
+	// ValidateArgs should succeed when all arguments are passed as expected.
+	options = CreateOptions{
+		IngressFilename: "ingress.yaml",
+		GCPProject:      "gcp-project",
+	}
+	if err := ValidateArgs(&options, []string{"lbname"}); err != nil {
 		t.Errorf("unexpected error from ValidateArgs: %s", err)
 	}
 }
 
-func TestRunCreate(t *testing.T) {
-	options := &CreateOptions{
-		IngressFilename: "../../../testdata/ingress.yaml",
-		Kubeconfig:      "kubeconfig",
-	}
+func TestCreateIngress(t *testing.T) {
 	runFn := func() error {
-		return RunCreate(options, []string{"lbname"})
+		return createIngress("kubeconfig", "../../../testdata/ingress.yaml")
 	}
 	expectedCommands := []ExpectedCommand{
 		{

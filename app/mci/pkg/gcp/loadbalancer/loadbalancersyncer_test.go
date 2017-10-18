@@ -17,15 +17,28 @@ package loadbalancer
 import (
 	"testing"
 
+	"k8s-multi-cluster-ingress/app/mci/pkg/gcp/healthcheck"
+	"k8s.io/api/core/v1"
 	"k8s.io/api/extensions/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/kubernetes/fake"
 	core "k8s.io/client-go/testing"
 )
 
+func newLoadBalancerSyncer(lbName string) *LoadBalancerSyncer {
+	return &LoadBalancerSyncer{
+		lbName: lbName,
+		hcs:    healthcheck.NewFakeHealthCheckSyncer(),
+		client: &fake.Clientset{},
+	}
+}
+
 func TestCreateLoadBalancer(t *testing.T) {
-	fakeClient := fake.Clientset{}
-	lbc := NewLoadBalancerSyncer("lb-name", &fakeClient)
+	lbName := "lb-name"
+	nodePort := 32211
+	lbc := newLoadBalancerSyncer(lbName)
 
 	ing := v1beta1.Ingress{
 		ObjectMeta: metav1.ObjectMeta{
@@ -42,6 +55,7 @@ func TestCreateLoadBalancer(t *testing.T) {
 									Path: "foo",
 									Backend: v1beta1.IngressBackend{
 										ServiceName: "my-svc",
+										ServicePort: intstr.FromInt(80),
 									},
 								},
 							},
@@ -51,15 +65,40 @@ func TestCreateLoadBalancer(t *testing.T) {
 			},
 		},
 	}
+	client := lbc.client.(*fake.Clientset)
+	// Add a reaction to return a fake service.
+	client.AddReactor("get", "services", func(action core.Action) (handled bool, ret runtime.Object, err error) {
+		ret = &v1.Service{
+			Spec: v1.ServiceSpec{
+				Ports: []v1.ServicePort{
+					{
+						Port:     80,
+						NodePort: int32(nodePort),
+					},
+				},
+			},
+		}
+		return true, ret, nil
+	})
 	if err := lbc.CreateLoadBalancer(&ing); err != nil {
 		t.Fatalf("unexpected error %s", err)
 	}
+	actions := client.Actions()
 	// Verify that the client should have been used to fetch service "my-svc".
-	if len(fakeClient.Actions()) != 1 {
-		t.Fatalf("unexpected actions: %v, expected 1 get", fakeClient.Actions())
+	if len(actions) != 1 {
+		t.Fatalf("unexpected actions: %v, expected 1 get", actions)
 	}
-	getName := fakeClient.Actions()[0].(core.GetAction).GetName()
+	getName := actions[0].(core.GetAction).GetName()
 	if getName != "my-svc" {
 		t.Fatalf("unexpected get for %s, expected: my-svc", getName)
+	}
+	fhc := lbc.hcs.(*healthcheck.FakeHealthCheckSyncer)
+	// Verify that the expected healthcheck was ensured.
+	if len(fhc.EnsuredHealthChecks) != 1 {
+		t.Fatalf("unexpected number of health checks. expected: %d, got: %d", 1, len(fhc.EnsuredHealthChecks))
+	}
+	hc := fhc.EnsuredHealthChecks[0]
+	if hc.LBName != lbName || hc.Port.Port != int64(nodePort) {
+		t.Fatalf("unexpected health check: %v\nexpected: lbname: %s, port: %d", hc, lbName, nodePort)
 	}
 }

@@ -25,6 +25,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	kubeclient "k8s.io/client-go/kubernetes"
+	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce"
 
 	"k8s-multi-cluster-ingress/app/mci/pkg/gcp/healthcheck"
 	utilsnamer "k8s-multi-cluster-ingress/app/mci/pkg/gcp/namer"
@@ -44,20 +45,20 @@ const (
 
 	// Prefix used by the namer to generate names.
 	// This is used to identify resources created by this code.
-	mciPrefix = "mci-v1"
+	mciPrefix = "mci1"
 )
 
 type LoadBalancerSyncer struct {
 	lbName string
-	hcs    *healthcheck.HealthCheckSyncer
+	hcs    healthcheck.HealthCheckSyncerInterface
 	client kubeclient.Interface
 }
 
-func NewLoadBalancerSyncer(lbName string, client kubeclient.Interface) *LoadBalancerSyncer {
+func NewLoadBalancerSyncer(lbName string, client kubeclient.Interface, cloud *gce.GCECloud) *LoadBalancerSyncer {
 	namer := utilsnamer.NewNamer(mciPrefix, lbName)
 	return &LoadBalancerSyncer{
 		lbName: lbName,
-		hcs:    healthcheck.NewHealthCheckSyncer(namer),
+		hcs:    healthcheck.NewHealthCheckSyncer(namer, cloud),
 		client: client,
 	}
 }
