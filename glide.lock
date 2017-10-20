@@ -1,5 +1,5 @@
-hash: 3c6eec9c760547a876b44b2eebf721610730f78ed421b60e9c42a6df97c87b68
-updated: 2017-10-17T20:52:01.87121538-07:00
+hash: fbc28d16109ef7109ede1aa69a895d4e8a5db48f409169d15d8c80cee4b70269
+updated: 2017-10-20T14:03:51.805331954-07:00
 imports:
 - name: cloud.google.com/go
   version: 3b1ae45394a234c385be014e9a488f2bb6eef821
@@ -173,18 +173,13 @@ imports:
   version: 654f863362977d69086620b5f72f13e911da2410
   subpackages:
   - cloudkms/v1
-  - cloudmonitoring/v2beta2
   - compute/v0.alpha
   - compute/v0.beta
   - compute/v1
   - container/v1
-  - dns/v1
   - gensupport
   - googleapi
   - googleapi/internal/uritemplates
-  - logging/v2beta1
-  - monitoring/v3
-  - pubsub/v1
 - name: google.golang.org/appengine
   version: a2e0dc829727a4f957a7428b1f322805cfc1f362
   subpackages:
@@ -388,7 +383,10 @@ imports:
 - name: k8s.io/ingress-gce
   version: 27d32ecbc079df4766152894f5c039b252fb2c07
   subpackages:
+  - pkg/backends
   - pkg/healthchecks
+  - pkg/instances
+  - pkg/storage
   - pkg/utils
 - name: k8s.io/kube-openapi
   version: 868f2f29720b192240e18284659231b440f9cda5
