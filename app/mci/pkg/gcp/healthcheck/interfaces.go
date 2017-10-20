@@ -21,5 +21,5 @@ import (
 // HealthCheckSyncerInterface is an interface to manage GCP health checks.
 type HealthCheckSyncerInterface interface {
 	// EnsureHealthCheck ensures that the required health check exists.
-	EnsureHealthCheck(lbName string, ports []sp.ServicePort) error
+	EnsureHealthCheck(lbName string, ports []sp.ServicePort, force bool) error
 }

@@ -18,6 +18,8 @@ import (
 	"net/http"
 	"testing"
 
+	compute "google.golang.org/api/compute/v1"
+
 	ingresshc "k8s.io/ingress-gce/pkg/healthchecks"
 	"k8s.io/ingress-gce/pkg/utils"
 
@@ -37,18 +39,69 @@ func TestEnsureHealthCheck(t *testing.T) {
 	if _, err := hcp.GetHealthCheck(hcName); !utils.IsHTTPErrorCode(err, http.StatusNotFound) {
 		t.Fatalf("expected NotFound error, actual: %v", err)
 	}
+	force := true
 	err := hcs.EnsureHealthCheck(lbName, []sp.ServicePort{
 		{
 			Port:     port,
 			Protocol: "HTTP",
 		},
-	})
+	}, force)
 	if err != nil {
-		t.Fatalf("expected no error in ensuring health check, actual: %v", err)
+		t.Fatalf("expected no error in ensuring health check (force=true), actual: %v", err)
 	}
 	// Verify that GET does not return NotFound.
 	if _, err := hcp.GetHealthCheck(hcName); err != nil {
 		t.Fatalf("expected nil error, actual: %v", err)
 	}
+
+	force = false
+	err = hcs.EnsureHealthCheck(lbName, []sp.ServicePort{
+		{
+			Port:     port,
+			Protocol: "HTTPS", /* a different protocol */
+		},
+	}, force)
+	if err == nil {
+		t.Errorf("expected error in ensuring health check (force=false), actual: %v", err)
+	}
+	if _, err := hcp.GetHealthCheck(hcName); err != nil {
+		t.Fatalf("expected nil error, actual: %v", err)
+	}
+
+	force = true
+	err = hcs.EnsureHealthCheck(lbName, []sp.ServicePort{
+		{
+			Port:     port,
+			Protocol: "HTTPS", /* a different protocol */
+		},
+	}, force)
+	if err != nil {
+		t.Errorf("expected no error in ensuring health check (force=true), actual: %v", err)
+	}
+	if _, err := hcp.GetHealthCheck(hcName); err != nil {
+		t.Fatalf("expected nil error, actual: %v", err)
+	}
+
 	// TODO: Test update existing health check.
+	// TODO: Validate values in health check.
+}
+
+func TestHealthCheckMatches(t *testing.T) {
+	var check compute.HealthCheck
+	if !healthCheckMatches(&check, &check) {
+		t.Errorf("Want healthCheckMatches(c, c) = true. got false.")
+	}
+	check2 := check
+	check2.Description = "foo"
+	if healthCheckMatches(&check, &check2) {
+		t.Errorf("Want healthCheckMatches(c, c2) = false, c.description differs. got true.")
+	}
+	check.Description = "foo"
+	if !healthCheckMatches(&check, &check2) {
+		t.Errorf("fail")
+	}
+	check2.CreationTimestamp = "1234"
+	if !healthCheckMatches(&check, &check2) {
+		t.Errorf("fail")
+	}
 }

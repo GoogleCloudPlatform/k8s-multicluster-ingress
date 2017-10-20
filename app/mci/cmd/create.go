@@ -74,6 +74,10 @@ type CreateOptions struct {
 	// Required
 	// TODO: This should be optional. Figure it out from gcloud settings.
 	GCPProject string
+	// Overwrite values when they differ from what's requested. If
+	// the resource does not exist, or is already the correct
+	// value, then 'force' is a no-op.
+	Force bool
 }
 
 func NewCmdCreate(out, err io.Writer) *cobra.Command {
@@ -103,6 +107,7 @@ func AddFlags(cmd *cobra.Command, options *CreateOptions) error {
 	cmd.Flags().StringVarP(&options.Kubeconfig, "kubeconfig", "k", options.Kubeconfig, "path to kubeconfig")
 	cmd.Flags().StringVarP(&options.GCPProject, "gcp-project", "", options.GCPProject, "name of the gcp project")
 	// TODO Add a verbose flag that turns on glog logging.
+	cmd.Flags().BoolVarP(&options.Force, "Force", "f", options.Force, "overwrite existing settings if they are different.")
 	return nil
 }
 
@@ -143,7 +148,7 @@ func RunCreate(options *CreateOptions, args []string) error {
 	}
 
 	lbs := gcplb.NewLoadBalancerSyncer(options.LBName, clientset, cloudInterface)
-	return lbs.CreateLoadBalancer(&ing)
+	return lbs.CreateLoadBalancer(&ing, options.Force)
 }
 
 // Extracts the contexts from the given kubeconfig and creates ingress in those context clusters.
