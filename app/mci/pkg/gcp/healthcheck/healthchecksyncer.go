@@ -23,8 +23,8 @@ import (
 	compute "google.golang.org/api/compute/v1"
 	ingresshc "k8s.io/ingress-gce/pkg/healthchecks"
 
-	utilsnamer "k8s-multi-cluster-ingress/app/mci/pkg/gcp/namer"
-	sp "k8s-multi-cluster-ingress/app/mci/pkg/serviceport"
+	utilsnamer "github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/mci/pkg/gcp/namer"
+	sp "github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/mci/pkg/serviceport"
 )
 
 const (

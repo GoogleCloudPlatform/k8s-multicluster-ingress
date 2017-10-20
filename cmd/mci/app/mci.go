@@ -17,7 +17,7 @@ package app
 import (
 	"os"
 
-	"k8s-multi-cluster-ingress/app/mci/cmd"
+	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/mci/cmd"
 )
 
 func Run() error {

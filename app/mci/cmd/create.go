@@ -28,8 +28,8 @@ import (
 	kubeclient "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 
-	"k8s-multi-cluster-ingress/app/mci/pkg/gcp/cloudinterface"
-	gcplb "k8s-multi-cluster-ingress/app/mci/pkg/gcp/loadbalancer"
+	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/mci/pkg/gcp/cloudinterface"
+	gcplb "github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/mci/pkg/gcp/loadbalancer"
 )
 
 var (
