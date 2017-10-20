@@ -15,7 +15,7 @@
 package healthcheck
 
 import (
-	sp "k8s-multi-cluster-ingress/app/mci/pkg/serviceport"
+	sp "github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/mci/pkg/serviceport"
 )
 
 type FakeHealthCheck struct {

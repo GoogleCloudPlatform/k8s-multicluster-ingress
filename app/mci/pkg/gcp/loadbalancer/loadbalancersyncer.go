@@ -27,9 +27,9 @@ import (
 	kubeclient "k8s.io/client-go/kubernetes"
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce"
 
-	"k8s-multi-cluster-ingress/app/mci/pkg/gcp/healthcheck"
-	utilsnamer "k8s-multi-cluster-ingress/app/mci/pkg/gcp/namer"
-	sp "k8s-multi-cluster-ingress/app/mci/pkg/serviceport"
+	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/mci/pkg/gcp/healthcheck"
+	utilsnamer "github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/mci/pkg/gcp/namer"
+	sp "github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/mci/pkg/serviceport"
 )
 
 const (

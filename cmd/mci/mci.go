@@ -19,8 +19,8 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/cmd/mci/app"
 	"github.com/golang/glog"
-	"k8s-multi-cluster-ingress/cmd/mci/app"
 )
 
 func main() {

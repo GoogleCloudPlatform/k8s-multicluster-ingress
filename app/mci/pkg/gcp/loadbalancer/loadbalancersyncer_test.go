@@ -17,7 +17,7 @@ package loadbalancer
 import (
 	"testing"
 
-	"k8s-multi-cluster-ingress/app/mci/pkg/gcp/healthcheck"
+	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/mci/pkg/gcp/healthcheck"
 	"k8s.io/api/core/v1"
 	"k8s.io/api/extensions/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"

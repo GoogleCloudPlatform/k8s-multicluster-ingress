@@ -21,8 +21,8 @@ import (
 	ingresshc "k8s.io/ingress-gce/pkg/healthchecks"
 	"k8s.io/ingress-gce/pkg/utils"
 
-	utilsnamer "k8s-multi-cluster-ingress/app/mci/pkg/gcp/namer"
-	sp "k8s-multi-cluster-ingress/app/mci/pkg/serviceport"
+	utilsnamer "github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/mci/pkg/gcp/namer"
+	sp "github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/mci/pkg/serviceport"
 )
 
 func TestEnsureHealthCheck(t *testing.T) {
