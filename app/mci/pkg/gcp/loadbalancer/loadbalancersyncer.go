@@ -63,10 +63,10 @@ func NewLoadBalancerSyncer(lbName string, client kubeclient.Interface, cloud *gc
 	}
 }
 
-func (l *LoadBalancerSyncer) CreateLoadBalancer(ing *v1beta1.Ingress) error {
+func (l *LoadBalancerSyncer) CreateLoadBalancer(ing *v1beta1.Ingress, force bool) error {
 	ports := l.ingToNodePorts(ing)
 	// Create health check to be used by the backend service.
-	if err := l.hcs.EnsureHealthCheck(l.lbName, ports); err != nil {
+	if err := l.hcs.EnsureHealthCheck(l.lbName, ports, force); err != nil {
 		return err
 	}
 	return nil

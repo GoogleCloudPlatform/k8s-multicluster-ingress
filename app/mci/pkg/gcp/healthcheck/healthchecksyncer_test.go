@@ -18,6 +18,8 @@ import (
 	"net/http"
 	"testing"
 
+	compute "google.golang.org/api/compute/v1"
+
 	ingresshc "k8s.io/ingress-gce/pkg/healthchecks"
 	"k8s.io/ingress-gce/pkg/utils"
 
@@ -33,22 +35,86 @@ func TestEnsureHealthCheck(t *testing.T) {
 	namer := utilsnamer.NewNamer("mci", lbName)
 	hcName := namer.HealthCheckName(port)
 	hcs := NewHealthCheckSyncer(namer, hcp)
+
+	testCases := []struct {
+		// Human-readable description of test.
+		desc string
+		// Inputs
+		protocol string
+		force    bool
+		// Outputs
+		ensureErr bool
+	}{
+		{
+			desc:      "expected no error in ensuring health check",
+			protocol:  "HTTP",
+			force:     false,
+			ensureErr: false,
+		},
+		{
+			desc:      "writing same health check should not error",
+			protocol:  "HTTP",
+			force:     true,
+			ensureErr: false,
+		},
+		{
+			desc:      "a different healthcheck should cause an error when force=false",
+			protocol:  "HTTPS", /* Not the original HTTP */
+			force:     false,
+			ensureErr: true,
+		},
+		{
+			desc:      "a different healthcheck should not error when force=true",
+			protocol:  "HTTPS", /* Not the original HTTP */
+			force:     false,   //true,
+			ensureErr: false,
+		},
+	}
+
 	// GET should return NotFound.
 	if _, err := hcp.GetHealthCheck(hcName); !utils.IsHTTPErrorCode(err, http.StatusNotFound) {
-		t.Fatalf("expected NotFound error, actual: %v", err)
+		t.Fatalf("expected NotFound error before EnsureHealthCheck, actual: %v", err)
 	}
-	err := hcs.EnsureHealthCheck(lbName, []sp.ServicePort{
-		{
-			Port:     port,
-			Protocol: "HTTP",
-		},
-	})
-	if err != nil {
-		t.Fatalf("expected no error in ensuring health check, actual: %v", err)
+
+	for _, c := range testCases {
+		err := hcs.EnsureHealthCheck(lbName, []sp.ServicePort{
+			{
+				Port:     port,
+				Protocol: c.protocol,
+			},
+		}, c.force)
+		if (err != nil) != c.ensureErr {
+			t.Errorf("error when: %v: EnsureHealthCheck({%v,%v}, %v) = [%v]. Want err? %t.",
+				c.desc, port, c.protocol, c.force, err, c.ensureErr)
+		}
+		// Verify that GET does not return NotFound.
+		if _, err := hcp.GetHealthCheck(hcName); err != nil {
+			t.Fatalf("expected nil error, actual: %v", err)
+		}
+
 	}
-	// Verify that GET does not return NotFound.
-	if _, err := hcp.GetHealthCheck(hcName); err != nil {
-		t.Fatalf("expected nil error, actual: %v", err)
-	}
+
 	// TODO: Test update existing health check.
+	// TODO: Validate values in health check.
+}
+
+func TestHealthCheckMatches(t *testing.T) {
+	var check compute.HealthCheck
+	if !healthCheckMatches(&check, &check) {
+		t.Errorf("Want healthCheckMatches(c, c) = true. got false.")
+	}
+	check2 := check
+	check2.Description = "foo"
+	if healthCheckMatches(&check, &check2) {
+		t.Errorf("Want healthCheckMatches(c, c2) = false, c.description differs. got true.")
+	}
+	check.Description = "foo"
+	if !healthCheckMatches(&check, &check2) {
+		t.Errorf("Health checks should be identical again c:%v, c2:%v", check, check2)
+	}
+	// CreationTimestamp should be ignored.
+	check2.CreationTimestamp = "1234"
+	if !healthCheckMatches(&check, &check2) {
+		t.Errorf("Health checks only differ in creation timestamp, watch Matches(c, c2)=true, got false")
+	}
 }

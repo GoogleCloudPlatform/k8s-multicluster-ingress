@@ -80,7 +80,8 @@ func TestCreateLoadBalancer(t *testing.T) {
 		}
 		return true, ret, nil
 	})
-	if err := lbc.CreateLoadBalancer(&ing); err != nil {
+	force := true
+	if err := lbc.CreateLoadBalancer(&ing, force); err != nil {
 		t.Fatalf("unexpected error %s", err)
 	}
 	actions := client.Actions()
