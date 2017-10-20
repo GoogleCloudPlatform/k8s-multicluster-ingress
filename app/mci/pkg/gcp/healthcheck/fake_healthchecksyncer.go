@@ -36,7 +36,7 @@ func NewFakeHealthCheckSyncer() HealthCheckSyncerInterface {
 // Ensure this implements HealthCheckSyncerInterface.
 var _ HealthCheckSyncerInterface = &FakeHealthCheckSyncer{}
 
-func (h *FakeHealthCheckSyncer) EnsureHealthCheck(lbName string, ports []sp.ServicePort) error {
+func (h *FakeHealthCheckSyncer) EnsureHealthCheck(lbName string, ports []sp.ServicePort, force bool) error {
 	for _, p := range ports {
 		h.EnsuredHealthChecks = append(h.EnsuredHealthChecks, FakeHealthCheck{
 			LBName: lbName,
