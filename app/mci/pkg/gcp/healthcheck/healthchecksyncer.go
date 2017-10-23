@@ -29,7 +29,7 @@ import (
 )
 
 const (
-	// TODO: Share them with kubernetes/ingress.
+	// TODO(nikhiljindal): Share them with kubernetes/ingress.
 	// These values set a low health threshold and a high failure threshold.
 	// We're just trying to detect if the node networking is
 	// borked, service level outages will get detected sooner
@@ -107,7 +107,7 @@ func (h *HealthCheckSyncer) ensureHealthCheck(lbName string, port ingressbe.Serv
 		}
 	}
 	glog.V(5).Infof("Got error %s while trying to get existing health check %s", err, name)
-	// TODO: Handle non NotFound errors. We should create only if the error is NotFound.
+	// TODO(nikhiljindal): Handle non NotFound errors. We should create only if the error is NotFound.
 	// Create the health check.
 	return h.createHealthCheck(&desiredHC)
 }
@@ -177,13 +177,13 @@ func (h *HealthCheckSyncer) desiredHealthCheck(lbName string, port ingressbe.Ser
 	case "HTTP":
 		hc.HttpHealthCheck = &compute.HTTPHealthCheck{
 			Port:        port.Port,
-			RequestPath: "/healthz", // TODO: Allow customization.
+			RequestPath: "/healthz", // TODO(nikhiljindal): Allow customization.
 		}
 		break
 	case "HTTPS":
 		hc.HttpsHealthCheck = &compute.HTTPSHealthCheck{
-			Port:        port.Port,  // TODO: Allow customization.
-			RequestPath: "/healthz", // TODO: Allow customization.
+			Port:        port.Port,  // TODO(nikhiljindal): Allow customization.
+			RequestPath: "/healthz", // TODO(nikhiljindal): Allow customization.
 		}
 		break
 	default:

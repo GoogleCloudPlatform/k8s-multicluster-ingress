@@ -26,7 +26,7 @@ func NewGCECloudInterface(projectID string) (*gce.GCECloud, error) {
 func getCloudConfig(projectID string) gce.CloudConfig {
 	return gce.CloudConfig{
 		ProjectID: projectID,
-		// TODO: Set the following properties.
+		// TODO(nikhiljindal): Set the following properties.
 		// ApiEndpoint
 		// NetworkProjectID: Is different than project ID for projects with XPN enabled.
 		// Zone, Region

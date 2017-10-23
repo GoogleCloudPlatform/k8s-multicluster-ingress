@@ -39,7 +39,7 @@ import (
 )
 
 const (
-	// TODO: refactor code in kubernetes/ingress to reuse this.
+	// TODO(nikhiljindal): refactor code in kubernetes/ingress to reuse this.
 	// serviceApplicationProtocolKey is a stringified JSON map of port names to
 	// protocol names. Possible values are HTTP, HTTPS.
 	// Example annotation:
