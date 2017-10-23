@@ -36,6 +36,7 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/mci/pkg/gcp/backendservice"
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/mci/pkg/gcp/healthcheck"
 	utilsnamer "github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/mci/pkg/gcp/namer"
+	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/mci/pkg/gcp/urlmap"
 )
 
 const (
@@ -60,12 +61,15 @@ const (
 	instanceGroupsAnnotationKey = "ingress.gcp.kubernetes.io/instance-groups"
 )
 
+// LoadBalancerSyncer manages the GCP resources necessary for an L7 GCP Load balancer.
 type LoadBalancerSyncer struct {
 	lbName string
 	// Health check syncer to sync the required health checks.
 	hcs healthcheck.HealthCheckSyncerInterface
 	// Backend service syncer to sync the required backend services.
 	bss backendservice.BackendServiceSyncerInterface
+	// URL map syncer to sync the required URL map.
+	ums urlmap.URLMapSyncerInterface
 	// kubernetes client to send requests to kubernetes apiserver.
 	client kubeclient.Interface
 	// Instance groups provider to call GCE APIs to manage GCE instance groups.
@@ -78,11 +82,13 @@ func NewLoadBalancerSyncer(lbName string, client kubeclient.Interface, cloud *gc
 		lbName: lbName,
 		hcs:    healthcheck.NewHealthCheckSyncer(namer, cloud),
 		bss:    backendservice.NewBackendServiceSyncer(namer, cloud),
+		ums:    urlmap.NewURLMapSyncer(namer, cloud),
 		client: client,
 		igp:    cloud,
 	}
 }
 
+// CreateLoadBalancer creates the GCP resources necessary for an L7 GCP load balancer corresponding to the given ingress.
 func (l *LoadBalancerSyncer) CreateLoadBalancer(ing *v1beta1.Ingress, forceUpdate bool) error {
 	var err error
 	ports := l.ingToNodePorts(ing)
@@ -98,10 +104,17 @@ func (l *LoadBalancerSyncer) CreateLoadBalancer(ing *v1beta1.Ingress, forceUpdat
 		return multierror.Append(err, igErr)
 	}
 	// Create backend service. This should always be called after the health check since backend service needs to point to the health check.
-	if beErr := l.bss.EnsureBackendService(l.lbName, ports, healthChecks, namedPorts, igs); beErr != nil {
-		return multierror.Append(err, beErr)
+	backendServices, beErr := l.bss.EnsureBackendService(l.lbName, ports, healthChecks, namedPorts, igs)
+	if beErr != nil {
+		// Aggregate errors and return all at the end.
+		err = multierror.Append(err, beErr)
 	}
-	return nil
+	umErr := l.ums.EnsureURLMap(l.lbName, ing, backendServices)
+	if umErr != nil {
+		// Aggregate errors and return all at the end.
+		err = multierror.Append(err, umErr)
+	}
+	return err
 }
 
 // Returns links to all instance groups and named ports on any one of them.

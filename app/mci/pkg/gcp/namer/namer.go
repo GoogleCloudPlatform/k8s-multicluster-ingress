@@ -21,6 +21,7 @@ import (
 const (
 	hcPrefix      = "hc"
 	backendPrefix = "be"
+	urlMapPrefix  = "um"
 
 	// A delimiter used for clarity in naming GCE resources.
 	lbNameDelimiter = "--"
@@ -60,6 +61,10 @@ func (n *Namer) BeServiceName(port int64) string {
 	// of the set of clusters the load balancer is spread to and stop/start sharing
 	// anytime that set changes.
 	return n.decorateName(fmt.Sprintf("%v-%v-%d", n.prefix, backendPrefix, port))
+}
+
+func (n *Namer) URLMapName() string {
+	return n.decorateName(fmt.Sprintf("%v-%v", n.prefix, urlMapPrefix))
 }
 
 func (n *Namer) decorateName(name string) string {
