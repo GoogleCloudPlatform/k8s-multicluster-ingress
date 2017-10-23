@@ -31,15 +31,17 @@ import (
 
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/mci/pkg/gcp/backendservice"
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/mci/pkg/gcp/healthcheck"
+	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/mci/pkg/gcp/urlmap"
 )
 
 func newLoadBalancerSyncer(lbName string) *LoadBalancerSyncer {
 	return &LoadBalancerSyncer{
 		lbName: lbName,
 		hcs:    healthcheck.NewFakeHealthCheckSyncer(),
+		bss:    backendservice.NewFakeBackendServiceSyncer(),
+		ums:    urlmap.NewFakeURLMapSyncer(),
 		client: &fake.Clientset{},
 		igp:    ingressig.NewFakeInstanceGroups(nil),
-		bss:    backendservice.NewFakeBackendServiceSyncer(),
 	}
 }
 
@@ -159,8 +161,8 @@ func TestCreateLoadBalancer(t *testing.T) {
 	if bs.LBName != lbName {
 		t.Errorf("unexpected lb name in backend service. expected: %s, got: %s", lbName, bs.LBName)
 	}
-	if len(bs.Ports) != 1 || bs.Ports[0].Port != nodePort {
-		t.Errorf("unexpected ports in backend service. expected port %d, got: %v", nodePort, bs.Ports)
+	if bs.Port.Port != nodePort {
+		t.Errorf("unexpected port in backend service. expected port %d, got: %d", nodePort, bs.Port.Port)
 	}
 	if len(bs.HCMap) != 1 || bs.HCMap[nodePort] == nil {
 		t.Errorf("unexpected health check map in backend service. expected an entry for port %d, got: %v", nodePort, bs.HCMap)
@@ -170,5 +172,14 @@ func TestCreateLoadBalancer(t *testing.T) {
 	}
 	if len(bs.IGLinks) != 1 || bs.IGLinks[0] != expectedIGLink {
 		t.Errorf("unexpected instance group in backend service. expected %s, got: %s", expectedIGLink, bs.IGLinks)
+	}
+	// Verify that the expected urlmap was created.
+	fum := lbc.ums.(*urlmap.FakeURLMapSyncer)
+	if len(fum.EnsuredURLMaps) != 1 {
+		t.Fatalf("unexpected number of url maps. expected: %d, got: %d", 1, len(fum.EnsuredURLMaps))
+	}
+	um := fum.EnsuredURLMaps[0]
+	if hc.LBName != lbName {
+		t.Fatalf("unexpected url map: %v\nexpected: lbname: %s", um, lbName)
 	}
 }

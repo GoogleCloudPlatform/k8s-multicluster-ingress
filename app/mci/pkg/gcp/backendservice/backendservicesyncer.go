@@ -44,35 +44,39 @@ var _ BackendServiceSyncerInterface = &BackendServiceSyncer{}
 
 // EnsureBackendService ensures that the required backend services exist for the given ports.
 // Does nothing if it exists already, else creates a new one.
-func (b *BackendServiceSyncer) EnsureBackendService(lbName string, ports []ingressbe.ServicePort, hcMap healthcheck.HealthChecksMap, npMap NamedPortsMap, igLinks []string) error {
+func (b *BackendServiceSyncer) EnsureBackendService(lbName string, ports []ingressbe.ServicePort, hcMap healthcheck.HealthChecksMap, npMap NamedPortsMap, igLinks []string) (BackendServicesMap, error) {
 	fmt.Println("Ensuring backend services")
 	glog.V(5).Infof("Received health checks map: %v", hcMap)
 	glog.V(5).Infof("Received named ports map: %v", npMap)
 	glog.V(5).Infof("Received instance groups: %v", igLinks)
 	var err error
+	ensuredBackendServices := BackendServicesMap{}
 	for _, p := range ports {
-		if beErr := b.ensureBackendService(lbName, p, hcMap[p.Port], npMap[p.Port], igLinks); beErr != nil {
+		be, beErr := b.ensureBackendService(lbName, p, hcMap[p.Port], npMap[p.Port], igLinks)
+		if beErr != nil {
 			beErr = fmt.Errorf("Error %s in ensuring backend service for port %v", beErr, p)
 			// Try ensuring backend services for all ports and return all errors at once.
 			err = multierror.Append(err, beErr)
+			continue
 		}
+		ensuredBackendServices[p.SvcName.Name] = be
 	}
-	return err
+	return ensuredBackendServices, err
 }
 
 // ensureBackendService ensures that the required backend service exists for the given port.
 // Does nothing if it exists already, else creates a new one.
-func (b *BackendServiceSyncer) ensureBackendService(lbName string, port ingressbe.ServicePort, hc *compute.HealthCheck, np *compute.NamedPort, igLinks []string) error {
+func (b *BackendServiceSyncer) ensureBackendService(lbName string, port ingressbe.ServicePort, hc *compute.HealthCheck, np *compute.NamedPort, igLinks []string) (*compute.BackendService, error) {
 	fmt.Println("Ensuring backend service for port:", port)
 	if hc == nil {
-		return fmt.Errorf("missing health check probably due to an error in creating health check. Cannot create backend service without health chech link")
+		return nil, fmt.Errorf("missing health check probably due to an error in creating health check. Cannot create backend service without health chech link")
 	}
 	if hc.SelfLink == "" {
 		glog.V(2).Infof("Unexpected: empty self link in hc: %v", hc)
-		return fmt.Errorf("missing self link in health check %s", hc.Name)
+		return nil, fmt.Errorf("missing self link in health check %s", hc.Name)
 	}
 	if np == nil {
-		return fmt.Errorf("missing corresponding named port on the instance group")
+		return nil, fmt.Errorf("missing corresponding named port on the instance group")
 	}
 	desiredBE := b.desiredBackendService(lbName, port, hc.SelfLink, np.Name, igLinks)
 	name := desiredBE.Name
@@ -85,18 +89,43 @@ func (b *BackendServiceSyncer) ensureBackendService(lbName string, port ingressb
 		if backendServiceMatches(desiredBE, existingBE) {
 			// Nothing to do. Desired backend service exists already.
 			fmt.Println("Desired backend service exists already")
-			return nil
+			return existingBE, nil
 		}
 		// TODO (nikhiljindal): Require explicit permission from user before doing this.
 		fmt.Println("Updating existing backend service", name, "to match the desired state")
-		return b.bsp.UpdateGlobalBackendService(desiredBE)
+		return b.updateBackendService(desiredBE)
 	}
 	glog.V(5).Infof("Got error %s while trying to get existing backend service %s", err, name)
 	// TODO(nikhiljindal): Handle non NotFound errors. We should create only if the error is NotFound.
 	// Create the backend service.
 	fmt.Println("Creating backend service", name)
 	glog.V(5).Infof("Creating backend service %v", *desiredBE)
-	return b.bsp.CreateGlobalBackendService(desiredBE)
+	return b.createBackendService(desiredBE)
+}
+
+// updateBackendService updates the backend service and returns the updated backend service.
+func (h *BackendServiceSyncer) updateBackendService(desiredBE *compute.BackendService) (*compute.BackendService, error) {
+	name := desiredBE.Name
+	fmt.Println("Updating existing backend service", name, "to match the desired state")
+	err := h.bsp.UpdateGlobalBackendService(desiredBE)
+	if err != nil {
+		return nil, err
+	}
+	fmt.Println("Backend service", name, "updated successfully")
+	return h.bsp.GetGlobalBackendService(name)
+}
+
+// createBackendService creates the backend service and returns the created backend service.
+func (h *BackendServiceSyncer) createBackendService(desiredBE *compute.BackendService) (*compute.BackendService, error) {
+	name := desiredBE.Name
+	fmt.Println("Creating backend service", name)
+	glog.V(5).Infof("Creating backend service %v", desiredBE)
+	err := h.bsp.CreateGlobalBackendService(desiredBE)
+	if err != nil {
+		return nil, err
+	}
+	fmt.Println("Backend service", name, "created successfully")
+	return h.bsp.GetGlobalBackendService(name)
 }
 
 func backendServiceMatches(desiredBE, existingBE *compute.BackendService) bool {
