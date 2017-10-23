@@ -19,12 +19,11 @@ import (
 	"testing"
 
 	compute "google.golang.org/api/compute/v1"
-
+	ingressbe "k8s.io/ingress-gce/pkg/backends"
 	ingresshc "k8s.io/ingress-gce/pkg/healthchecks"
 	"k8s.io/ingress-gce/pkg/utils"
 
 	utilsnamer "github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/mci/pkg/gcp/namer"
-	sp "github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/mci/pkg/serviceport"
 )
 
 func TestEnsureHealthCheck(t *testing.T) {
@@ -40,38 +39,38 @@ func TestEnsureHealthCheck(t *testing.T) {
 		// Human-readable description of test.
 		desc string
 		// Inputs
-		protocol    string
+		protocol    utils.AppProtocol
 		forceUpdate bool
 		// Outputs
 		ensureErr bool
 	}{
 		{
 			desc:        "expected no error in ensuring health check",
-			protocol:    "HTTP",
+			protocol:    utils.ProtocolHTTP,
 			forceUpdate: false,
 			ensureErr:   false,
 		},
 		{
 			desc:        "writing same health check should not error (forceUpdate=false)",
-			protocol:    "HTTP",
+			protocol:    utils.ProtocolHTTP,
 			forceUpdate: false,
 			ensureErr:   false,
 		},
 		{
 			desc:        "writing same health check should not error (forceUpdate=true)",
-			protocol:    "HTTP",
+			protocol:    utils.ProtocolHTTP,
 			forceUpdate: true,
 			ensureErr:   false,
 		},
 		{
 			desc:        "a different healthcheck should cause an error when forceUpdate=false",
-			protocol:    "HTTPS", /* Not the original HTTP */
+			protocol:    utils.ProtocolHTTPS, /* Not the original HTTP */
 			forceUpdate: false,
 			ensureErr:   true,
 		},
 		{
 			desc:        "a different healthcheck should not error when forceUpdate=true",
-			protocol:    "HTTPS", /* Not the original HTTP */
+			protocol:    utils.ProtocolHTTPS, /* Not the original HTTP */
 			forceUpdate: true,
 			ensureErr:   false,
 		},
@@ -83,7 +82,7 @@ func TestEnsureHealthCheck(t *testing.T) {
 	}
 
 	for _, c := range testCases {
-		err := hcs.EnsureHealthCheck(lbName, []sp.ServicePort{
+		err := hcs.EnsureHealthCheck(lbName, []ingressbe.ServicePort{
 			{
 				Port:     port,
 				Protocol: c.protocol,

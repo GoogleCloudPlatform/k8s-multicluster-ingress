@@ -15,11 +15,11 @@
 package healthcheck
 
 import (
-	sp "github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/mci/pkg/serviceport"
+	ingressbe "k8s.io/ingress-gce/pkg/backends"
 )
 
 // HealthCheckSyncerInterface is an interface to manage GCP health checks.
 type HealthCheckSyncerInterface interface {
 	// EnsureHealthCheck ensures that the required health check exists.
-	EnsureHealthCheck(lbName string, ports []sp.ServicePort, force bool) error
+	EnsureHealthCheck(lbName string, ports []ingressbe.ServicePort, force bool) error
 }

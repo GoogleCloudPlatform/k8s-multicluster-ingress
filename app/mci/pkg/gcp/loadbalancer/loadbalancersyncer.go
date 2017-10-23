@@ -23,13 +23,15 @@ import (
 	"k8s.io/api/core/v1"
 	"k8s.io/api/extensions/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	kubeclient "k8s.io/client-go/kubernetes"
+	ingressbe "k8s.io/ingress-gce/pkg/backends"
+	ingressutils "k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce"
 
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/mci/pkg/gcp/healthcheck"
 	utilsnamer "github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/mci/pkg/gcp/namer"
-	sp "github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/mci/pkg/serviceport"
 )
 
 const (
@@ -72,8 +74,8 @@ func (l *LoadBalancerSyncer) CreateLoadBalancer(ing *v1beta1.Ingress, forceUpdat
 	return nil
 }
 
-func (l *LoadBalancerSyncer) ingToNodePorts(ing *v1beta1.Ingress) []sp.ServicePort {
-	var knownPorts []sp.ServicePort
+func (l *LoadBalancerSyncer) ingToNodePorts(ing *v1beta1.Ingress) []ingressbe.ServicePort {
+	var knownPorts []ingressbe.ServicePort
 	defaultBackend := ing.Spec.Backend
 	if defaultBackend != nil {
 		port, err := l.getServiceNodePort(*defaultBackend, ing.Namespace)
@@ -113,12 +115,12 @@ func svcProtocolsFromAnnotation(annotations map[string]string) (map[string]strin
 	return svcProtocols, nil
 }
 
-func (l *LoadBalancerSyncer) getServiceNodePort(be v1beta1.IngressBackend, namespace string) (sp.ServicePort, error) {
+func (l *LoadBalancerSyncer) getServiceNodePort(be v1beta1.IngressBackend, namespace string) (ingressbe.ServicePort, error) {
 	svc, err := l.getSvc(be.ServiceName, namespace)
 	// Refactor this code to get serviceport from a given service and share it with kubernetes/ingress.
 	appProtocols, err := svcProtocolsFromAnnotation(svc.GetAnnotations())
 	if err != nil {
-		return sp.ServicePort{}, err
+		return ingressbe.ServicePort{}, err
 	}
 
 	var port *v1.ServicePort
@@ -140,17 +142,19 @@ PortLoop:
 	}
 
 	if port == nil {
-		return sp.ServicePort{}, fmt.Errorf("could not find matching nodeport for backend %v and service %s/%s", be, be.ServiceName, namespace)
+		return ingressbe.ServicePort{}, fmt.Errorf("could not find matching nodeport for backend %v and service %s/%s", be, be.ServiceName, namespace)
 	}
 
-	proto := "HTTP"
+	proto := ingressutils.ProtocolHTTP
 	if protoStr, exists := appProtocols[port.Name]; exists {
-		proto = protoStr
+		proto = ingressutils.AppProtocol(protoStr)
 	}
 
-	p := sp.ServicePort{
+	p := ingressbe.ServicePort{
 		Port:     int64(port.NodePort),
 		Protocol: proto,
+		SvcName:  types.NamespacedName{Namespace: namespace, Name: be.ServiceName},
+		SvcPort:  be.ServicePort,
 	}
 	return p, nil
 }

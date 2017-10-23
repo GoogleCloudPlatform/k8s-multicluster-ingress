@@ -15,12 +15,12 @@
 package healthcheck
 
 import (
-	sp "github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/mci/pkg/serviceport"
+	ingressbe "k8s.io/ingress-gce/pkg/backends"
 )
 
 type FakeHealthCheck struct {
 	LBName string
-	Port   sp.ServicePort
+	Port   ingressbe.ServicePort
 }
 
 type FakeHealthCheckSyncer struct {
@@ -36,7 +36,7 @@ func NewFakeHealthCheckSyncer() HealthCheckSyncerInterface {
 // Ensure this implements HealthCheckSyncerInterface.
 var _ HealthCheckSyncerInterface = &FakeHealthCheckSyncer{}
 
-func (h *FakeHealthCheckSyncer) EnsureHealthCheck(lbName string, ports []sp.ServicePort, force bool) error {
+func (h *FakeHealthCheckSyncer) EnsureHealthCheck(lbName string, ports []ingressbe.ServicePort, force bool) error {
 	for _, p := range ports {
 		h.EnsuredHealthChecks = append(h.EnsuredHealthChecks, FakeHealthCheck{
 			LBName: lbName,
