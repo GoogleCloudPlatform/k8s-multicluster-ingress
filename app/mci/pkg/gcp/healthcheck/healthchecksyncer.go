@@ -16,10 +16,11 @@ package healthcheck
 
 import (
 	"fmt"
+	"reflect"
 	"time"
 
 	"github.com/golang/glog"
-	"github.com/hashicorp/go-multierror"
+	multierror "github.com/hashicorp/go-multierror"
 	compute "google.golang.org/api/compute/v1"
 	ingresshc "k8s.io/ingress-gce/pkg/healthchecks"
 
@@ -60,11 +61,11 @@ var _ HealthCheckSyncerInterface = &HealthCheckSyncer{}
 
 // EnsureHealthCheck ensures that the required health check exists.
 // Does nothing if it exists already, else creates a new one.
-func (h *HealthCheckSyncer) EnsureHealthCheck(lbName string, ports []sp.ServicePort) error {
+func (h *HealthCheckSyncer) EnsureHealthCheck(lbName string, ports []sp.ServicePort, forceUpdate bool) error {
 	fmt.Println("Ensuring health checks")
 	var err error
 	for _, p := range ports {
-		if hcErr := h.ensureHealthCheck(lbName, p); hcErr != nil {
+		if hcErr := h.ensureHealthCheck(lbName, p, forceUpdate); hcErr != nil {
 			hcErr = fmt.Errorf("Error %s in ensuring health check for port %v", hcErr, p)
 			// Try ensuring health checks for all ports and return all errors at once.
 			err = multierror.Append(err, hcErr)
@@ -73,7 +74,7 @@ func (h *HealthCheckSyncer) EnsureHealthCheck(lbName string, ports []sp.ServiceP
 	return err
 }
 
-func (h *HealthCheckSyncer) ensureHealthCheck(lbName string, port sp.ServicePort) error {
+func (h *HealthCheckSyncer) ensureHealthCheck(lbName string, port sp.ServicePort, forceUpdate bool) error {
 	fmt.Println("Ensuring health check for port:", port)
 	desiredHC, err := h.desiredHealthCheck(lbName, port)
 	if err != nil {
@@ -84,16 +85,22 @@ func (h *HealthCheckSyncer) ensureHealthCheck(lbName string, port sp.ServicePort
 	existingHC, err := h.hcp.GetHealthCheck(name)
 	if err == nil {
 		fmt.Println("Health check", name, "exists already. Checking if it matches our desired health check", name)
-		glog.V(5).Infof("Existing health check: %v\n, desired health check: %v", existingHC, desiredHC)
+		glog.V(5).Infof("Existing health check: %+v\n, desired health check: %+v\n", existingHC, desiredHC)
 		// Health check with that name exists already. Check if it matches what we want.
 		if healthCheckMatches(&desiredHC, existingHC) {
 			// Nothing to do. Desired health check exists already.
 			fmt.Println("Desired health check exists already")
 			return nil
 		}
-		// TODO: Require explicit permission from user before doing this.
-		fmt.Println("Updating existing health check", name, "to match the desired state")
-		return h.hcp.UpdateHealthCheck(&desiredHC)
+
+		if forceUpdate {
+			fmt.Println("Updating existing health check", name, "to match the desired state")
+			return h.hcp.UpdateHealthCheck(&desiredHC)
+		} else {
+			// TODO(G-Harmon): Show diff to user and prompt yes/no for overwriting.
+			fmt.Println("Will not overwrite a differing health check without the --force flag.")
+			return fmt.Errorf("will not overwrite healthcheck without --force")
+		}
 	}
 	glog.V(5).Infof("Got error %s while trying to get existing health check %s", err, name)
 	// TODO: Handle non NotFound errors. We should create only if the error is NotFound.
@@ -104,8 +111,23 @@ func (h *HealthCheckSyncer) ensureHealthCheck(lbName string, port sp.ServicePort
 }
 
 func healthCheckMatches(desiredHC, existingHC *compute.HealthCheck) bool {
-	// TODO: Add proper logic to figure out if the 2 health checks match.
-	// Need to add the --force flag for user to consent overritting before this method can be updated to return false.
+	if desiredHC.CheckIntervalSec != existingHC.CheckIntervalSec ||
+		// Ignore creationTimestamp.
+		desiredHC.Description != existingHC.Description ||
+		desiredHC.HealthyThreshold != existingHC.HealthyThreshold ||
+		!reflect.DeepEqual(desiredHC.HttpHealthCheck, existingHC.HttpHealthCheck) ||
+		!reflect.DeepEqual(desiredHC.HttpsHealthCheck, existingHC.HttpsHealthCheck) ||
+		// Ignore id.
+		desiredHC.Kind != existingHC.Kind ||
+		desiredHC.Name != existingHC.Name ||
+		// Ignore selfLink because it's not set in desiredHC.
+		desiredHC.TimeoutSec != existingHC.TimeoutSec ||
+		desiredHC.Type != existingHC.Type ||
+		desiredHC.UnhealthyThreshold != existingHC.UnhealthyThreshold {
+		glog.V(2).Infof("Health checks differ.")
+		return false
+	}
+	glog.V(2).Infof("Health checks match.")
 	return true
 }
 
