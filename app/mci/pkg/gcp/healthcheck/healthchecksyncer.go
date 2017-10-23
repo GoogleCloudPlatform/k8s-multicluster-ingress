@@ -22,10 +22,10 @@ import (
 	"github.com/golang/glog"
 	multierror "github.com/hashicorp/go-multierror"
 	compute "google.golang.org/api/compute/v1"
+	ingressbe "k8s.io/ingress-gce/pkg/backends"
 	ingresshc "k8s.io/ingress-gce/pkg/healthchecks"
 
 	utilsnamer "github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/mci/pkg/gcp/namer"
-	sp "github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/mci/pkg/serviceport"
 )
 
 const (
@@ -61,7 +61,7 @@ var _ HealthCheckSyncerInterface = &HealthCheckSyncer{}
 
 // EnsureHealthCheck ensures that the required health check exists.
 // Does nothing if it exists already, else creates a new one.
-func (h *HealthCheckSyncer) EnsureHealthCheck(lbName string, ports []sp.ServicePort, forceUpdate bool) error {
+func (h *HealthCheckSyncer) EnsureHealthCheck(lbName string, ports []ingressbe.ServicePort, forceUpdate bool) error {
 	fmt.Println("Ensuring health checks")
 	var err error
 	for _, p := range ports {
@@ -74,7 +74,7 @@ func (h *HealthCheckSyncer) EnsureHealthCheck(lbName string, ports []sp.ServiceP
 	return err
 }
 
-func (h *HealthCheckSyncer) ensureHealthCheck(lbName string, port sp.ServicePort, forceUpdate bool) error {
+func (h *HealthCheckSyncer) ensureHealthCheck(lbName string, port ingressbe.ServicePort, forceUpdate bool) error {
 	fmt.Println("Ensuring health check for port:", port)
 	desiredHC, err := h.desiredHealthCheck(lbName, port)
 	if err != nil {
@@ -131,11 +131,11 @@ func healthCheckMatches(desiredHC, existingHC *compute.HealthCheck) bool {
 	return true
 }
 
-func (h *HealthCheckSyncer) desiredHealthCheck(lbName string, port sp.ServicePort) (compute.HealthCheck, error) {
+func (h *HealthCheckSyncer) desiredHealthCheck(lbName string, port ingressbe.ServicePort) (compute.HealthCheck, error) {
 	// Compute the desired health check.
 	hc := compute.HealthCheck{
 		Name:        h.namer.HealthCheckName(port.Port),
-		Description: fmt.Sprintf("Kubernetes L7 Loadbalancing health check for multi cluster ingress %s.", lbName),
+		Description: fmt.Sprintf("Health check for service %s as part of kubernetes multicluster loadbalancer %s", port.Description(), lbName),
 		// How often to health check.
 		CheckIntervalSec: int64(DefaultHealthCheckInterval.Seconds()),
 		// How long to wait before claiming failure of a health check.
@@ -144,7 +144,7 @@ func (h *HealthCheckSyncer) desiredHealthCheck(lbName string, port sp.ServicePor
 		HealthyThreshold: DefaultHealthyThreshold,
 		// Number of healthchecks to fail before the vm is deemed unhealthy.
 		UnhealthyThreshold: DefaultUnhealthyThreshold,
-		Type:               port.Protocol,
+		Type:               string(port.Protocol),
 	}
 	switch port.Protocol {
 	case "HTTP":
