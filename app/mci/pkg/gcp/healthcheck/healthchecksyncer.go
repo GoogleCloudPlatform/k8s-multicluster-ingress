@@ -20,8 +20,8 @@ import (
 	"time"
 
 	"github.com/golang/glog"
-	multierror "github.com/hashicorp/go-multierror"
-	compute "google.golang.org/api/compute/v1"
+	"github.com/hashicorp/go-multierror"
+	"google.golang.org/api/compute/v1"
 	ingressbe "k8s.io/ingress-gce/pkg/backends"
 	ingresshc "k8s.io/ingress-gce/pkg/healthchecks"
 
@@ -61,53 +61,80 @@ var _ HealthCheckSyncerInterface = &HealthCheckSyncer{}
 
 // EnsureHealthCheck ensures that the required health check exists.
 // Does nothing if it exists already, else creates a new one.
-func (h *HealthCheckSyncer) EnsureHealthCheck(lbName string, ports []ingressbe.ServicePort, forceUpdate bool) error {
+// Returns a map of the ensured health checks keyed by the corresponding port.
+func (h *HealthCheckSyncer) EnsureHealthCheck(lbName string, ports []ingressbe.ServicePort, forceUpdate bool) (HealthChecksMap, error) {
 	fmt.Println("Ensuring health checks")
 	var err error
+	ensuredHealthChecks := HealthChecksMap{}
 	for _, p := range ports {
-		if hcErr := h.ensureHealthCheck(lbName, p, forceUpdate); hcErr != nil {
+		hc, hcErr := h.ensureHealthCheck(lbName, p, forceUpdate)
+		if hcErr != nil {
 			hcErr = fmt.Errorf("Error %s in ensuring health check for port %v", hcErr, p)
 			// Try ensuring health checks for all ports and return all errors at once.
 			err = multierror.Append(err, hcErr)
+			continue
 		}
+		ensuredHealthChecks[p.Port] = hc
 	}
-	return err
+	return ensuredHealthChecks, err
 }
 
-func (h *HealthCheckSyncer) ensureHealthCheck(lbName string, port ingressbe.ServicePort, forceUpdate bool) error {
+func (h *HealthCheckSyncer) ensureHealthCheck(lbName string, port ingressbe.ServicePort, forceUpdate bool) (*compute.HealthCheck, error) {
 	fmt.Println("Ensuring health check for port:", port)
 	desiredHC, err := h.desiredHealthCheck(lbName, port)
 	if err != nil {
-		return fmt.Errorf("error %s in computing desired health check", err)
+		return nil, fmt.Errorf("error %s in computing desired health check", err)
 	}
 	name := desiredHC.Name
 	// Check if hc already exists.
 	existingHC, err := h.hcp.GetHealthCheck(name)
 	if err == nil {
-		fmt.Println("Health check", name, "exists already. Checking if it matches our desired health check", name)
+		fmt.Println("Health check", name, "exists already. Checking if it matches our desired health check")
 		glog.V(5).Infof("Existing health check: %+v\n, desired health check: %+v\n", existingHC, desiredHC)
 		// Health check with that name exists already. Check if it matches what we want.
 		if healthCheckMatches(&desiredHC, existingHC) {
 			// Nothing to do. Desired health check exists already.
 			fmt.Println("Desired health check exists already")
-			return nil
+			return existingHC, nil
 		}
-
 		if forceUpdate {
 			fmt.Println("Updating existing health check", name, "to match the desired state")
-			return h.hcp.UpdateHealthCheck(&desiredHC)
+			return h.updateHealthCheck(&desiredHC)
 		} else {
 			// TODO(G-Harmon): Show diff to user and prompt yes/no for overwriting.
 			fmt.Println("Will not overwrite a differing health check without the --force flag.")
-			return fmt.Errorf("will not overwrite healthcheck without --force")
+			return nil, fmt.Errorf("will not overwrite healthcheck without --force")
 		}
 	}
 	glog.V(5).Infof("Got error %s while trying to get existing health check %s", err, name)
 	// TODO: Handle non NotFound errors. We should create only if the error is NotFound.
 	// Create the health check.
+	return h.createHealthCheck(&desiredHC)
+}
+
+// updateHealthCheck updates the health check and returns the updated health check.
+func (h *HealthCheckSyncer) updateHealthCheck(desiredHC *compute.HealthCheck) (*compute.HealthCheck, error) {
+	name := desiredHC.Name
+	fmt.Println("Updating existing health check", name, "to match the desired state")
+	err := h.hcp.UpdateHealthCheck(desiredHC)
+	if err != nil {
+		return nil, err
+	}
+	fmt.Println("Health check", name, "updated successfully")
+	return h.hcp.GetHealthCheck(name)
+}
+
+// createHealthCheck creates the health check and returns the created health check.
+func (h *HealthCheckSyncer) createHealthCheck(desiredHC *compute.HealthCheck) (*compute.HealthCheck, error) {
+	name := desiredHC.Name
 	fmt.Println("Creating health check", name)
 	glog.V(5).Infof("Creating health check %v", desiredHC)
-	return h.hcp.CreateHealthCheck(&desiredHC)
+	err := h.hcp.CreateHealthCheck(desiredHC)
+	if err != nil {
+		return nil, err
+	}
+	fmt.Println("Health check", name, "created successfully")
+	return h.hcp.GetHealthCheck(name)
 }
 
 func healthCheckMatches(desiredHC, existingHC *compute.HealthCheck) bool {

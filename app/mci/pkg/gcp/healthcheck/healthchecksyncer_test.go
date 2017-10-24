@@ -82,7 +82,7 @@ func TestEnsureHealthCheck(t *testing.T) {
 	}
 
 	for _, c := range testCases {
-		err := hcs.EnsureHealthCheck(lbName, []ingressbe.ServicePort{
+		hcMap, err := hcs.EnsureHealthCheck(lbName, []ingressbe.ServicePort{
 			{
 				Port:     port,
 				Protocol: c.protocol,
@@ -92,9 +92,15 @@ func TestEnsureHealthCheck(t *testing.T) {
 			t.Errorf("error when: %v: EnsureHealthCheck({%v,%v}, %v) = [%v]. Want err? %t.",
 				c.desc, port, c.protocol, c.forceUpdate, err, c.ensureErr)
 		}
+		if c.ensureErr == false {
+			if len(hcMap) != 1 || hcMap[port] == nil {
+				t.Fatalf("error when %s: unexpected health check map: %v. Expected it to contain only the health check for port %d", c.desc, hcMap, port)
+			}
+		}
+
 		// Verify that GET does not return NotFound.
 		if _, err := hcp.GetHealthCheck(hcName); err != nil {
-			t.Fatalf("expected nil error, actual: %v", err)
+			t.Fatalf("error when %s: expected nil error, actual: %v", c.desc, err)
 		}
 
 	}
