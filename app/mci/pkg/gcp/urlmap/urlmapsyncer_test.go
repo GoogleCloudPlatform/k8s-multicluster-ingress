@@ -50,7 +50,7 @@ func TestEnsureURLMap(t *testing.T) {
 	if _, err := ump.GetUrlMap(umName); err == nil {
 		t.Fatalf("expected NotFound error, got nil")
 	}
-	err := ums.EnsureURLMap(lbName, ing, beMap)
+	_, err := ums.EnsureURLMap(lbName, ing, beMap)
 	if err != nil {
 		t.Fatalf("expected no error in ensuring url map, actual: %v", err)
 	}
