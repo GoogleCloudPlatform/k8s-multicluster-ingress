@@ -72,7 +72,7 @@ type CreateOptions struct {
 	LBName string
 	// Name of the GCP project in which the load balancer should be configured.
 	// Required
-	// TODO: This should be optional. Figure it out from gcloud settings.
+	// TODO(nikhiljindal): This should be optional. Figure it out from gcloud settings.
 	GCPProject string
 	// Overwrite values when they differ from what's requested. If
 	// the resource does not exist, or is already the correct
@@ -87,7 +87,7 @@ func NewCmdCreate(out, err io.Writer) *cobra.Command {
 		Use:   "create",
 		Short: createShortDescription,
 		Long:  createLongDescription,
-		// TODO: Add an example.
+		// TODO(nikhiljindal): Add an example.
 		Run: func(cmd *cobra.Command, args []string) {
 			if err := ValidateArgs(&options, args); err != nil {
 				fmt.Println(err)
@@ -153,7 +153,7 @@ func RunCreate(options *CreateOptions, args []string) error {
 
 // Extracts the contexts from the given kubeconfig and creates ingress in those context clusters.
 func createIngress(kubeconfig, ingressFilename string) error {
-	// TODO: Allow users to specify the list of clusters to create the ingress in
+	// TODO(nikhiljindal): Allow users to specify the list of clusters to create the ingress in
 	// rather than assuming all contexts in kubeconfig.
 	clusters, err := getClusters(kubeconfig)
 	if err != nil {
@@ -182,14 +182,14 @@ func createIngressInClusters(kubeconfig, ingressFilename string, clusters []stri
 	if kubeconfig != "" {
 		kubectlArgs = append(kubectlArgs, fmt.Sprintf("--kubeconfig=%s", kubeconfig))
 	}
-	// TODO: Validate and optionally add the gce-multi-cluster class annotation to the ingress YAML spec.
+	// TODO(nikhiljindal): Validate and optionally add the gce-multi-cluster class annotation to the ingress YAML spec.
 	createArgs := append(kubectlArgs, []string{"create", fmt.Sprintf("--filename=%s", ingressFilename)}...)
 	for _, c := range clusters {
 		fmt.Println("Creating ingress in context:", c)
 		contextArgs := append(createArgs, fmt.Sprintf("--context=%s", c))
 		output, err := runCommand(contextArgs)
 		if err != nil {
-			// TODO: Continue if this is an ingress already exists error.
+			// TODO(nikhiljindal): Continue if this is an ingress already exists error.
 			glog.V(2).Infof("error in running command: %s", strings.Join(contextArgs, " "))
 			return fmt.Errorf("error in creating ingress in cluster %s: %s, output: %s", c, err, output)
 		}
