@@ -50,14 +50,17 @@ func TestEnsureURLMap(t *testing.T) {
 	if _, err := ump.GetUrlMap(umName); err == nil {
 		t.Fatalf("expected NotFound error, got nil")
 	}
-	err := ums.EnsureURLMap(lbName, ing, beMap)
+	umLink, err := ums.EnsureURLMap(lbName, ing, beMap)
 	if err != nil {
 		t.Fatalf("expected no error in ensuring url map, actual: %v", err)
 	}
 	// Verify that GET does not return NotFound.
-	if _, err := ump.GetUrlMap(umName); err != nil {
+	um, err := ump.GetUrlMap(umName)
+	if err != nil {
 		t.Fatalf("expected nil error, actual: %v", err)
 	}
-	// TODO(nikhiljindal): Verify that the returned urlmap is as expected.
+	if um.SelfLink != umLink {
+		t.Errorf("unexpected self link in returned url map. expected: %s, got: %s", umLink, um.SelfLink)
+	}
 	// TODO(nikhiljindal): Test update existing url map.
 }

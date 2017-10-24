@@ -20,6 +20,10 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/mci/pkg/gcp/backendservice"
 )
 
+const (
+	FakeUrlSelfLink = "selfLink"
+)
+
 type FakeURLMap struct {
 	LBName  string
 	Ingress *v1beta1.Ingress
@@ -39,11 +43,11 @@ func NewFakeURLMapSyncer() URLMapSyncerInterface {
 // Ensure this implements URLMapSyncerInterface.
 var _ URLMapSyncerInterface = &FakeURLMapSyncer{}
 
-func (f *FakeURLMapSyncer) EnsureURLMap(lbName string, ing *v1beta1.Ingress, beMap backendservice.BackendServicesMap) error {
+func (f *FakeURLMapSyncer) EnsureURLMap(lbName string, ing *v1beta1.Ingress, beMap backendservice.BackendServicesMap) (string, error) {
 	f.EnsuredURLMaps = append(f.EnsuredURLMaps, FakeURLMap{
 		LBName:  lbName,
 		Ingress: ing,
 		BeMap:   beMap,
 	})
-	return nil
+	return FakeUrlSelfLink, nil
 }

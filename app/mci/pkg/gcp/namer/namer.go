@@ -19,9 +19,11 @@ import (
 )
 
 const (
-	hcPrefix      = "hc"
-	backendPrefix = "be"
-	urlMapPrefix  = "um"
+	hcPrefix               = "hc"
+	backendPrefix          = "be"
+	urlMapPrefix           = "um"
+	targetHttpProxyPrefix  = "tp"
+	targetHttpsProxyPrefix = "tps"
 
 	// A delimiter used for clarity in naming GCE resources.
 	lbNameDelimiter = "--"
@@ -65,6 +67,14 @@ func (n *Namer) BeServiceName(port int64) string {
 
 func (n *Namer) URLMapName() string {
 	return n.decorateName(fmt.Sprintf("%v-%v", n.prefix, urlMapPrefix))
+}
+
+func (n *Namer) TargetHttpProxyName() string {
+	return n.decorateName(fmt.Sprintf("%v-%v", n.prefix, targetHttpProxyPrefix))
+}
+
+func (n *Namer) TargetHttpsProxyName() string {
+	return n.decorateName(fmt.Sprintf("%v-%v", n.prefix, targetHttpsProxyPrefix))
 }
 
 func (n *Namer) decorateName(name string) string {
