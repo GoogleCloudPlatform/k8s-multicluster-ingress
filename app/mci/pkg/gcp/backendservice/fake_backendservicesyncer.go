@@ -15,6 +15,7 @@
 package backendservice
 
 import (
+	"google.golang.org/api/compute/v1"
 	ingressbe "k8s.io/ingress-gce/pkg/backends"
 
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/mci/pkg/gcp/healthcheck"
@@ -22,7 +23,7 @@ import (
 
 type FakeBackendService struct {
 	LBName  string
-	Ports   []ingressbe.ServicePort
+	Port    ingressbe.ServicePort
 	HCMap   healthcheck.HealthChecksMap
 	NPMap   NamedPortsMap
 	IGLinks []string
@@ -41,13 +42,17 @@ func NewFakeBackendServiceSyncer() BackendServiceSyncerInterface {
 // Ensure this implements BackendServiceSyncerInterface.
 var _ BackendServiceSyncerInterface = &FakeBackendServiceSyncer{}
 
-func (h *FakeBackendServiceSyncer) EnsureBackendService(lbName string, ports []ingressbe.ServicePort, hcMap healthcheck.HealthChecksMap, npMap NamedPortsMap, igLinks []string) error {
-	h.EnsuredBackendServices = append(h.EnsuredBackendServices, FakeBackendService{
-		LBName:  lbName,
-		Ports:   ports,
-		HCMap:   hcMap,
-		NPMap:   npMap,
-		IGLinks: igLinks,
-	})
-	return nil
+func (h *FakeBackendServiceSyncer) EnsureBackendService(lbName string, ports []ingressbe.ServicePort, hcMap healthcheck.HealthChecksMap, npMap NamedPortsMap, igLinks []string) (BackendServicesMap, error) {
+	beMap := BackendServicesMap{}
+	for _, p := range ports {
+		h.EnsuredBackendServices = append(h.EnsuredBackendServices, FakeBackendService{
+			LBName:  lbName,
+			Port:    p,
+			HCMap:   hcMap,
+			NPMap:   npMap,
+			IGLinks: igLinks,
+		})
+		beMap[p.SvcName.Name] = &compute.BackendService{}
+	}
+	return beMap, nil
 }

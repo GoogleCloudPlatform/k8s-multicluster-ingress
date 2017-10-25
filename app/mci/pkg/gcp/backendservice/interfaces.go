@@ -24,8 +24,13 @@ import (
 // NamedPortsMap is a map of port number to the named port for that port.
 type NamedPortsMap map[int64]*compute.NamedPort
 
+// BackendServicesMap is a map from the kubernetes service name to the corresponding GCE backend service.
+type BackendServicesMap map[string]*compute.BackendService
+
 // BackendServiceSyncerInterface is an interface to manage GCP backend services.
 type BackendServiceSyncerInterface interface {
 	// EnsureBackendService ensures that the required backend services exist.
-	EnsureBackendService(lbName string, ports []ingressbe.ServicePort, hcMap healthcheck.HealthChecksMap, npMap NamedPortsMap, igLinks []string) error
+	// Returns a map of the ensured backend services.
+	// In case of no error, the map will contain services for all the given array of ports.
+	EnsureBackendService(lbName string, ports []ingressbe.ServicePort, hcMap healthcheck.HealthChecksMap, npMap NamedPortsMap, igLinks []string) (BackendServicesMap, error)
 }

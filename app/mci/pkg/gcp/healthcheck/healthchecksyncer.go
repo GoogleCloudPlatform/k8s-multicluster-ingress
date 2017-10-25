@@ -44,6 +44,7 @@ const (
 	DefaultTimeout = 1 * time.Minute
 )
 
+// HealthCheckSyncer manages GCP health checks for multicluster GCP L7 load balancers.
 type HealthCheckSyncer struct {
 	namer *utilsnamer.Namer
 	hcp   ingresshc.HealthCheckProvider

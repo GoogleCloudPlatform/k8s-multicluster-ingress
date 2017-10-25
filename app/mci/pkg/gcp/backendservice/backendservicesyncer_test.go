@@ -18,6 +18,7 @@ import (
 	"testing"
 
 	"google.golang.org/api/compute/v1"
+	"k8s.io/apimachinery/pkg/types"
 	ingressbe "k8s.io/ingress-gce/pkg/backends"
 
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/mci/pkg/gcp/healthcheck"
@@ -30,6 +31,7 @@ func TestEnsureBackendService(t *testing.T) {
 	portName := "portName"
 	igLink := "igLink"
 	hcLink := "hcLink"
+	kubeSvcName := "ingress-svc"
 	// Should create the backend service as expected.
 	bsp := ingressbe.NewFakeBackendServices(func(op int, be *compute.BackendService) error { return nil })
 	namer := utilsnamer.NewNamer("mci", lbName)
@@ -39,10 +41,11 @@ func TestEnsureBackendService(t *testing.T) {
 	if _, err := bsp.GetGlobalBackendService(beName); err == nil {
 		t.Fatalf("expected NotFound error, actual: nil")
 	}
-	err := bss.EnsureBackendService(lbName, []ingressbe.ServicePort{
+	beMap, err := bss.EnsureBackendService(lbName, []ingressbe.ServicePort{
 		{
 			Port:     port,
 			Protocol: "HTTP",
+			SvcName:  types.NamespacedName{Name: kubeSvcName},
 		},
 	}, healthcheck.HealthChecksMap{
 		port: &compute.HealthCheck{
@@ -58,10 +61,14 @@ func TestEnsureBackendService(t *testing.T) {
 		t.Fatalf("expected no error in ensuring backend service, actual: %v", err)
 	}
 	// Verify that the created backend service is as expected.
-	be, err := bsp.GetGlobalBackendService(beName)
+	_, err = bsp.GetGlobalBackendService(beName)
 	if err != nil {
 		t.Fatalf("expected nil error, actual: %v", err)
 	}
+	if len(beMap) != 1 || beMap[kubeSvcName] == nil {
+		t.Fatalf("unexpected backend service map: %v. Expected it to contain only the backend service for kube service %s", beMap, kubeSvcName)
+	}
+	be := beMap[kubeSvcName]
 	if len(be.HealthChecks) != 1 || be.HealthChecks[0] != hcLink {
 		t.Errorf("unexpected health check in backend service. expected: %s, got: %v", hcLink, be.HealthChecks)
 	}
