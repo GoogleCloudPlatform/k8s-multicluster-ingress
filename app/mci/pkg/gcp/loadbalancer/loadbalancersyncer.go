@@ -30,10 +30,12 @@ import (
 	kubeclient "k8s.io/client-go/kubernetes"
 	ingressbe "k8s.io/ingress-gce/pkg/backends"
 	ingressig "k8s.io/ingress-gce/pkg/instances"
+	ingresslb "k8s.io/ingress-gce/pkg/loadbalancers"
 	ingressutils "k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce"
 
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/mci/pkg/gcp/backendservice"
+	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/mci/pkg/gcp/forwardingrule"
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/mci/pkg/gcp/healthcheck"
 	utilsnamer "github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/mci/pkg/gcp/namer"
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/mci/pkg/gcp/targetproxy"
@@ -60,6 +62,10 @@ const (
 	// TODO(nikhiljindal): Refactor the code in kubernetes/ingress-gce to
 	// export it and then reuse it here.
 	instanceGroupsAnnotationKey = "ingress.gcp.kubernetes.io/instance-groups"
+
+	// Annotation key for user to specify the static IP to be used by this load balancer.
+	// TODO(nikhiljindal): Share this key with kubernetes/ingress-gce
+	staticIPNameKey = "kubernetes.io/ingress.global-static-ip-name"
 )
 
 // LoadBalancerSyncer manages the GCP resources necessary for an L7 GCP Load balancer.
@@ -73,10 +79,15 @@ type LoadBalancerSyncer struct {
 	ums urlmap.URLMapSyncerInterface
 	// Target proxy syncer to sync the required target proxy.
 	tps targetproxy.TargetProxySyncerInterface
+	// Forwarding rule syncer to sync the required forwarding rule.
+	frs forwardingrule.ForwardingRuleSyncerInterface
 	// kubernetes client to send requests to kubernetes apiserver.
 	client kubeclient.Interface
 	// Instance groups provider to call GCE APIs to manage GCE instance groups.
 	igp ingressig.InstanceGroups
+	// IP addresses provider to manage GCP IP addresses.
+	// We do not have a specific ip address provider interface, so we use the larger LoadBalancers interface.
+	ipp ingresslb.LoadBalancers
 }
 
 func NewLoadBalancerSyncer(lbName string, client kubeclient.Interface, cloud *gce.GCECloud) *LoadBalancerSyncer {
@@ -87,8 +98,10 @@ func NewLoadBalancerSyncer(lbName string, client kubeclient.Interface, cloud *gc
 		bss:    backendservice.NewBackendServiceSyncer(namer, cloud),
 		ums:    urlmap.NewURLMapSyncer(namer, cloud),
 		tps:    targetproxy.NewTargetProxySyncer(namer, cloud),
+		frs:    forwardingrule.NewForwardingRuleSyncer(namer, cloud),
 		client: client,
 		igp:    cloud,
+		ipp:    cloud,
 	}
 }
 
@@ -96,6 +109,11 @@ func NewLoadBalancerSyncer(lbName string, client kubeclient.Interface, cloud *gc
 func (l *LoadBalancerSyncer) CreateLoadBalancer(ing *v1beta1.Ingress, forceUpdate bool) error {
 	var err error
 	ports := l.ingToNodePorts(ing)
+	ipAddr, err := l.getIPAddress(ing)
+	if err != nil {
+		// No point continuing if the user has not specified a valid ip address.
+		return err
+	}
 	// Create health checks to be used by the backend service.
 	healthChecks, hcErr := l.hcs.EnsureHealthCheck(l.lbName, ports, forceUpdate)
 	if hcErr != nil {
@@ -118,12 +136,31 @@ func (l *LoadBalancerSyncer) CreateLoadBalancer(ing *v1beta1.Ingress, forceUpdat
 		// Aggregate errors and return all at the end.
 		err = multierror.Append(err, umErr)
 	}
-	tpErr := l.tps.EnsureTargetProxy(l.lbName, umLink)
+	tpLink, tpErr := l.tps.EnsureTargetProxy(l.lbName, umLink)
 	if tpErr != nil {
 		// Aggregate errors and return all at the end.
 		err = multierror.Append(err, tpErr)
 	}
+	frErr := l.frs.EnsureForwardingRule(l.lbName, ipAddr, tpLink)
+	if frErr != nil {
+		// Aggregate errors and return all at the end.
+		err = multierror.Append(err, frErr)
+	}
 	return err
+}
+
+func (l *LoadBalancerSyncer) getIPAddress(ing *v1beta1.Ingress) (string, error) {
+	if ing.ObjectMeta.Annotations == nil || ing.ObjectMeta.Annotations[staticIPNameKey] == "" {
+		// TODO(nikhiljindal): Add logic to reserve a new IP address if user has not specified any.
+		// If we do that then we should also add the new IP address as annotation to the ingress created in clusters.
+		return "", fmt.Errorf("No static ip specified. Multicluster ingresses require a pre-reserved static IP, which can be specified using %s annotation", staticIPNameKey)
+	}
+	ipName := ing.ObjectMeta.Annotations[staticIPNameKey]
+	ip, err := l.ipp.GetGlobalAddress(ipName)
+	if err != nil {
+		return "", fmt.Errorf("unexpected error in getting ip address %s: %s", ipName, err)
+	}
+	return ip.Address, nil
 }
 
 // Returns links to all instance groups and named ports on any one of them.

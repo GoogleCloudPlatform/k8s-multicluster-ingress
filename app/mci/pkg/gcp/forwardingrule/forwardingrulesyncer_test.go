@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package targetproxy
+package forwardingrule
 
 import (
 	"testing"
@@ -22,32 +22,33 @@ import (
 	utilsnamer "github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/mci/pkg/gcp/namer"
 )
 
-func TestEnsureTargetHttpProxy(t *testing.T) {
+func TestEnsureForwardingRule(t *testing.T) {
 	lbName := "lb-name"
-	umLink := "selfLink"
-	// Should create the target proxy as expected.
-	tpp := ingresslb.NewFakeLoadBalancers("")
+	ipAddr := "192.168.0.0"
+	tpLink := "fakeLink"
+	// Should create the forwarding rule as expected.
+	frp := ingresslb.NewFakeLoadBalancers("")
 	namer := utilsnamer.NewNamer("mci", lbName)
-	tpName := namer.TargetHttpProxyName()
-	tps := NewTargetProxySyncer(namer, tpp)
+	frName := namer.HttpForwardingRuleName()
+	frs := NewForwardingRuleSyncer(namer, frp)
 	// GET should return NotFound.
-	if _, err := tpp.GetTargetHttpProxy(tpName); err == nil {
+	if _, err := frp.GetGlobalForwardingRule(frName); err == nil {
 		t.Fatalf("expected NotFound error, got nil")
 	}
-	tpLink, err := tps.EnsureTargetProxy(lbName, umLink)
+	err := frs.EnsureForwardingRule(lbName, ipAddr, tpLink)
 	if err != nil {
-		t.Fatalf("expected no error in ensuring target proxy, actual: %v", err)
+		t.Fatalf("expected no error in ensuring forwarding rule, actual: %v", err)
 	}
-	// Verify that GET does not return NotFound.
-	tp, err := tpp.GetTargetHttpProxy(tpName)
+	// Verify that GET does not return NotFound and the returned forwarding rule is as expected.
+	fr, err := frp.GetGlobalForwardingRule(frName)
 	if err != nil {
 		t.Fatalf("expected nil error, actual: %v", err)
 	}
-	if tp.UrlMap != umLink {
-		t.Errorf("unexpected UrlMap link in target proxy. expected: %s, actual: %s", umLink, tp.UrlMap)
+	if fr.IPAddress != ipAddr {
+		t.Errorf("unexpected ip address. expected: %s, got: %s", ipAddr, fr.IPAddress)
 	}
-	if tp.SelfLink != tpLink {
-		t.Errorf("unexpected target proxy self link. expected: %s, got: %s", tpLink, tp.SelfLink)
+	if fr.Target != tpLink {
+		t.Errorf("unexpected target proxy link. expected: %s, got: %s", tpLink, fr.Target)
 	}
-	// TODO(nikhiljindal): Test update existing target proxy.
+	// TODO(nikhiljindal): Test update existing forwarding rule.
 }
