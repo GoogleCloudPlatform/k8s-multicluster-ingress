@@ -28,8 +28,10 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 	core "k8s.io/client-go/testing"
 	ingressig "k8s.io/ingress-gce/pkg/instances"
+	ingresslb "k8s.io/ingress-gce/pkg/loadbalancers"
 
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/mci/pkg/gcp/backendservice"
+	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/mci/pkg/gcp/forwardingrule"
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/mci/pkg/gcp/healthcheck"
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/mci/pkg/gcp/targetproxy"
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/mci/pkg/gcp/urlmap"
@@ -42,8 +44,10 @@ func newLoadBalancerSyncer(lbName string) *LoadBalancerSyncer {
 		bss:    backendservice.NewFakeBackendServiceSyncer(),
 		ums:    urlmap.NewFakeURLMapSyncer(),
 		tps:    targetproxy.NewFakeTargetProxySyncer(),
+		frs:    forwardingrule.NewFakeForwardingRuleSyncer(),
 		client: &fake.Clientset{},
 		igp:    ingressig.NewFakeInstanceGroups(nil),
+		ipp:    ingresslb.NewFakeLoadBalancers(""),
 	}
 }
 
@@ -56,6 +60,12 @@ func TestCreateLoadBalancer(t *testing.T) {
 	lbc := newLoadBalancerSyncer(lbName)
 	zoneLink := fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/fake-project/zones/%s", igZone)
 	expectedIGLink := fmt.Sprintf("%s/instanceGroups/%s", zoneLink, igName)
+	ipAddress := &compute.Address{
+		Name:    "ipAddressName",
+		Address: "192.168.0.0",
+	}
+	// Reserve a global address. User is supposed to do this before calling CreateLoadBalancer.
+	lbc.ipp.ReserveGlobalAddress(ipAddress)
 	// Create ingress with instance groups annotation.
 	annotationsValue := []struct {
 		Name string
@@ -76,6 +86,7 @@ func TestCreateLoadBalancer(t *testing.T) {
 			Namespace: "my-ns",
 			Annotations: map[string]string{
 				instanceGroupsAnnotationKey: string(jsonValue),
+				staticIPNameKey:             ipAddress.Name,
 			},
 		},
 		Spec: v1beta1.IngressSpec{
@@ -192,5 +203,23 @@ func TestCreateLoadBalancer(t *testing.T) {
 	tp := ftp.EnsuredTargetProxies[0]
 	if tp.UmLink != urlmap.FakeUrlSelfLink {
 		t.Errorf("unexpected url map link in target proxy. expected: %s, got: %s", urlmap.FakeUrlSelfLink, tp.UmLink)
+	}
+	// Verify that the expected forwarding rule was created.
+	ffr := lbc.frs.(*forwardingrule.FakeForwardingRuleSyncer)
+	if len(ffr.EnsuredForwardingRules) != 1 {
+		t.Fatalf("unexpected number of forwarding rules. expected: %d, got: %d", 1, len(ffr.EnsuredForwardingRules))
+	}
+	fr := ffr.EnsuredForwardingRules[0]
+	if fr.LBName != lbName {
+		t.Errorf("unexpected lbname in forwarding rule. expected: %s, got: %s", lbName, fr.LBName)
+	}
+	if fr.TPLink != targetproxy.FakeTargetProxySelfLink {
+		t.Errorf("unexpected target proxy link in forwarding rule. expected: %s, got: %s", targetproxy.FakeTargetProxySelfLink, fr.TPLink)
+	}
+	if fr.IPAddress != ipAddress.Address {
+		t.Errorf("unexpected ip address in forwarding rule. expected: %s, got: %s", ipAddress.Address, fr.IPAddress)
+	}
+	if fr.LBName != lbName {
+		t.Errorf("unexpected lbname in forwarding rule. expected: %s, got: %s", lbName, fr.LBName)
 	}
 }
