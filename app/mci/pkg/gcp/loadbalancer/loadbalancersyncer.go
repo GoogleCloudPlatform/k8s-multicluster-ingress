@@ -21,7 +21,7 @@ import (
 	"time"
 
 	"github.com/golang/glog"
-	"github.com/hashicorp/go-multierror"
+	multierror "github.com/hashicorp/go-multierror"
 	"k8s.io/api/core/v1"
 	"k8s.io/api/extensions/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -169,7 +169,8 @@ func (l *LoadBalancerSyncer) getIGsAndNamedPorts(ing *v1beta1.Ingress) ([]string
 		}
 		if ing.Annotations == nil || ing.Annotations[key] == "" {
 			// keep trying
-			fmt.Println("Waiting for ingress to get", key, "annotation.....")
+			fmt.Println("Waiting for ingress (", ing.Namespace, ":", ing.Name, ") to get", key, "annotation.....")
+			glog.Infof("Waiting for annotation. Current annotation(s):%+v\n", ing.Annotations)
 			continue
 		}
 		annotationValue := ing.Annotations[key]
@@ -185,7 +186,7 @@ func (l *LoadBalancerSyncer) getIGsAndNamedPorts(ing *v1beta1.Ingress) ([]string
 		}
 		if len(values) == 0 {
 			// keep trying
-			fmt.Printf("Waiting for ingress to get", key, "annotation.....")
+			fmt.Println("Waiting for ingress to get", key, "annotation...")
 			continue
 		}
 		// Compute link to all instance groups.
