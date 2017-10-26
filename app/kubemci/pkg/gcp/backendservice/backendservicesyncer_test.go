@@ -15,14 +15,17 @@
 package backendservice
 
 import (
+	"fmt"
 	"testing"
 
-	"google.golang.org/api/compute/v1"
+	compute "google.golang.org/api/compute/v1"
+
 	"k8s.io/apimachinery/pkg/types"
 	ingressbe "k8s.io/ingress-gce/pkg/backends"
 
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/healthcheck"
 	utilsnamer "github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/namer"
+	"github.com/golang/glog"
 )
 
 func TestEnsureBackendService(t *testing.T) {
@@ -30,7 +33,7 @@ func TestEnsureBackendService(t *testing.T) {
 	port := int64(32211)
 	portName := "portName"
 	igLink := "igLink"
-	hcLink := "hcLink"
+	//hcLink := "hcLink"
 	kubeSvcName := "ingress-svc"
 	// Should create the backend service as expected.
 	bsp := ingressbe.NewFakeBackendServices(func(op int, be *compute.BackendService) error { return nil })
@@ -41,43 +44,86 @@ func TestEnsureBackendService(t *testing.T) {
 	if _, err := bsp.GetGlobalBackendService(beName); err == nil {
 		t.Fatalf("expected NotFound error, actual: nil")
 	}
-	beMap, err := bss.EnsureBackendService(lbName, []ingressbe.ServicePort{
+
+	testCases := []struct {
+		desc string
+		// In's
+		hcLink      string
+		forceUpdate bool
+		// Out's
+		ensureErr bool
+	}{
 		{
-			Port:     port,
-			Protocol: "HTTP",
-			SvcName:  types.NamespacedName{Name: kubeSvcName},
+			desc:        "Initial BE Creation",
+			hcLink:      "hcLink",
+			forceUpdate: false,
+			ensureErr:   false,
 		},
-	}, healthcheck.HealthChecksMap{
-		port: &compute.HealthCheck{
-			SelfLink: hcLink,
+		{
+			desc:        "BE Creation- no work to do",
+			hcLink:      "hcLink",
+			forceUpdate: false,
+			ensureErr:   false,
 		},
-	}, NamedPortsMap{
-		port: &compute.NamedPort{
-			Port: port,
-			Name: portName,
+		{
+			desc:        "description",
+			hcLink:      "different hcLink",
+			forceUpdate: true,
+			ensureErr:   false,
 		},
-	}, []string{igLink})
-	if err != nil {
-		t.Fatalf("expected no error in ensuring backend service, actual: %v", err)
+		{
+			desc:        "description",
+			hcLink:      "hcLink the 3rd",
+			forceUpdate: false,
+			ensureErr:   true,
+		},
 	}
-	// Verify that the created backend service is as expected.
-	_, err = bsp.GetGlobalBackendService(beName)
-	if err != nil {
-		t.Fatalf("expected nil error, actual: %v", err)
-	}
-	if len(beMap) != 1 || beMap[kubeSvcName] == nil {
-		t.Fatalf("unexpected backend service map: %v. Expected it to contain only the backend service for kube service %s", beMap, kubeSvcName)
-	}
-	be := beMap[kubeSvcName]
-	if len(be.HealthChecks) != 1 || be.HealthChecks[0] != hcLink {
-		t.Errorf("unexpected health check in backend service. expected: %s, got: %v", hcLink, be.HealthChecks)
-	}
-	if be.Port != port || be.PortName != portName {
-		t.Errorf("unexpected port and port name, expected: %s/%s, got: %s/%s", portName, port, be.PortName, be.Port)
-	}
-	if len(be.Backends) != 1 || be.Backends[0].Group != igLink {
-		t.Errorf("unexpected backends in backend service. expected one backend for %s, got: %v", igLink, be.Backends)
-	}
+
+	for _, c := range testCases {
+		glog.Infof("test cases.")
+		fmt.Println("test case starting---------------------")
+		beMap, err := bss.EnsureBackendService(lbName, []ingressbe.ServicePort{
+			{
+				Port:     port,
+				Protocol: "HTTP",
+				SvcName:  types.NamespacedName{Name: kubeSvcName},
+			},
+		}, healthcheck.HealthChecksMap{
+			port: &compute.HealthCheck{
+				SelfLink: c.hcLink,
+			},
+		}, NamedPortsMap{
+			port: &compute.NamedPort{
+				Port: port,
+				Name: portName,
+			},
+		}, []string{igLink}, c.forceUpdate)
+		if (err != nil) != c.ensureErr {
+			t.Fatalf("expected an error, got:%v, in ensuring backend service, actual: %v", err)
+		}
+		if c.ensureErr {
+			// Can't do validation if we expected an error.
+			continue
+		}
+		_, err = bsp.GetGlobalBackendService(beName)
+		if err != nil {
+			t.Fatalf("expected nil GetGlobalBackendSvc error, actual: %v", err)
+		}
+		if len(beMap) != 1 || beMap[kubeSvcName] == nil {
+			t.Fatalf("unexpected backend service map: %v. Expected it to contain only the backend service for kube service %s", beMap, kubeSvcName)
+		}
+		be := beMap[kubeSvcName]
+		if len(be.HealthChecks) != 1 || be.HealthChecks[0] != c.hcLink {
+			t.Errorf("unexpected health check in backend service. expected: %s, got: %v", c.hcLink, be.HealthChecks)
+		}
+		if be.Port != port || be.PortName != portName {
+			t.Errorf("unexpected port and port name, expected: %s/%s, got: %s/%s", portName, port, be.PortName, be.Port)
+		}
+		if len(be.Backends) != 1 || be.Backends[0].Group != igLink {
+			t.Errorf("unexpected backends in backend service. expected one backend for %s, got: %v", igLink, be.Backends)
+		}
+	} // end test case loop
+
 	// TODO(nikhiljindal): Test update existing backend service.
 }
 
