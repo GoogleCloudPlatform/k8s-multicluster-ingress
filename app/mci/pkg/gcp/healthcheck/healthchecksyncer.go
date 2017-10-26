@@ -19,9 +19,10 @@ import (
 	"reflect"
 	"time"
 
+	compute "google.golang.org/api/compute/v1"
+
 	"github.com/golang/glog"
-	"github.com/hashicorp/go-multierror"
-	"google.golang.org/api/compute/v1"
+	multierror "github.com/hashicorp/go-multierror"
 	ingressbe "k8s.io/ingress-gce/pkg/backends"
 	ingresshc "k8s.io/ingress-gce/pkg/healthchecks"
 
@@ -102,8 +103,9 @@ func (h *HealthCheckSyncer) ensureHealthCheck(lbName string, port ingressbe.Serv
 			fmt.Println("Updating existing health check", name, "to match the desired state")
 			return h.updateHealthCheck(&desiredHC)
 		} else {
-			// TODO(G-Harmon): Show diff to user and prompt yes/no for overwriting.
-			fmt.Println("Will not overwrite a differing health check without the --force flag.")
+			// TODO(G-Harmon): prompt yes/no for overwriting.
+			fmt.Println("Will not overwrite this differing health check without the --force flag.")
+			fmt.Printf("Existing check:\n%+v\nNew check:\n%+v\n", existingHC, desiredHC)
 			return nil, fmt.Errorf("will not overwrite healthcheck without --force")
 		}
 	}
@@ -173,6 +175,7 @@ func (h *HealthCheckSyncer) desiredHealthCheck(lbName string, port ingressbe.Ser
 		// Number of healthchecks to fail before the vm is deemed unhealthy.
 		UnhealthyThreshold: DefaultUnhealthyThreshold,
 		Type:               string(port.Protocol),
+		// TODO: Try Kind: compute#healthCheck
 	}
 	switch port.Protocol {
 	case "HTTP":
