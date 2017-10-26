@@ -36,6 +36,7 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/mci/pkg/gcp/backendservice"
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/mci/pkg/gcp/healthcheck"
 	utilsnamer "github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/mci/pkg/gcp/namer"
+	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/mci/pkg/gcp/targetproxy"
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/mci/pkg/gcp/urlmap"
 )
 
@@ -70,6 +71,8 @@ type LoadBalancerSyncer struct {
 	bss backendservice.BackendServiceSyncerInterface
 	// URL map syncer to sync the required URL map.
 	ums urlmap.URLMapSyncerInterface
+	// Target proxy syncer to sync the required target proxy.
+	tps targetproxy.TargetProxySyncerInterface
 	// kubernetes client to send requests to kubernetes apiserver.
 	client kubeclient.Interface
 	// Instance groups provider to call GCE APIs to manage GCE instance groups.
@@ -83,6 +86,7 @@ func NewLoadBalancerSyncer(lbName string, client kubeclient.Interface, cloud *gc
 		hcs:    healthcheck.NewHealthCheckSyncer(namer, cloud),
 		bss:    backendservice.NewBackendServiceSyncer(namer, cloud),
 		ums:    urlmap.NewURLMapSyncer(namer, cloud),
+		tps:    targetproxy.NewTargetProxySyncer(namer, cloud),
 		client: client,
 		igp:    cloud,
 	}
@@ -109,10 +113,15 @@ func (l *LoadBalancerSyncer) CreateLoadBalancer(ing *v1beta1.Ingress, forceUpdat
 		// Aggregate errors and return all at the end.
 		err = multierror.Append(err, beErr)
 	}
-	umErr := l.ums.EnsureURLMap(l.lbName, ing, backendServices)
+	umLink, umErr := l.ums.EnsureURLMap(l.lbName, ing, backendServices)
 	if umErr != nil {
 		// Aggregate errors and return all at the end.
 		err = multierror.Append(err, umErr)
+	}
+	tpErr := l.tps.EnsureTargetProxy(l.lbName, umLink)
+	if tpErr != nil {
+		// Aggregate errors and return all at the end.
+		err = multierror.Append(err, tpErr)
 	}
 	return err
 }

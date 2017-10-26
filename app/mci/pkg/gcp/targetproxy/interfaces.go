@@ -12,18 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package urlmap
+package targetproxy
 
-import (
-	"k8s.io/api/extensions/v1beta1"
-
-	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/mci/pkg/gcp/backendservice"
-)
-
-// URLMapSyncerInterface is an interface to manage GCP url maps.
-type URLMapSyncerInterface interface {
-	// EnsureURLMap ensures that the required url map exists for the given ingress.
-	// Uses beMap to extract the backend services to link to in the url map.
-	// Returns the self link for the ensured url map.
-	EnsureURLMap(lbName string, ing *v1beta1.Ingress, beMap backendservice.BackendServicesMap) (string, error)
+// TargetProxySyncerInterface is an interface to manage GCP target proxies.
+type TargetProxySyncerInterface interface {
+	// EnsureTargetProxy ensures that the required target proxy exists for the given load balancer and url map link.
+	EnsureTargetProxy(lbName, urlMapLink string) error
 }

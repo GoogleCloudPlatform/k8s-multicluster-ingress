@@ -31,6 +31,7 @@ import (
 
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/mci/pkg/gcp/backendservice"
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/mci/pkg/gcp/healthcheck"
+	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/mci/pkg/gcp/targetproxy"
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/mci/pkg/gcp/urlmap"
 )
 
@@ -40,6 +41,7 @@ func newLoadBalancerSyncer(lbName string) *LoadBalancerSyncer {
 		hcs:    healthcheck.NewFakeHealthCheckSyncer(),
 		bss:    backendservice.NewFakeBackendServiceSyncer(),
 		ums:    urlmap.NewFakeURLMapSyncer(),
+		tps:    targetproxy.NewFakeTargetProxySyncer(),
 		client: &fake.Clientset{},
 		igp:    ingressig.NewFakeInstanceGroups(nil),
 	}
@@ -137,11 +139,11 @@ func TestCreateLoadBalancer(t *testing.T) {
 	}
 	getSvcName := actions[0].(core.GetAction).GetName()
 	if getSvcName != "my-svc" {
-		t.Fatalf("unexpected get for %s, expected: my-svc", getSvcName)
+		t.Errorf("unexpected get for %s, expected: my-svc", getSvcName)
 	}
 	getIngName := actions[1].(core.GetAction).GetName()
 	if getIngName != ing.Name {
-		t.Fatalf("unexpected get for %s, expected: %s", getIngName, ing.Name)
+		t.Errorf("unexpected get for %s, expected: %s", getIngName, ing.Name)
 	}
 	// Verify that the expected healthcheck was created.
 	fhc := lbc.hcs.(*healthcheck.FakeHealthCheckSyncer)
@@ -150,7 +152,7 @@ func TestCreateLoadBalancer(t *testing.T) {
 	}
 	hc := fhc.EnsuredHealthChecks[0]
 	if hc.LBName != lbName || hc.Port.Port != nodePort {
-		t.Fatalf("unexpected health check: %v\nexpected: lbname: %s, port: %d", hc, lbName, nodePort)
+		t.Errorf("unexpected health check: %v\nexpected: lbname: %s, port: %d", hc, lbName, nodePort)
 	}
 	// Verify that the expected backend service was created.
 	fbs := lbc.bss.(*backendservice.FakeBackendServiceSyncer)
@@ -180,6 +182,15 @@ func TestCreateLoadBalancer(t *testing.T) {
 	}
 	um := fum.EnsuredURLMaps[0]
 	if hc.LBName != lbName {
-		t.Fatalf("unexpected url map: %v\nexpected: lbname: %s", um, lbName)
+		t.Errorf("unexpected url map: %v\nexpected: lbname: %s", um, lbName)
+	}
+	// Verify that the expected target proxy was created.
+	ftp := lbc.tps.(*targetproxy.FakeTargetProxySyncer)
+	if len(ftp.EnsuredTargetProxies) != 1 {
+		t.Fatalf("unexpected number of target proxies. expected: %d, got: %d", 1, len(ftp.EnsuredTargetProxies))
+	}
+	tp := ftp.EnsuredTargetProxies[0]
+	if tp.UmLink != urlmap.FakeUrlSelfLink {
+		t.Errorf("unexpected url map link in target proxy. expected: %s, got: %s", urlmap.FakeUrlSelfLink, tp.UmLink)
 	}
 }

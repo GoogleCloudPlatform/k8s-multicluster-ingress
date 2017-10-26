@@ -56,12 +56,12 @@ var _ URLMapSyncerInterface = &URLMapSyncer{}
 
 // EnsureURLMap ensures that the required url map exists.
 // Does nothing if it exists already, else creates a new one.
-func (s *URLMapSyncer) EnsureURLMap(lbName string, ing *v1beta1.Ingress, beMap backendservice.BackendServicesMap) error {
+func (s *URLMapSyncer) EnsureURLMap(lbName string, ing *v1beta1.Ingress, beMap backendservice.BackendServicesMap) (string, error) {
 	fmt.Println("Ensuring url map")
 	var err error
 	desiredUM, err := s.desiredURLMap(lbName, ing, beMap)
 	if err != nil {
-		return fmt.Errorf("error %s in computing desired url map", err)
+		return "", fmt.Errorf("error %s in computing desired url map", err)
 	}
 	name := desiredUM.Name
 	// Check if url map already exists.
@@ -73,7 +73,7 @@ func (s *URLMapSyncer) EnsureURLMap(lbName string, ing *v1beta1.Ingress, beMap b
 		if urlMapMatches(desiredUM, existingUM) {
 			// Nothing to do. Desired url map exists already.
 			fmt.Println("Desired url map exists already")
-			return nil
+			return existingUM.SelfLink, nil
 		}
 		// TODO: Require explicit permission from user before doing this.
 		return s.updateURLMap(desiredUM)
@@ -84,27 +84,35 @@ func (s *URLMapSyncer) EnsureURLMap(lbName string, ing *v1beta1.Ingress, beMap b
 	return s.createURLMap(desiredUM)
 }
 
-func (s *URLMapSyncer) updateURLMap(desiredUM *compute.UrlMap) error {
+func (s *URLMapSyncer) updateURLMap(desiredUM *compute.UrlMap) (string, error) {
 	name := desiredUM.Name
 	fmt.Println("Updating existing url map", name, "to match the desired state")
 	err := s.ump.UpdateUrlMap(desiredUM)
 	if err != nil {
-		return err
+		return "", err
 	}
 	fmt.Println("URL Map", name, "updated successfully")
-	return nil
+	um, err := s.ump.GetUrlMap(name)
+	if err != nil {
+		return "", err
+	}
+	return um.SelfLink, nil
 }
 
-func (s *URLMapSyncer) createURLMap(desiredUM *compute.UrlMap) error {
+func (s *URLMapSyncer) createURLMap(desiredUM *compute.UrlMap) (string, error) {
 	name := desiredUM.Name
 	fmt.Println("Creating url map", name)
 	glog.V(5).Infof("Creating url map %v", desiredUM)
 	err := s.ump.CreateUrlMap(desiredUM)
 	if err != nil {
-		return err
+		return "", err
 	}
 	fmt.Println("URL Map", name, "created successfully")
-	return nil
+	um, err := s.ump.GetUrlMap(name)
+	if err != nil {
+		return "", err
+	}
+	return um.SelfLink, nil
 }
 
 func urlMapMatches(desiredUM, existingUM *compute.UrlMap) bool {
