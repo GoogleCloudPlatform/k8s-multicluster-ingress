@@ -113,7 +113,7 @@ func (l *LoadBalancerSyncer) CreateLoadBalancer(ing *v1beta1.Ingress, forceUpdat
 		return multierror.Append(err, igErr)
 	}
 	// Create backend service. This should always be called after the health check since backend service needs to point to the health check.
-	backendServices, beErr := l.bss.EnsureBackendService(l.lbName, ports, healthChecks, namedPorts, igs)
+	backendServices, beErr := l.bss.EnsureBackendService(l.lbName, ports, healthChecks, namedPorts, igs, forceUpdate)
 	if beErr != nil {
 		// Aggregate errors and return all at the end.
 		err = multierror.Append(err, beErr)

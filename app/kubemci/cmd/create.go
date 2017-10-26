@@ -23,7 +23,7 @@ import (
 
 	"github.com/ghodss/yaml"
 	"github.com/golang/glog"
-	"github.com/hashicorp/go-multierror"
+	multierror "github.com/hashicorp/go-multierror"
 	"github.com/spf13/cobra"
 	"k8s.io/api/extensions/v1beta1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -197,7 +197,7 @@ func createIngressInClusters(kubeconfig, ingressFilename string, clusters []stri
 	// TODO(nikhiljindal): Validate and optionally add the gce-multi-cluster class annotation to the ingress YAML spec.
 	var err error
 	for _, c := range clusters {
-		fmt.Println("\nHandling context:", c)
+		glog.V(4).Infof("Creating Ingress for cluster: %v...", c)
 		client, clientErr := getClientset(kubeconfig, c)
 		if clientErr != nil {
 			err = multierror.Append(err, fmt.Errorf("Error getting kubectl client interface for context %s:", c, clientErr))
@@ -215,6 +215,7 @@ func createIngressInClusters(kubeconfig, ingressFilename string, clusters []stri
 				err = multierror.Append(err, fmt.Errorf("Error in creating ingress in cluster %s: %s", c, createErr))
 			}
 		}
+		fmt.Println("Created Ingress for cluster:", c)
 	}
 	return clients, err
 }

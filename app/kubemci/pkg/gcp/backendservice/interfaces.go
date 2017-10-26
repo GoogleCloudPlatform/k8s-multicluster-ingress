@@ -15,7 +15,7 @@
 package backendservice
 
 import (
-	"google.golang.org/api/compute/v1"
+	compute "google.golang.org/api/compute/v1"
 	ingressbe "k8s.io/ingress-gce/pkg/backends"
 
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/healthcheck"
@@ -29,10 +29,12 @@ type BackendServicesMap map[string]*compute.BackendService
 
 // BackendServiceSyncerInterface is an interface to manage GCP backend services.
 type BackendServiceSyncerInterface interface {
-	// EnsureBackendService ensures that the required backend services exist.
+	// EnsureBackendService ensures that the required backend services
+	// exist. forceUpdate must be true in order to modify an existing
+	// BackendService.
 	// Returns a map of the ensured backend services.
 	// In case of no error, the map will contain services for all the given array of ports.
-	EnsureBackendService(lbName string, ports []ingressbe.ServicePort, hcMap healthcheck.HealthChecksMap, npMap NamedPortsMap, igLinks []string) (BackendServicesMap, error)
+	EnsureBackendService(lbName string, ports []ingressbe.ServicePort, hcMap healthcheck.HealthChecksMap, npMap NamedPortsMap, igLinks []string, forceUpdate bool) (BackendServicesMap, error)
 	// DeleteBackendServices deletes all backend services that would have been created by EnsureBackendService.
 	DeleteBackendServices(ports []ingressbe.ServicePort) error
 }
