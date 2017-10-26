@@ -21,7 +21,7 @@ import (
 )
 
 const (
-	FakeUrlSelfLink = "selfLink"
+	FakeUrlSelfLink = "url/map/self/link"
 )
 
 type FakeURLMap struct {

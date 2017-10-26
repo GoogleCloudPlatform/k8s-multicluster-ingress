@@ -12,11 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package targetproxy
+package forwardingrule
 
-// TargetProxySyncerInterface is an interface to manage GCP target proxies.
-type TargetProxySyncerInterface interface {
-	// EnsureTargetProxy ensures that the required target proxy exists for the given load balancer and url map link.
-	// Returns the self link for the ensured proxy.
-	EnsureTargetProxy(lbName, urlMapLink string) (string, error)
+// ForwardingRuleSyncerInterface is an interface to manage GCP forwarding rules.
+type ForwardingRuleSyncerInterface interface {
+	// EnsureForwardingRule ensures that the required forwarding rule exists.
+	EnsureForwardingRule(lbName, ipAddress, targetProxyLink string) error
 }

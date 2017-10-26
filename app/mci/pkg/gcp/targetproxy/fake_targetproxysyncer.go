@@ -14,6 +14,10 @@
 
 package targetproxy
 
+const (
+	FakeTargetProxySelfLink = "target/proxy/self/link"
+)
+
 type FakeTargetProxy struct {
 	LBName string
 	UmLink string
@@ -32,10 +36,10 @@ func NewFakeTargetProxySyncer() TargetProxySyncerInterface {
 // Ensure this implements TargetProxySyncerInterface.
 var _ TargetProxySyncerInterface = &FakeTargetProxySyncer{}
 
-func (f *FakeTargetProxySyncer) EnsureTargetProxy(lbName, umLink string) error {
+func (f *FakeTargetProxySyncer) EnsureTargetProxy(lbName, umLink string) (string, error) {
 	f.EnsuredTargetProxies = append(f.EnsuredTargetProxies, FakeTargetProxy{
 		LBName: lbName,
 		UmLink: umLink,
 	})
-	return nil
+	return FakeTargetProxySelfLink, nil
 }
