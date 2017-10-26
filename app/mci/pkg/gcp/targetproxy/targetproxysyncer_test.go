@@ -34,7 +34,7 @@ func TestEnsureTargetHttpProxy(t *testing.T) {
 	if _, err := tpp.GetTargetHttpProxy(tpName); err == nil {
 		t.Fatalf("expected NotFound error, got nil")
 	}
-	tpLink, err := tps.EnsureTargetProxy(lbName, umLink)
+	tpLink, err := tps.EnsureHttpTargetProxy(lbName, umLink)
 	if err != nil {
 		t.Fatalf("expected no error in ensuring target proxy, actual: %v", err)
 	}

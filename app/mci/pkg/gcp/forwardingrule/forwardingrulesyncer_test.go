@@ -22,7 +22,7 @@ import (
 	utilsnamer "github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/mci/pkg/gcp/namer"
 )
 
-func TestEnsureForwardingRule(t *testing.T) {
+func TestEnsureHttpForwardingRule(t *testing.T) {
 	lbName := "lb-name"
 	ipAddr := "192.168.0.0"
 	tpLink := "fakeLink"
@@ -35,7 +35,7 @@ func TestEnsureForwardingRule(t *testing.T) {
 	if _, err := frp.GetGlobalForwardingRule(frName); err == nil {
 		t.Fatalf("expected NotFound error, got nil")
 	}
-	err := frs.EnsureForwardingRule(lbName, ipAddr, tpLink)
+	err := frs.EnsureHttpForwardingRule(lbName, ipAddr, tpLink)
 	if err != nil {
 		t.Fatalf("expected no error in ensuring forwarding rule, actual: %v", err)
 	}

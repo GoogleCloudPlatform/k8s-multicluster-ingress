@@ -27,6 +27,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/client-go/kubernetes/fake"
 	core "k8s.io/client-go/testing"
+	"k8s.io/ingress-gce/pkg/annotations"
 	ingressig "k8s.io/ingress-gce/pkg/instances"
 	ingresslb "k8s.io/ingress-gce/pkg/loadbalancers"
 
@@ -85,8 +86,8 @@ func TestCreateLoadBalancer(t *testing.T) {
 			Name:      "my-ing",
 			Namespace: "my-ns",
 			Annotations: map[string]string{
-				instanceGroupsAnnotationKey: string(jsonValue),
-				staticIPNameKey:             ipAddress.Name,
+				annotations.InstanceGroupsAnnotationKey: string(jsonValue),
+				annotations.StaticIPNameKey:             ipAddress.Name,
 			},
 		},
 		Spec: v1beta1.IngressSpec{
