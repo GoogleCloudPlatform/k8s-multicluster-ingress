@@ -20,8 +20,10 @@ import (
 	"strings"
 	"testing"
 
+	"k8s.io/apimachinery/pkg/runtime"
 	kubeclient "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/fake"
+	core "k8s.io/client-go/testing"
 )
 
 type ExpectedCommand struct {
@@ -30,9 +32,9 @@ type ExpectedCommand struct {
 	Err    error
 }
 
-func run(expectedCmds []ExpectedCommand, runFn func() error) error {
-	getClientset = func(kubeconfigPath string) (kubeclient.Interface, error) {
-		return &fake.Clientset{}, nil
+func run(fakeClient *fake.Clientset, expectedCmds []ExpectedCommand, runFn func() error) error {
+	getClientset = func(kubeconfigPath, context string) (kubeclient.Interface, error) {
+		return fakeClient, nil
 	}
 
 	i := 0
@@ -52,7 +54,7 @@ func run(expectedCmds []ExpectedCommand, runFn func() error) error {
 		return err
 	}
 	if i != len(expectedCmds) {
-		return fmt.Errorf("expected commands not called: %s", expectedCmds[i:])
+		return fmt.Errorf("expected [commands, outputs, errs] not called: %s", expectedCmds[i:])
 	}
 	return nil
 }
@@ -100,6 +102,11 @@ func TestValidateArgs(t *testing.T) {
 }
 
 func TestCreateIngress(t *testing.T) {
+	fakeClient := fake.Clientset{}
+	fakeClient.AddReactor("create", "ingresses", func(action core.Action) (handled bool, ret runtime.Object, err error) {
+		return true, ret, nil
+	})
+
 	runFn := func() error {
 		return createIngress("kubeconfig", "../../../testdata/ingress.yaml")
 	}
@@ -109,18 +116,19 @@ func TestCreateIngress(t *testing.T) {
 			Output: "context-1\ncontext-2",
 			Err:    nil,
 		},
-		{
-			Args:   []string{"kubectl", "--kubeconfig=kubeconfig", "create", "--filename=../../../testdata/ingress.yaml", "--context=context-1"},
-			Output: "ingress created",
-			Err:    nil,
-		},
-		{
-			Args:   []string{"kubectl", "--kubeconfig=kubeconfig", "create", "--filename=../../../testdata/ingress.yaml", "--context=context-2"},
-			Output: "ingress created",
-			Err:    nil,
-		},
 	}
-	if err := run(expectedCommands, runFn); err != nil {
+	if err := run(&fakeClient, expectedCommands, runFn); err != nil {
 		t.Errorf("%s", err)
+	}
+	actions := fakeClient.Actions()
+	if len(actions) != 2 {
+		t.Errorf("Expected 2 actions: Create Ingress 1, Create Ingress 2. Got:%v", actions)
+	}
+	if !actions[0].Matches("create", "ingresses") {
+		t.Errorf("Expected ingress creation.")
+	}
+	// TODO(G-Harmon): Add some verification of the Ingresses.
+	if !actions[1].Matches("create", "ingresses") {
+		t.Errorf("Expected ingress creation.")
 	}
 }

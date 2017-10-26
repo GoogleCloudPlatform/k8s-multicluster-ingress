@@ -25,7 +25,9 @@ import (
 	"github.com/golang/glog"
 	"github.com/spf13/cobra"
 	"k8s.io/api/extensions/v1beta1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	kubeclient "k8s.io/client-go/kubernetes"
+	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 	"k8s.io/client-go/tools/clientcmd"
 
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/mci/pkg/gcp/cloudinterface"
@@ -47,15 +49,16 @@ var executeCommand = func(args []string) (string, error) {
 }
 
 // Extracted out here to allow overriding in tests.
-var getClientset = func(kubeconfigPath string) (kubeclient.Interface, error) {
+var getClientset = func(kubeconfigPath, contextName string) (kubeclient.Interface, error) {
 	loadingRules := clientcmd.NewDefaultClientConfigLoadingRules()
 	if kubeconfigPath != "" {
 		loadingRules.ExplicitPath = kubeconfigPath
 	}
-	loader := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(loadingRules, &clientcmd.ConfigOverrides{})
+	loader := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(loadingRules, &clientcmd.ConfigOverrides{CurrentContext: contextName})
 
 	clientConfig, err := loader.ClientConfig()
 	if err != nil {
+		fmt.Println("getClientset: error getting Client Config:", err)
 		return nil, err
 	}
 
@@ -106,8 +109,9 @@ func AddFlags(cmd *cobra.Command, options *CreateOptions) error {
 	cmd.Flags().StringVarP(&options.IngressFilename, "ingress", "i", options.IngressFilename, "filename containing ingress spec")
 	cmd.Flags().StringVarP(&options.Kubeconfig, "kubeconfig", "k", options.Kubeconfig, "path to kubeconfig")
 	cmd.Flags().StringVarP(&options.GCPProject, "gcp-project", "", options.GCPProject, "name of the gcp project")
-	// TODO Add a verbose flag that turns on glog logging.
 	cmd.Flags().BoolVarP(&options.ForceUpdate, "force", "f", options.ForceUpdate, "overwrite existing settings if they are different.")
+	// TODO Add a verbose flag that turns on glog logging, or figure out how
+	// to accept glog flags in addition to the cobra flags.
 	return nil
 }
 
@@ -133,7 +137,7 @@ func RunCreate(options *CreateOptions, args []string) error {
 	if err := unmarshall(options.IngressFilename, &ing); err != nil {
 		return fmt.Errorf("error in unmarshalling the yaml file %s, err: %s", options.IngressFilename, err)
 	}
-	clientset, err := getClientset(options.Kubeconfig)
+	clientset, err := getClientset(options.Kubeconfig, "" /*contextName*/)
 	if err != nil {
 		return fmt.Errorf("unexpected error in instantiating clientset: %v", err)
 	}
@@ -173,25 +177,35 @@ func getClusters(kubeconfig string) ([]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("error in getting contexts from kubeconfig: %s", err)
 	}
+	glog.V(5).Infof("Contexts found:\n%v", output)
 	return strings.Split(output, "\n"), nil
 }
 
 // Creates the given ingress in the given list of clusters.
 func createIngressInClusters(kubeconfig, ingressFilename string, clusters []string) error {
-	kubectlArgs := []string{"kubectl"}
-	if kubeconfig != "" {
-		kubectlArgs = append(kubectlArgs, fmt.Sprintf("--kubeconfig=%s", kubeconfig))
+	var ing v1beta1.Ingress
+	if err := unmarshall(ingressFilename, &ing); err != nil {
+		return fmt.Errorf("error in unmarshalling the yaml file %s, err: %s", ingressFilename, err)
 	}
+	glog.V(5).Infof("Unmarshaled this ingress:\n%+v", ing)
+
 	// TODO(nikhiljindal): Validate and optionally add the gce-multi-cluster class annotation to the ingress YAML spec.
-	createArgs := append(kubectlArgs, []string{"create", fmt.Sprintf("--filename=%s", ingressFilename)}...)
 	for _, c := range clusters {
-		fmt.Println("Creating ingress in context:", c)
-		contextArgs := append(createArgs, fmt.Sprintf("--context=%s", c))
-		output, err := runCommand(contextArgs)
+		fmt.Println("\nHandling context:", c)
+		client, err := getClientset(kubeconfig, c)
 		if err != nil {
-			// TODO(nikhiljindal): Continue if this is an ingress already exists error.
-			glog.V(2).Infof("error in running command: %s", strings.Join(contextArgs, " "))
-			return fmt.Errorf("error in creating ingress in cluster %s: %s, output: %s", c, err, output)
+			fmt.Println("Error getting kubectl client interface:", err)
+			return err
+		}
+		glog.V(3).Infof("Using this namespace for ingress: %v", ing.Namespace)
+		actualIng, err := client.Extensions().Ingresses(ing.Namespace).Create(&ing)
+		glog.V(2).Infof("Ingress Create returned: err:%v. Actual Ingress:%+v", err, actualIng)
+		if err != nil {
+			if errors.IsAlreadyExists(err) {
+				fmt.Println("Ingress already exists; moving on.")
+			} else {
+				return fmt.Errorf("Error in creating ingress in cluster %s: %s", c, err)
+			}
 		}
 	}
 	return nil

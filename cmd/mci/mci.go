@@ -27,6 +27,7 @@ func main() {
 	// Workaround for https://github.com/kubernetes/kubernetes/issues/17162
 	flag.Parse()
 	if glog.V(2) {
+		fmt.Println("Turning on debug logging to STDERR")
 		flag.Set("logtostderr", "true")
 	}
 
