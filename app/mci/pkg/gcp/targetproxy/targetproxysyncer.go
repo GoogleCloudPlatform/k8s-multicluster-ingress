@@ -43,22 +43,23 @@ var _ TargetProxySyncerInterface = &TargetProxySyncer{}
 
 // EnsureTargetProxy ensures that the required target proxies exist for the given url map.
 // Does nothing if it exists already, else creates a new one.
-func (s *TargetProxySyncer) EnsureTargetProxy(lbName, umLink string) error {
+func (s *TargetProxySyncer) EnsureTargetProxy(lbName, umLink string) (string, error) {
 	fmt.Println("Ensuring target proxies")
 	// TODO(nikhiljindal): Support creating https proxies.
 	fmt.Println("Warning: We create http proxies only, even if https was requested.")
 	var err error
-	if httpProxyErr := s.ensureHttpProxy(lbName, umLink); httpProxyErr != nil {
+	tpLink, httpProxyErr := s.ensureHttpProxy(lbName, umLink)
+	if httpProxyErr != nil {
 		httpProxyErr = fmt.Errorf("Error in ensuring http target proxy: %s", httpProxyErr)
 		// Try ensuring both http and https target proxies and return all errors at once.
 		err = multierror.Append(err, httpProxyErr)
 	}
-	return err
+	return tpLink, err
 }
 
 // ensureHttpProxy ensures that the required target proxy exists for the given port.
 // Does nothing if it exists already, else creates a new one.
-func (s *TargetProxySyncer) ensureHttpProxy(lbName, umLink string) error {
+func (s *TargetProxySyncer) ensureHttpProxy(lbName, umLink string) (string, error) {
 	fmt.Println("Ensuring target http proxy")
 	desiredHttpProxy := s.desiredHttpTargetProxy(lbName, umLink)
 	name := desiredHttpProxy.Name
@@ -71,7 +72,7 @@ func (s *TargetProxySyncer) ensureHttpProxy(lbName, umLink string) error {
 		if targetHttpProxyMatches(desiredHttpProxy, existingHttpProxy) {
 			// Nothing to do. Desired target proxy exists already.
 			fmt.Println("Desired target proxy exists already")
-			return nil
+			return existingHttpProxy.SelfLink, nil
 		}
 		// TODO (nikhiljindal): Require explicit permission from user before doing this.
 		fmt.Println("Updating existing target proxy", name, "to match the desired state")
@@ -85,29 +86,37 @@ func (s *TargetProxySyncer) ensureHttpProxy(lbName, umLink string) error {
 	return s.createHttpTargetProxy(desiredHttpProxy)
 }
 
-func (s *TargetProxySyncer) updateHttpTargetProxy(desiredHttpProxy *compute.TargetHttpProxy) error {
+func (s *TargetProxySyncer) updateHttpTargetProxy(desiredHttpProxy *compute.TargetHttpProxy) (string, error) {
 	name := desiredHttpProxy.Name
 	fmt.Println("Updating existing target http proxy", name, "to match the desired state")
 	// There is no UpdateTargetHttpProxy method.
 	// Apart from name, UrlMap is the only field that can be different. We update that field directly.
 	err := s.tpp.SetUrlMapForTargetHttpProxy(desiredHttpProxy, &compute.UrlMap{SelfLink: desiredHttpProxy.UrlMap})
 	if err != nil {
-		return err
+		return "", err
 	}
 	fmt.Println("Target http proxy", name, "updated successfully")
-	return nil
+	existing, err := s.tpp.GetTargetHttpProxy(name)
+	if err != nil {
+		return "", err
+	}
+	return existing.SelfLink, nil
 }
 
-func (s *TargetProxySyncer) createHttpTargetProxy(desiredHttpProxy *compute.TargetHttpProxy) error {
+func (s *TargetProxySyncer) createHttpTargetProxy(desiredHttpProxy *compute.TargetHttpProxy) (string, error) {
 	name := desiredHttpProxy.Name
 	fmt.Println("Creating target http proxy", name)
 	glog.V(5).Infof("Creating target http proxy %v", desiredHttpProxy)
 	err := s.tpp.CreateTargetHttpProxy(desiredHttpProxy)
 	if err != nil {
-		return err
+		return "", err
 	}
 	fmt.Println("Target http proxy", name, "created successfully")
-	return nil
+	existing, err := s.tpp.GetTargetHttpProxy(name)
+	if err != nil {
+		return "", err
+	}
+	return existing.SelfLink, nil
 }
 
 func targetHttpProxyMatches(desiredHttpProxy, existingHttpProxy *compute.TargetHttpProxy) bool {

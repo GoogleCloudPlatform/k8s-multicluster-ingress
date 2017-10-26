@@ -19,11 +19,13 @@ import (
 )
 
 const (
-	hcPrefix               = "hc"
-	backendPrefix          = "be"
-	urlMapPrefix           = "um"
-	targetHttpProxyPrefix  = "tp"
-	targetHttpsProxyPrefix = "tps"
+	hcPrefix                  = "hc"
+	backendPrefix             = "be"
+	urlMapPrefix              = "um"
+	targetHttpProxyPrefix     = "tp"
+	targetHttpsProxyPrefix    = "tps"
+	httpForwardingRulePrefix  = "fw"
+	httpsForwardingRulePrefix = "fws"
 
 	// A delimiter used for clarity in naming GCE resources.
 	lbNameDelimiter = "--"
@@ -75,6 +77,14 @@ func (n *Namer) TargetHttpProxyName() string {
 
 func (n *Namer) TargetHttpsProxyName() string {
 	return n.decorateName(fmt.Sprintf("%v-%v", n.prefix, targetHttpsProxyPrefix))
+}
+
+func (n *Namer) HttpsForwardingRuleName() string {
+	return n.decorateName(fmt.Sprintf("%v-%v", n.prefix, httpsForwardingRulePrefix))
+}
+
+func (n *Namer) HttpForwardingRuleName() string {
+	return n.decorateName(fmt.Sprintf("%v-%v", n.prefix, httpForwardingRulePrefix))
 }
 
 func (n *Namer) decorateName(name string) string {
