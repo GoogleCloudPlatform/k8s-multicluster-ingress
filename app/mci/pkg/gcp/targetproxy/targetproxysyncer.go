@@ -55,6 +55,19 @@ func (s *TargetProxySyncer) EnsureHttpTargetProxy(lbName, umLink string) (string
 	return tpLink, err
 }
 
+func (s *TargetProxySyncer) DeleteTargetProxies() error {
+	// TODO(nikhiljindal): Also delete the https target proxy when we start creating it.
+	name := s.namer.TargetHttpProxyName()
+	fmt.Println("Deleting target proxy", name)
+	err := s.tpp.DeleteTargetHttpProxy(name)
+	if err != nil {
+		fmt.Println("error", err, "in deleting target proxy", name)
+		return err
+	}
+	fmt.Println("target proxy", name, "deleted successfully")
+	return nil
+}
+
 // ensureHttpProxy ensures that the required target proxy exists for the given port.
 // Does nothing if it exists already, else creates a new one.
 // Returns the self link for the ensured http proxy.

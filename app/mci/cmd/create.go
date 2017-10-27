@@ -33,10 +33,10 @@ import (
 )
 
 var (
-	createShortDescription = "Create a multi-cluster ingress."
-	createLongDescription  = `Create a multi-cluster ingress.
+	createShortDescription = "Create a multicluster ingress."
+	createLongDescription  = `Create a multicluster ingress.
 
-	Takes an ingress spec and a list of clusters and creates a multi-cluster ingress targetting those clusters.
+	Takes an ingress spec and a list of clusters and creates a multicluster ingress targetting those clusters.
 	`
 )
 
@@ -65,8 +65,8 @@ var getClientset = func(kubeconfigPath string) (kubeclient.Interface, error) {
 type CreateOptions struct {
 	// Name of the YAML file containing ingress spec.
 	IngressFilename string
-	// Path to kubeconfig.
-	Kubeconfig string
+	// Path to kubeconfig file.
+	KubeconfigFilename string
 	// Name of the load balancer.
 	// Required.
 	LBName string
@@ -89,7 +89,7 @@ func NewCmdCreate(out, err io.Writer) *cobra.Command {
 		Long:  createLongDescription,
 		// TODO(nikhiljindal): Add an example.
 		Run: func(cmd *cobra.Command, args []string) {
-			if err := ValidateArgs(&options, args); err != nil {
+			if err := ValidateCreateArgs(&options, args); err != nil {
 				fmt.Println(err)
 				return
 			}
@@ -98,20 +98,20 @@ func NewCmdCreate(out, err io.Writer) *cobra.Command {
 			}
 		},
 	}
-	AddFlags(cmd, &options)
+	AddCreateFlags(cmd, &options)
 	return cmd
 }
 
-func AddFlags(cmd *cobra.Command, options *CreateOptions) error {
+func AddCreateFlags(cmd *cobra.Command, options *CreateOptions) error {
 	cmd.Flags().StringVarP(&options.IngressFilename, "ingress", "i", options.IngressFilename, "filename containing ingress spec")
-	cmd.Flags().StringVarP(&options.Kubeconfig, "kubeconfig", "k", options.Kubeconfig, "path to kubeconfig")
+	cmd.Flags().StringVarP(&options.KubeconfigFilename, "kubeconfig", "k", options.KubeconfigFilename, "path to kubeconfig file")
 	cmd.Flags().StringVarP(&options.GCPProject, "gcp-project", "", options.GCPProject, "name of the gcp project")
 	// TODO Add a verbose flag that turns on glog logging.
 	cmd.Flags().BoolVarP(&options.ForceUpdate, "force", "f", options.ForceUpdate, "overwrite existing settings if they are different.")
 	return nil
 }
 
-func ValidateArgs(options *CreateOptions, args []string) error {
+func ValidateCreateArgs(options *CreateOptions, args []string) error {
 	if len(args) != 1 {
 		return fmt.Errorf("unexpected args: %v. Expected one arg as name of load balancer.", args)
 	}
@@ -133,7 +133,7 @@ func RunCreate(options *CreateOptions, args []string) error {
 	if err := unmarshall(options.IngressFilename, &ing); err != nil {
 		return fmt.Errorf("error in unmarshalling the yaml file %s, err: %s", options.IngressFilename, err)
 	}
-	clientset, err := getClientset(options.Kubeconfig)
+	clientset, err := getClientset(options.KubeconfigFilename)
 	if err != nil {
 		return fmt.Errorf("unexpected error in instantiating clientset: %v", err)
 	}
@@ -143,7 +143,7 @@ func RunCreate(options *CreateOptions, args []string) error {
 	}
 
 	// Create ingress in all clusters.
-	if err := createIngress(options.Kubeconfig, options.IngressFilename); err != nil {
+	if err := createIngress(options.KubeconfigFilename, options.IngressFilename); err != nil {
 		return err
 	}
 

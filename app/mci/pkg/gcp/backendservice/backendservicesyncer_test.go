@@ -80,3 +80,46 @@ func TestEnsureBackendService(t *testing.T) {
 	}
 	// TODO(nikhiljindal): Test update existing backend service.
 }
+
+func TestDeleteBackendService(t *testing.T) {
+	lbName := "lb-name"
+	port := int64(32211)
+	portName := "portName"
+	igLink := "igLink"
+	hcLink := "hcLink"
+	kubeSvcName := "ingress-svc"
+	// Should create the backend service as expected.
+	bsp := ingressbe.NewFakeBackendServices(func(op int, be *compute.BackendService) error { return nil })
+	namer := utilsnamer.NewNamer("mci", lbName)
+	beName := namer.BeServiceName(port)
+	bss := NewBackendServiceSyncer(namer, bsp)
+	ports := []ingressbe.ServicePort{
+		{
+			Port:     port,
+			Protocol: "HTTP",
+			SvcName:  types.NamespacedName{Name: kubeSvcName},
+		},
+	}
+	if _, err := bss.EnsureBackendService(lbName, ports, healthcheck.HealthChecksMap{
+		port: &compute.HealthCheck{
+			SelfLink: hcLink,
+		},
+	}, NamedPortsMap{
+		port: &compute.NamedPort{
+			Port: port,
+			Name: portName,
+		},
+	}, []string{igLink}); err != nil {
+		t.Fatalf("expected no error in ensuring backend service, actual: %v", err)
+	}
+	if _, err := bsp.GetGlobalBackendService(beName); err != nil {
+		t.Errorf("expected nil error, actual: %v", err)
+	}
+	// Verify that GET fails after DELETE.
+	if err := bss.DeleteBackendServices(ports); err != nil {
+		t.Fatalf("unexpected error in deleting backend services: %s", err)
+	}
+	if _, err := bsp.GetGlobalBackendService(beName); err == nil {
+		t.Errorf("unexpected nil error, expected NotFound")
+	}
+}

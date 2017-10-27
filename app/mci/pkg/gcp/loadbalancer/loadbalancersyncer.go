@@ -139,6 +139,36 @@ func (l *LoadBalancerSyncer) CreateLoadBalancer(ing *v1beta1.Ingress, forceUpdat
 	return err
 }
 
+// DeleteLoadBalancer deletes the GCP resources associated with the L7 GCP load balancer for the given ingress.
+func (l *LoadBalancerSyncer) DeleteLoadBalancer(ing *v1beta1.Ingress) error {
+	// TODO(nikhiljindal): Dont require the ingress yaml from users. Just the name should be enough. We can fetch ingress YAML from one of the clusters.
+	var err error
+	ports := l.ingToNodePorts(ing)
+	// We delete resources in the reverse order in which they were created.
+	// For ex: we create health checks before creating backend services (so that backend service can point to the health check),
+	// but delete backend service before deleting health check. We cannot delete the health check when backend service is still pointing to it.
+	if frErr := l.frs.DeleteForwardingRules(); frErr != nil {
+		// Aggregate errors and return all at the end.
+		err = multierror.Append(err, frErr)
+	}
+	if tpErr := l.tps.DeleteTargetProxies(); tpErr != nil {
+		// Aggregate errors and return all at the end.
+		err = multierror.Append(err, tpErr)
+	}
+	if umErr := l.ums.DeleteURLMap(); umErr != nil {
+		// Aggregate errors and return all at the end.
+		err = multierror.Append(err, umErr)
+	}
+	if beErr := l.bss.DeleteBackendServices(ports); beErr != nil {
+		// Aggregate errors and return all at the end.
+		err = multierror.Append(err, beErr)
+	}
+	if hcErr := l.hcs.DeleteHealthChecks(ports); hcErr != nil {
+		// Aggregate errors and return all at the end.
+		err = multierror.Append(err, hcErr)
+	}
+	return err
+}
 func (l *LoadBalancerSyncer) getIPAddress(ing *v1beta1.Ingress) (string, error) {
 	key := annotations.StaticIPNameKey
 	if ing.ObjectMeta.Annotations == nil || ing.ObjectMeta.Annotations[key] == "" {

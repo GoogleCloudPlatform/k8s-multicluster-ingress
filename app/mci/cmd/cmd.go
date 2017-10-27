@@ -34,5 +34,6 @@ func NewCommand(in io.Reader, out, err io.Writer) *cobra.Command {
 		Long:  longDescription,
 	}
 	rootCmd.AddCommand(NewCmdCreate(out, err))
+	rootCmd.AddCommand(NewCmdDelete(out, err))
 	return rootCmd
 }
