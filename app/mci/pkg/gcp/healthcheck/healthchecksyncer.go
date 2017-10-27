@@ -80,6 +80,33 @@ func (h *HealthCheckSyncer) EnsureHealthCheck(lbName string, ports []ingressbe.S
 	return ensuredHealthChecks, err
 }
 
+func (h *HealthCheckSyncer) DeleteHealthChecks(ports []ingressbe.ServicePort) error {
+	fmt.Println("Deleting health checks")
+	var err error
+	for _, p := range ports {
+		if hcErr := h.deleteHealthCheck(p); hcErr != nil {
+			err = multierror.Append(err, hcErr)
+		}
+	}
+	if err != nil {
+		fmt.Println("Errors in deleting health checks:", err)
+		return err
+	}
+	fmt.Println("Successfully deleted all health checks")
+	return nil
+}
+
+func (h *HealthCheckSyncer) deleteHealthCheck(port ingressbe.ServicePort) error {
+	name := h.namer.HealthCheckName(port.Port)
+	glog.V(2).Infof("Deleting health check %s", name)
+	if err := h.hcp.DeleteHealthCheck(name); err != nil {
+		glog.V(2).Infof("Error in deleting health check %s: %s", name, err)
+		return err
+	}
+	glog.V(2).Infof("Successfully deleted health check %s", name)
+	return nil
+}
+
 func (h *HealthCheckSyncer) ensureHealthCheck(lbName string, port ingressbe.ServicePort, forceUpdate bool) (*compute.HealthCheck, error) {
 	fmt.Println("Ensuring health check for port:", port)
 	desiredHC, err := h.desiredHealthCheck(lbName, port)

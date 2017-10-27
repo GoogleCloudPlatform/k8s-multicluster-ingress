@@ -18,4 +18,6 @@ package forwardingrule
 type ForwardingRuleSyncerInterface interface {
 	// EnsureHttpForwardingRule ensures that the required http forwarding rule exists.
 	EnsureHttpForwardingRule(lbName, ipAddress, targetProxyLink string) error
+	// DeleteForwardingRules deletes the forwarding rules that EnsureForwardingRule would have created.
+	DeleteForwardingRules() error
 }

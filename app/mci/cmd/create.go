@@ -33,10 +33,10 @@ import (
 )
 
 var (
-	createShortDescription = "Create a multi-cluster ingress."
-	createLongDescription  = `Create a multi-cluster ingress.
+	createShortDescription = "Create a multicluster ingress."
+	createLongDescription  = `Create a multicluster ingress.
 
-	Takes an ingress spec and a list of clusters and creates a multi-cluster ingress targetting those clusters.
+	Takes an ingress spec and a list of clusters and creates a multicluster ingress targetting those clusters.
 	`
 )
 
@@ -89,7 +89,7 @@ func NewCmdCreate(out, err io.Writer) *cobra.Command {
 		Long:  createLongDescription,
 		// TODO(nikhiljindal): Add an example.
 		Run: func(cmd *cobra.Command, args []string) {
-			if err := ValidateArgs(&options, args); err != nil {
+			if err := ValidateCreateArgs(&options, args); err != nil {
 				fmt.Println(err)
 				return
 			}
@@ -98,11 +98,11 @@ func NewCmdCreate(out, err io.Writer) *cobra.Command {
 			}
 		},
 	}
-	AddFlags(cmd, &options)
+	AddCreateFlags(cmd, &options)
 	return cmd
 }
 
-func AddFlags(cmd *cobra.Command, options *CreateOptions) error {
+func AddCreateFlags(cmd *cobra.Command, options *CreateOptions) error {
 	cmd.Flags().StringVarP(&options.IngressFilename, "ingress", "i", options.IngressFilename, "filename containing ingress spec")
 	cmd.Flags().StringVarP(&options.Kubeconfig, "kubeconfig", "k", options.Kubeconfig, "path to kubeconfig")
 	cmd.Flags().StringVarP(&options.GCPProject, "gcp-project", "", options.GCPProject, "name of the gcp project")
@@ -111,7 +111,7 @@ func AddFlags(cmd *cobra.Command, options *CreateOptions) error {
 	return nil
 }
 
-func ValidateArgs(options *CreateOptions, args []string) error {
+func ValidateCreateArgs(options *CreateOptions, args []string) error {
 	if len(args) != 1 {
 		return fmt.Errorf("unexpected args: %v. Expected one arg as name of load balancer.", args)
 	}

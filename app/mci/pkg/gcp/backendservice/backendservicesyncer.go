@@ -66,6 +66,34 @@ func (b *BackendServiceSyncer) EnsureBackendService(lbName string, ports []ingre
 	return ensuredBackendServices, err
 }
 
+func (b *BackendServiceSyncer) DeleteBackendServices(ports []ingressbe.ServicePort) error {
+	fmt.Println("Deleting backend services")
+	var err error
+	for _, p := range ports {
+		if beErr := b.deleteBackendService(p); beErr != nil {
+			// Try deleting all backend services and return all errors at once.
+			err = multierror.Append(err, beErr)
+		}
+	}
+	if err != nil {
+		fmt.Printf("Errors in deleting backend services: %s", err)
+		return err
+	}
+	fmt.Println("Successfully deleted all backend services")
+	return nil
+}
+
+func (b *BackendServiceSyncer) deleteBackendService(port ingressbe.ServicePort) error {
+	name := b.namer.BeServiceName(port.Port)
+	glog.V(2).Infof("Deleting backend service %s", name)
+	if err := b.bsp.DeleteGlobalBackendService(name); err != nil {
+		glog.V(2).Infof("Error in deleting backend service %s: %s", name, err)
+		return err
+	}
+	glog.V(2).Infof("Successfully deleted backend service %s", name)
+	return nil
+}
+
 // ensureBackendService ensures that the required backend service exists for the given port.
 // Does nothing if it exists already, else creates a new one.
 func (b *BackendServiceSyncer) ensureBackendService(lbName string, port ingressbe.ServicePort, hc *compute.HealthCheck, np *compute.NamedPort, igLinks []string) (*compute.BackendService, error) {

@@ -74,6 +74,19 @@ func (s *ForwardingRuleSyncer) EnsureHttpForwardingRule(lbName, ipAddress, targe
 	return s.createForwardingRule(desiredFR)
 }
 
+func (s *ForwardingRuleSyncer) DeleteForwardingRules() error {
+	// TODO(nikhiljindal): Also delete the https forwarding rule when we start creating it.
+	name := s.namer.HttpForwardingRuleName()
+	fmt.Println("Deleting forwarding rule", name)
+	err := s.frp.DeleteGlobalForwardingRule(name)
+	if err != nil {
+		fmt.Println("error", err, "in deleting forwarding rule", name)
+		return err
+	}
+	fmt.Println("forwarding rule", name, "deleted successfully")
+	return nil
+}
+
 func (s *ForwardingRuleSyncer) updateForwardingRule(existingFR, desiredFR *compute.ForwardingRule) error {
 	name := desiredFR.Name
 	fmt.Println("Updating existing forwarding rule", name, "to match the desired state")

@@ -28,4 +28,6 @@ type HealthCheckSyncerInterface interface {
 	// Returns a map of port number to the health check for that port. The map contains all the ports for which  it was successfully able to ensure a health check.
 	// In case of no error, the map will contain all the ports from the given array of ports.
 	EnsureHealthCheck(lbName string, ports []ingressbe.ServicePort, forceUpdate bool) (HealthChecksMap, error)
+	// DeleteHealthChecks deletes all the health checks that EnsureHealthCheck would have created.
+	DeleteHealthChecks(ports []ingressbe.ServicePort) error
 }

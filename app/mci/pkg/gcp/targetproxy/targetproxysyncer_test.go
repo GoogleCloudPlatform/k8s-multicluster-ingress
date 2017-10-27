@@ -51,3 +51,26 @@ func TestEnsureTargetHttpProxy(t *testing.T) {
 	}
 	// TODO(nikhiljindal): Test update existing target proxy.
 }
+
+func TestDeleteTargetProxies(t *testing.T) {
+	lbName := "lb-name"
+	umLink := "selfLink"
+	// Should create the target proxy as expected.
+	tpp := ingresslb.NewFakeLoadBalancers("")
+	namer := utilsnamer.NewNamer("mci", lbName)
+	tpName := namer.TargetHttpProxyName()
+	tps := NewTargetProxySyncer(namer, tpp)
+	if _, err := tps.EnsureHttpTargetProxy(lbName, umLink); err != nil {
+		t.Fatalf("expected no error in ensuring target proxy, actual: %v", err)
+	}
+	if _, err := tpp.GetTargetHttpProxy(tpName); err != nil {
+		t.Fatalf("expected nil error, actual: %v", err)
+	}
+	// Verify that GET fails after DELETE.
+	if err := tps.DeleteTargetProxies(); err != nil {
+		t.Fatalf("unexpected error while deleting target proxies: %s", err)
+	}
+	if _, err := tpp.GetTargetHttpProxy(tpName); err == nil {
+		t.Fatalf("unexpected nil error, expected NotFound")
+	}
+}

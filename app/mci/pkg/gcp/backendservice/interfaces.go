@@ -33,4 +33,6 @@ type BackendServiceSyncerInterface interface {
 	// Returns a map of the ensured backend services.
 	// In case of no error, the map will contain services for all the given array of ports.
 	EnsureBackendService(lbName string, ports []ingressbe.ServicePort, hcMap healthcheck.HealthChecksMap, npMap NamedPortsMap, igLinks []string) (BackendServicesMap, error)
+	// DeleteBackendServices deletes all backend services that would have been created by EnsureBackendService.
+	DeleteBackendServices(ports []ingressbe.ServicePort) error
 }

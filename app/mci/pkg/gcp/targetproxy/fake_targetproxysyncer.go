@@ -43,3 +43,8 @@ func (f *FakeTargetProxySyncer) EnsureHttpTargetProxy(lbName, umLink string) (st
 	})
 	return FakeTargetProxySelfLink, nil
 }
+
+func (f *FakeTargetProxySyncer) DeleteTargetProxies() error {
+	f.EnsuredTargetProxies = nil
+	return nil
+}

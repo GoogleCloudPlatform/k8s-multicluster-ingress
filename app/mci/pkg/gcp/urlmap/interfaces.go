@@ -26,4 +26,6 @@ type URLMapSyncerInterface interface {
 	// Uses beMap to extract the backend services to link to in the url map.
 	// Returns the self link for the ensured url map.
 	EnsureURLMap(lbName string, ing *v1beta1.Ingress, beMap backendservice.BackendServicesMap) (string, error)
+	// DeleteURLMap deletes the url map that EnsureURLMap would have created.
+	DeleteURLMap() error
 }

@@ -37,14 +37,19 @@ func NewFakeHealthCheckSyncer() HealthCheckSyncerInterface {
 // Ensure this implements HealthCheckSyncerInterface.
 var _ HealthCheckSyncerInterface = &FakeHealthCheckSyncer{}
 
-func (h *FakeHealthCheckSyncer) EnsureHealthCheck(lbName string, ports []ingressbe.ServicePort, force bool) (HealthChecksMap, error) {
+func (f *FakeHealthCheckSyncer) EnsureHealthCheck(lbName string, ports []ingressbe.ServicePort, force bool) (HealthChecksMap, error) {
 	hcMap := HealthChecksMap{}
 	for _, p := range ports {
-		h.EnsuredHealthChecks = append(h.EnsuredHealthChecks, FakeHealthCheck{
+		f.EnsuredHealthChecks = append(f.EnsuredHealthChecks, FakeHealthCheck{
 			LBName: lbName,
 			Port:   p,
 		})
 		hcMap[p.Port] = &compute.HealthCheck{}
 	}
 	return hcMap, nil
+}
+
+func (f *FakeHealthCheckSyncer) DeleteHealthChecks(ports []ingressbe.ServicePort) error {
+	f.EnsuredHealthChecks = nil
+	return nil
 }

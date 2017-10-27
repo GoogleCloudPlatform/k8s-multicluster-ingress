@@ -44,10 +44,16 @@ func NewFakeURLMapSyncer() URLMapSyncerInterface {
 var _ URLMapSyncerInterface = &FakeURLMapSyncer{}
 
 func (f *FakeURLMapSyncer) EnsureURLMap(lbName string, ing *v1beta1.Ingress, beMap backendservice.BackendServicesMap) (string, error) {
+
 	f.EnsuredURLMaps = append(f.EnsuredURLMaps, FakeURLMap{
 		LBName:  lbName,
 		Ingress: ing,
 		BeMap:   beMap,
 	})
 	return FakeUrlSelfLink, nil
+}
+
+func (f *FakeURLMapSyncer) DeleteURLMap() error {
+	f.EnsuredURLMaps = nil
+	return nil
 }

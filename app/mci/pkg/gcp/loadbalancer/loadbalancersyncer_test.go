@@ -81,7 +81,7 @@ func TestCreateLoadBalancer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error in marshalling json: %s", err)
 	}
-	ing := v1beta1.Ingress{
+	ing := &v1beta1.Ingress{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "my-ing",
 			Namespace: "my-ns",
@@ -127,7 +127,7 @@ func TestCreateLoadBalancer(t *testing.T) {
 	})
 	// Return a fake ingress with the instance groups annotation.
 	client.AddReactor("get", "ingresses", func(action core.Action) (handled bool, ret runtime.Object, err error) {
-		return true, &ing, nil
+		return true, ing, nil
 	})
 
 	// Setup the fake instance group provider to return the expected instance group with fake named ports.
@@ -140,7 +140,7 @@ func TestCreateLoadBalancer(t *testing.T) {
 			},
 		},
 	}, igZone)
-	if err := lbc.CreateLoadBalancer(&ing, true /*forceUpdate*/); err != nil {
+	if err := lbc.CreateLoadBalancer(ing, true /*forceUpdate*/); err != nil {
 		t.Fatalf("unexpected error %s", err)
 	}
 	// Verify client actions.
@@ -222,5 +222,135 @@ func TestCreateLoadBalancer(t *testing.T) {
 	}
 	if fr.LBName != lbName {
 		t.Errorf("unexpected lbname in forwarding rule. expected: %s, got: %s", lbName, fr.LBName)
+	}
+}
+
+func TestDeleteLoadBalancer(t *testing.T) {
+	lbName := "lb-name"
+	nodePort := int64(32211)
+	igName := "my-fake-ig"
+	igZone := "my-fake-zone"
+	portName := "my-port-name"
+	lbc := newLoadBalancerSyncer(lbName)
+	zoneLink := fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/fake-project/zones/%s", igZone)
+	ipAddress := &compute.Address{
+		Name:    "ipAddressName",
+		Address: "1.2.3.4",
+	}
+	// Reserve a global address. User is supposed to do this before calling CreateLoadBalancer.
+	lbc.ipp.ReserveGlobalAddress(ipAddress)
+	// Create ingress with instance groups annotation.
+	annotationsValue := []struct {
+		Name string
+		Zone string
+	}{
+		{
+			Name: igName,
+			Zone: zoneLink,
+		},
+	}
+	jsonValue, err := json.Marshal(annotationsValue)
+	if err != nil {
+		t.Fatalf("unexpected error in marshalling json: %s", err)
+	}
+	ing := &v1beta1.Ingress{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "my-ing",
+			Namespace: "my-ns",
+			Annotations: map[string]string{
+				annotations.InstanceGroupsAnnotationKey: string(jsonValue),
+				annotations.StaticIPNameKey:             ipAddress.Name,
+			},
+		},
+		Spec: v1beta1.IngressSpec{
+			Rules: []v1beta1.IngressRule{
+				{
+					IngressRuleValue: v1beta1.IngressRuleValue{
+						HTTP: &v1beta1.HTTPIngressRuleValue{
+							Paths: []v1beta1.HTTPIngressPath{
+								{
+									Path: "foo",
+									Backend: v1beta1.IngressBackend{
+										ServiceName: "my-svc",
+										ServicePort: intstr.FromInt(80),
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	client := lbc.client.(*fake.Clientset)
+	// Add a reaction to return a fake service.
+	client.AddReactor("get", "services", func(action core.Action) (handled bool, ret runtime.Object, err error) {
+		ret = &v1.Service{
+			Spec: v1.ServiceSpec{
+				Ports: []v1.ServicePort{
+					{
+						Port:     80,
+						NodePort: int32(nodePort),
+					},
+				},
+			},
+		}
+		return true, ret, nil
+	})
+	// Return a fake ingress with the instance groups annotation.
+	client.AddReactor("get", "ingresses", func(action core.Action) (handled bool, ret runtime.Object, err error) {
+		return true, ing, nil
+	})
+	// Setup the fake instance group provider to return the expected instance group with fake named ports.
+	err = lbc.igp.CreateInstanceGroup(&compute.InstanceGroup{
+		Name: igName,
+		NamedPorts: []*compute.NamedPort{
+			{
+				Name: portName,
+				Port: nodePort,
+			},
+		},
+	}, igZone)
+	if err := lbc.CreateLoadBalancer(ing, true /*forceUpdate*/); err != nil {
+		t.Fatalf("unexpected error %s", err)
+	}
+	fhc := lbc.hcs.(*healthcheck.FakeHealthCheckSyncer)
+	if len(fhc.EnsuredHealthChecks) == 0 {
+		t.Errorf("unexpected health checks not createdd")
+	}
+	fbs := lbc.bss.(*backendservice.FakeBackendServiceSyncer)
+	if len(fbs.EnsuredBackendServices) == 0 {
+		t.Errorf("unexpected backend services not created")
+	}
+	fum := lbc.ums.(*urlmap.FakeURLMapSyncer)
+	if len(fum.EnsuredURLMaps) == 0 {
+		t.Errorf("unexpected url maps not created")
+	}
+	ftp := lbc.tps.(*targetproxy.FakeTargetProxySyncer)
+	if len(ftp.EnsuredTargetProxies) == 0 {
+		t.Errorf("unexpected target proxies not created")
+	}
+	ffr := lbc.frs.(*forwardingrule.FakeForwardingRuleSyncer)
+	if len(ffr.EnsuredForwardingRules) == 0 {
+		t.Errorf("unexpected forwarding rules not created")
+	}
+	// Verify that all expected resources are deleted.
+	if err := lbc.DeleteLoadBalancer(ing); err != nil {
+		t.Fatalf("unexpected error in deleting load balancer: %s", err)
+	}
+	if len(ffr.EnsuredForwardingRules) != 0 {
+		t.Errorf("unexpected forwarding rules have not been deleted")
+	}
+	if len(ftp.EnsuredTargetProxies) != 0 {
+		t.Errorf("unexpected target proxies have not been deleted")
+	}
+	if len(fum.EnsuredURLMaps) != 0 {
+		t.Errorf("unexpected url maps have not been deleted")
+	}
+	if len(fbs.EnsuredBackendServices) != 0 {
+		t.Errorf("unexpected backend services have not been deleted")
+	}
+	if len(fhc.EnsuredHealthChecks) != 0 {
+		t.Errorf("unexpected health checks have not been deleted")
 	}
 }
