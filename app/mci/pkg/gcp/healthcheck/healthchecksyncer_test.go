@@ -128,3 +128,32 @@ func TestHealthCheckMatches(t *testing.T) {
 		t.Errorf("Health checks only differ in creation timestamp, watch Matches(c, c2)=true, got false")
 	}
 }
+
+func TestDeleteHealthCheck(t *testing.T) {
+	lbName := "lb-name"
+	port := int64(32211)
+	// Should create the health check as expected.
+	hcp := ingresshc.NewFakeHealthCheckProvider()
+	namer := utilsnamer.NewNamer("mci", lbName)
+	hcName := namer.HealthCheckName(port)
+	hcs := NewHealthCheckSyncer(namer, hcp)
+	ports := []ingressbe.ServicePort{
+		{
+			Port:     port,
+			Protocol: utils.ProtocolHTTP,
+		},
+	}
+	if _, err := hcs.EnsureHealthCheck(lbName, ports, false); err != nil {
+		t.Fatalf("unexpected error in ensuring health checks: %s", err)
+	}
+	if _, err := hcp.GetHealthCheck(hcName); err != nil {
+		t.Fatalf("unexpected error %s, expected nil", err)
+	}
+	// Verify that GET fails after DELETE.
+	if err := hcs.DeleteHealthChecks(ports); err != nil {
+		t.Fatalf("unexpected error in deleting health checks: %s", err)
+	}
+	if _, err := hcp.GetHealthCheck(hcName); err == nil {
+		t.Fatalf("unexpected nil error, expected NotFound")
+	}
+}

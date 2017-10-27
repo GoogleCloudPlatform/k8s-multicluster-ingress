@@ -24,7 +24,7 @@ import (
 
 func TestEnsureHttpForwardingRule(t *testing.T) {
 	lbName := "lb-name"
-	ipAddr := "192.168.0.0"
+	ipAddr := "1.2.3.4"
 	tpLink := "fakeLink"
 	// Should create the forwarding rule as expected.
 	frp := ingresslb.NewFakeLoadBalancers("")
@@ -51,4 +51,28 @@ func TestEnsureHttpForwardingRule(t *testing.T) {
 		t.Errorf("unexpected target proxy link. expected: %s, got: %s", tpLink, fr.Target)
 	}
 	// TODO(nikhiljindal): Test update existing forwarding rule.
+}
+
+func TestDeleteForwardingRule(t *testing.T) {
+	lbName := "lb-name"
+	ipAddr := "1.2.3.4"
+	tpLink := "fakeLink"
+	// Should create the forwarding rule as expected.
+	frp := ingresslb.NewFakeLoadBalancers("")
+	namer := utilsnamer.NewNamer("mci", lbName)
+	frName := namer.HttpForwardingRuleName()
+	frs := NewForwardingRuleSyncer(namer, frp)
+	if err := frs.EnsureHttpForwardingRule(lbName, ipAddr, tpLink); err != nil {
+		t.Fatalf("expected no error in ensuring forwarding rule, actual: %v", err)
+	}
+	if _, err := frp.GetGlobalForwardingRule(frName); err != nil {
+		t.Fatalf("expected nil error, actual: %v", err)
+	}
+	// GET should return NotFound after DELETE.
+	if err := frs.DeleteForwardingRules(); err != nil {
+		t.Fatalf("unexpeted error in deleting forwarding rule: %s", err)
+	}
+	if _, err := frp.GetGlobalForwardingRule(frName); err == nil {
+		t.Fatalf("expected not found error, actual: nil")
+	}
 }
