@@ -41,12 +41,10 @@ func NewTargetProxySyncer(namer *utilsnamer.Namer, tpp ingresslb.LoadBalancers) 
 // Ensure this implements TargetProxySyncerInterface.
 var _ TargetProxySyncerInterface = &TargetProxySyncer{}
 
-// EnsureTargetProxy ensures that the required target proxies exist for the given url map.
+// EnsureHttpTargetProxy ensures that the required http target proxy exists for the given url map.
 // Does nothing if it exists already, else creates a new one.
-func (s *TargetProxySyncer) EnsureTargetProxy(lbName, umLink string) (string, error) {
-	fmt.Println("Ensuring target proxies")
-	// TODO(nikhiljindal): Support creating https proxies.
-	fmt.Println("Warning: We create http proxies only, even if https was requested.")
+func (s *TargetProxySyncer) EnsureHttpTargetProxy(lbName, umLink string) (string, error) {
+	fmt.Println("Ensuring http target proxy")
 	var err error
 	tpLink, httpProxyErr := s.ensureHttpProxy(lbName, umLink)
 	if httpProxyErr != nil {

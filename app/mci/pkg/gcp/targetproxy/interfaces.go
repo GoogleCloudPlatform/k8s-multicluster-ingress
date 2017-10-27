@@ -16,7 +16,7 @@ package targetproxy
 
 // TargetProxySyncerInterface is an interface to manage GCP target proxies.
 type TargetProxySyncerInterface interface {
-	// EnsureTargetProxy ensures that the required target proxy exists for the given load balancer and url map link.
+	// EnsureHttpTargetProxy ensures that the required http target proxy exists for the given load balancer and url map link.
 	// Returns the self link for the ensured proxy.
-	EnsureTargetProxy(lbName, urlMapLink string) (string, error)
+	EnsureHttpTargetProxy(lbName, urlMapLink string) (string, error)
 }

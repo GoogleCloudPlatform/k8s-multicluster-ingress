@@ -48,12 +48,10 @@ func NewForwardingRuleSyncer(namer *utilsnamer.Namer, frp ingresslb.LoadBalancer
 // Ensure this implements ForwardingRuleSyncerInterface.
 var _ ForwardingRuleSyncerInterface = &ForwardingRuleSyncer{}
 
-// EnsureForwardingRule ensures that the required forwarding rule exists.
+// EnsureHttpForwardingRule ensures that the required http forwarding rule exists.
 // Does nothing if it exists already, else creates a new one.
-func (s *ForwardingRuleSyncer) EnsureForwardingRule(lbName, ipAddress, targetProxyLink string) error {
-	fmt.Println("Ensuring forwarding rule")
-	// TODO(nikhiljindal): Support creating https forwarding rules.
-	fmt.Println("Warning: We create http forwarding rules only, even if https was requested.")
+func (s *ForwardingRuleSyncer) EnsureHttpForwardingRule(lbName, ipAddress, targetProxyLink string) error {
+	fmt.Println("Ensuring http forwarding rule")
 	desiredFR := s.desiredForwardingRule(lbName, ipAddress, targetProxyLink)
 	name := desiredFR.Name
 	// Check if forwarding rule already exists.

@@ -16,6 +16,6 @@ package forwardingrule
 
 // ForwardingRuleSyncerInterface is an interface to manage GCP forwarding rules.
 type ForwardingRuleSyncerInterface interface {
-	// EnsureForwardingRule ensures that the required forwarding rule exists.
-	EnsureForwardingRule(lbName, ipAddress, targetProxyLink string) error
+	// EnsureHttpForwardingRule ensures that the required http forwarding rule exists.
+	EnsureHttpForwardingRule(lbName, ipAddress, targetProxyLink string) error
 }

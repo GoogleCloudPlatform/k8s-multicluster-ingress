@@ -28,6 +28,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	kubeclient "k8s.io/client-go/kubernetes"
+	"k8s.io/ingress-gce/pkg/annotations"
 	ingressbe "k8s.io/ingress-gce/pkg/backends"
 	ingressig "k8s.io/ingress-gce/pkg/instances"
 	ingresslb "k8s.io/ingress-gce/pkg/loadbalancers"
@@ -43,29 +44,9 @@ import (
 )
 
 const (
-	// TODO(nikhiljindal): refactor code in kubernetes/ingress to reuse this.
-	// serviceApplicationProtocolKey is a stringified JSON map of port names to
-	// protocol names. Possible values are HTTP, HTTPS.
-	// Example annotation:
-	// {
-	//   "service.alpha.kubernetes.io/app-protocols" : '{"my-https-port":"HTTPS","my-http-port":"HTTP"}'
-	// }
-	serviceApplicationProtocolKey = "service.alpha.kubernetes.io/app-protocols"
-
 	// Prefix used by the namer to generate names.
 	// This is used to identify resources created by this code.
 	mciPrefix = "mci1"
-
-	// instanceGroupsAnnotationKey is the annotation key used by gclb ingress
-	// controller to specify the name and zone of instance groups created
-	// for the ingress.
-	// TODO(nikhiljindal): Refactor the code in kubernetes/ingress-gce to
-	// export it and then reuse it here.
-	instanceGroupsAnnotationKey = "ingress.gcp.kubernetes.io/instance-groups"
-
-	// Annotation key for user to specify the static IP to be used by this load balancer.
-	// TODO(nikhiljindal): Share this key with kubernetes/ingress-gce
-	staticIPNameKey = "kubernetes.io/ingress.global-static-ip-name"
 )
 
 // LoadBalancerSyncer manages the GCP resources necessary for an L7 GCP Load balancer.
@@ -136,26 +117,36 @@ func (l *LoadBalancerSyncer) CreateLoadBalancer(ing *v1beta1.Ingress, forceUpdat
 		// Aggregate errors and return all at the end.
 		err = multierror.Append(err, umErr)
 	}
-	tpLink, tpErr := l.tps.EnsureTargetProxy(l.lbName, umLink)
-	if tpErr != nil {
-		// Aggregate errors and return all at the end.
-		err = multierror.Append(err, tpErr)
+	ingAnnotations := annotations.IngAnnotations(ing.ObjectMeta.Annotations)
+	// Configure HTTP target proxy and forwarding rule, if required.
+	if ingAnnotations.AllowHTTP() {
+		tpLink, tpErr := l.tps.EnsureHttpTargetProxy(l.lbName, umLink)
+		if tpErr != nil {
+			// Aggregate errors and return all at the end.
+			err = multierror.Append(err, tpErr)
+		}
+		frErr := l.frs.EnsureHttpForwardingRule(l.lbName, ipAddr, tpLink)
+		if frErr != nil {
+			// Aggregate errors and return all at the end.
+			err = multierror.Append(err, frErr)
+		}
 	}
-	frErr := l.frs.EnsureForwardingRule(l.lbName, ipAddr, tpLink)
-	if frErr != nil {
-		// Aggregate errors and return all at the end.
-		err = multierror.Append(err, frErr)
+	// Configure HTTPS target proxy and forwarding rule, if required.
+	if (ingAnnotations.UseNamedTLS() != "") || len(ing.Spec.TLS) > 0 {
+		// TODO(nikhiljindal): Support creating https target proxy and forwarding rule.
+		err = multierror.Append(err, fmt.Errorf("This tool does not support creating HTTPS target proxy and forwarding rule yet."))
 	}
 	return err
 }
 
 func (l *LoadBalancerSyncer) getIPAddress(ing *v1beta1.Ingress) (string, error) {
-	if ing.ObjectMeta.Annotations == nil || ing.ObjectMeta.Annotations[staticIPNameKey] == "" {
+	key := annotations.StaticIPNameKey
+	if ing.ObjectMeta.Annotations == nil || ing.ObjectMeta.Annotations[key] == "" {
 		// TODO(nikhiljindal): Add logic to reserve a new IP address if user has not specified any.
 		// If we do that then we should also add the new IP address as annotation to the ingress created in clusters.
-		return "", fmt.Errorf("No static ip specified. Multicluster ingresses require a pre-reserved static IP, which can be specified using %s annotation", staticIPNameKey)
+		return "", fmt.Errorf("No static ip specified. Multicluster ingresses require a pre-reserved static IP, which can be specified using %s annotation", key)
 	}
-	ipName := ing.ObjectMeta.Annotations[staticIPNameKey]
+	ipName := ing.ObjectMeta.Annotations[key]
 	ip, err := l.ipp.GetGlobalAddress(ipName)
 	if err != nil {
 		return "", fmt.Errorf("unexpected error in getting ip address %s: %s", ipName, err)
@@ -167,6 +158,7 @@ func (l *LoadBalancerSyncer) getIPAddress(ing *v1beta1.Ingress) (string, error) 
 // Note that it picks an instance group at random and returns the named ports for that instance group, assuming that the named ports are same on all instance groups.
 // Also note that this returns all named ports on the instance group and not just the ones relevant to the given ingress.
 func (l *LoadBalancerSyncer) getIGsAndNamedPorts(ing *v1beta1.Ingress) ([]string, backendservice.NamedPortsMap, error) {
+	key := annotations.InstanceGroupsAnnotationKey
 	// Keep trying until ingress gets the instance group annotation.
 	// TODO(nikhiljindal): Check if we need exponential backoff.
 	for try := true; try; time.Sleep(1 * time.Second) {
@@ -175,12 +167,12 @@ func (l *LoadBalancerSyncer) getIGsAndNamedPorts(ing *v1beta1.Ingress) ([]string
 		if err != nil {
 			return nil, nil, fmt.Errorf("error %s in fetching ingress", err)
 		}
-		if ing.Annotations == nil || ing.Annotations[instanceGroupsAnnotationKey] == "" {
+		if ing.Annotations == nil || ing.Annotations[key] == "" {
 			// keep trying
-			fmt.Println("Waiting for ingress to get", instanceGroupsAnnotationKey, "annotation.....")
+			fmt.Println("Waiting for ingress to get", key, "annotation.....")
 			continue
 		}
-		annotationValue := ing.Annotations[instanceGroupsAnnotationKey]
+		annotationValue := ing.Annotations[key]
 		glog.V(3).Infof("Found instance groups annotation value: %s", annotationValue)
 		// Get the instance group name.
 		type InstanceGroupsAnnotationValue struct {
@@ -189,11 +181,11 @@ func (l *LoadBalancerSyncer) getIGsAndNamedPorts(ing *v1beta1.Ingress) ([]string
 		}
 		var values []InstanceGroupsAnnotationValue
 		if err := json.Unmarshal([]byte(annotationValue), &values); err != nil {
-			return nil, nil, fmt.Errorf("error in parsing annotation key %s, value %s: %s", instanceGroupsAnnotationKey, annotationValue, err)
+			return nil, nil, fmt.Errorf("error in parsing annotation key %s, value %s: %s", key, annotationValue, err)
 		}
 		if len(values) == 0 {
 			// keep trying
-			fmt.Printf("Waiting for ingress to get", instanceGroupsAnnotationKey, "annotation.....")
+			fmt.Printf("Waiting for ingress to get", key, "annotation.....")
 			continue
 		}
 		// Compute link to all instance groups.
@@ -252,23 +244,10 @@ func (l *LoadBalancerSyncer) ingToNodePorts(ing *v1beta1.Ingress) []ingressbe.Se
 	return knownPorts
 }
 
-func svcProtocolsFromAnnotation(annotations map[string]string) (map[string]string, error) {
-	val, ok := annotations[serviceApplicationProtocolKey]
-	if !ok {
-		return map[string]string{}, nil
-	}
-
-	var svcProtocols map[string]string
-	if err := json.Unmarshal([]byte(val), &svcProtocols); err != nil {
-		return nil, fmt.Errorf("error in parsing annotation with key %s, error: %v", serviceApplicationProtocolKey, err)
-	}
-	return svcProtocols, nil
-}
-
 func (l *LoadBalancerSyncer) getServiceNodePort(be v1beta1.IngressBackend, namespace string) (ingressbe.ServicePort, error) {
 	svc, err := l.getSvc(be.ServiceName, namespace)
 	// Refactor this code to get serviceport from a given service and share it with kubernetes/ingress.
-	appProtocols, err := svcProtocolsFromAnnotation(svc.GetAnnotations())
+	appProtocols, err := annotations.SvcAnnotations(svc.GetAnnotations()).ApplicationProtocols()
 	if err != nil {
 		return ingressbe.ServicePort{}, err
 	}

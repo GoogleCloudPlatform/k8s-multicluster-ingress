@@ -1,5 +1,5 @@
-hash: fbc28d16109ef7109ede1aa69a895d4e8a5db48f409169d15d8c80cee4b70269
-updated: 2017-10-20T14:03:51.805331954-07:00
+hash: 7845ab3f3640d4a97f6291b96c52cfb67ba5dd895263c08108f4c6f09335d62f
+updated: 2017-10-25T23:10:58.198078773-07:00
 imports:
 - name: cloud.google.com/go
   version: 3b1ae45394a234c385be014e9a488f2bb6eef821
@@ -381,11 +381,12 @@ imports:
   - util/integer
   - util/retry
 - name: k8s.io/ingress-gce
-  version: 27d32ecbc079df4766152894f5c039b252fb2c07
+  version: 6cad689da446bfc6367df62ceb340b606e91753e
   subpackages:
   - pkg/backends
   - pkg/healthchecks
   - pkg/instances
+  - pkg/loadbalancers
   - pkg/storage
   - pkg/utils
 - name: k8s.io/kube-openapi
