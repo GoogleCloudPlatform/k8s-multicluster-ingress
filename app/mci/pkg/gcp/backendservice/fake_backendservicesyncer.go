@@ -56,3 +56,8 @@ func (h *FakeBackendServiceSyncer) EnsureBackendService(lbName string, ports []i
 	}
 	return beMap, nil
 }
+
+func (h *FakeBackendServiceSyncer) DeleteBackendServices(ports []ingressbe.ServicePort) error {
+	h.EnsuredBackendServices = nil
+	return nil
+}

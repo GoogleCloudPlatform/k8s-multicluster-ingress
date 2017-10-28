@@ -57,16 +57,107 @@ func TestCreateLoadBalancer(t *testing.T) {
 	nodePort := int64(32211)
 	igName := "my-fake-ig"
 	igZone := "my-fake-zone"
-	portName := "my-port-name"
-	lbc := newLoadBalancerSyncer(lbName)
 	zoneLink := fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/fake-project/zones/%s", igZone)
-	expectedIGLink := fmt.Sprintf("%s/instanceGroups/%s", zoneLink, igName)
+	lbc := newLoadBalancerSyncer(lbName)
 	ipAddress := &compute.Address{
 		Name:    "ipAddressName",
 		Address: "1.2.3.4",
 	}
 	// Reserve a global address. User is supposed to do this before calling CreateLoadBalancer.
 	lbc.ipp.ReserveGlobalAddress(ipAddress)
+	ing, err := setupLBCForCreateIng(lbc, nodePort, igName, igZone, zoneLink, ipAddress)
+	if err != nil {
+		t.Fatalf("%s", err)
+	}
+	if err := lbc.CreateLoadBalancer(ing, true /*forceUpdate*/); err != nil {
+		t.Fatalf("unexpected error %s", err)
+	}
+	// Verify client actions.
+	client := lbc.client.(*fake.Clientset)
+	actions := client.Actions()
+	// Verify that the client should have been used to fetch service and ingress.
+	if len(actions) != 2 {
+		t.Fatalf("unexpected actions: %v, expected 2 (get svc and get ing)", actions)
+	}
+	getSvcName := actions[0].(core.GetAction).GetName()
+	if getSvcName != "my-svc" {
+		t.Errorf("unexpected get for %s, expected: my-svc", getSvcName)
+	}
+	getIngName := actions[1].(core.GetAction).GetName()
+	if getIngName != ing.Name {
+		t.Errorf("unexpected get for %s, expected: %s", getIngName, ing.Name)
+	}
+	// Verify that the expected healthcheck was created.
+	fhc := lbc.hcs.(*healthcheck.FakeHealthCheckSyncer)
+	if len(fhc.EnsuredHealthChecks) != 1 {
+		t.Fatalf("unexpected number of health checks. expected: %d, got: %d", 1, len(fhc.EnsuredHealthChecks))
+	}
+	hc := fhc.EnsuredHealthChecks[0]
+	if hc.LBName != lbName || hc.Port.Port != nodePort {
+		t.Errorf("unexpected health check: %v\nexpected: lbname: %s, port: %d", hc, lbName, nodePort)
+	}
+	// Verify that the expected backend service was created.
+	fbs := lbc.bss.(*backendservice.FakeBackendServiceSyncer)
+	if len(fbs.EnsuredBackendServices) != 1 {
+		t.Fatalf("unexpected number of backend services. expected: %d, got: %d", 1, len(fbs.EnsuredBackendServices))
+	}
+	bs := fbs.EnsuredBackendServices[0]
+	if bs.LBName != lbName {
+		t.Errorf("unexpected lb name in backend service. expected: %s, got: %s", lbName, bs.LBName)
+	}
+	if bs.Port.Port != nodePort {
+		t.Errorf("unexpected port in backend service. expected port %d, got: %d", nodePort, bs.Port.Port)
+	}
+	if len(bs.HCMap) != 1 || bs.HCMap[nodePort] == nil {
+		t.Errorf("unexpected health check map in backend service. expected an entry for port %d, got: %v", nodePort, bs.HCMap)
+	}
+	if len(bs.NPMap) != 1 || bs.NPMap[nodePort] == nil {
+		t.Errorf("unexpected node port map in backend service. expected an entry for port %d, got: %v", nodePort, bs.NPMap)
+	}
+	expectedIGLink := fmt.Sprintf("%s/instanceGroups/%s", zoneLink, igName)
+	if len(bs.IGLinks) != 1 || bs.IGLinks[0] != expectedIGLink {
+		t.Errorf("unexpected instance group in backend service. expected %s, got: %s", expectedIGLink, bs.IGLinks)
+	}
+	// Verify that the expected urlmap was created.
+	fum := lbc.ums.(*urlmap.FakeURLMapSyncer)
+	if len(fum.EnsuredURLMaps) != 1 {
+		t.Fatalf("unexpected number of url maps. expected: %d, got: %d", 1, len(fum.EnsuredURLMaps))
+	}
+	um := fum.EnsuredURLMaps[0]
+	if hc.LBName != lbName {
+		t.Errorf("unexpected url map: %v\nexpected: lbname: %s", um, lbName)
+	}
+	// Verify that the expected target proxy was created.
+	ftp := lbc.tps.(*targetproxy.FakeTargetProxySyncer)
+	if len(ftp.EnsuredTargetProxies) != 1 {
+		t.Fatalf("unexpected number of target proxies. expected: %d, got: %d", 1, len(ftp.EnsuredTargetProxies))
+	}
+	tp := ftp.EnsuredTargetProxies[0]
+	if tp.UmLink != urlmap.FakeUrlSelfLink {
+		t.Errorf("unexpected url map link in target proxy. expected: %s, got: %s", urlmap.FakeUrlSelfLink, tp.UmLink)
+	}
+	// Verify that the expected forwarding rule was created.
+	ffr := lbc.frs.(*forwardingrule.FakeForwardingRuleSyncer)
+	if len(ffr.EnsuredForwardingRules) != 1 {
+		t.Fatalf("unexpected number of forwarding rules. expected: %d, got: %d", 1, len(ffr.EnsuredForwardingRules))
+	}
+	fr := ffr.EnsuredForwardingRules[0]
+	if fr.LBName != lbName {
+		t.Errorf("unexpected lbname in forwarding rule. expected: %s, got: %s", lbName, fr.LBName)
+	}
+	if fr.TPLink != targetproxy.FakeTargetProxySelfLink {
+		t.Errorf("unexpected target proxy link in forwarding rule. expected: %s, got: %s", targetproxy.FakeTargetProxySelfLink, fr.TPLink)
+	}
+	if fr.IPAddress != ipAddress.Address {
+		t.Errorf("unexpected ip address in forwarding rule. expected: %s, got: %s", ipAddress.Address, fr.IPAddress)
+	}
+	if fr.LBName != lbName {
+		t.Errorf("unexpected lbname in forwarding rule. expected: %s, got: %s", lbName, fr.LBName)
+	}
+}
+
+func setupLBCForCreateIng(lbc *LoadBalancerSyncer, nodePort int64, igName, igZone, zoneLink string, ipAddress *compute.Address) (*v1beta1.Ingress, error) {
+	portName := "my-port-name"
 	// Create ingress with instance groups annotation.
 	annotationsValue := []struct {
 		Name string
@@ -79,9 +170,9 @@ func TestCreateLoadBalancer(t *testing.T) {
 	}
 	jsonValue, err := json.Marshal(annotationsValue)
 	if err != nil {
-		t.Fatalf("unexpected error in marshalling json: %s", err)
+		return nil, fmt.Errorf("error %s in marshalling annotations %v", err, annotationsValue)
 	}
-	ing := v1beta1.Ingress{
+	ing := &v1beta1.Ingress{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "my-ing",
 			Namespace: "my-ns",
@@ -127,11 +218,10 @@ func TestCreateLoadBalancer(t *testing.T) {
 	})
 	// Return a fake ingress with the instance groups annotation.
 	client.AddReactor("get", "ingresses", func(action core.Action) (handled bool, ret runtime.Object, err error) {
-		return true, &ing, nil
+		return true, ing, nil
 	})
-
 	// Setup the fake instance group provider to return the expected instance group with fake named ports.
-	err = lbc.igp.CreateInstanceGroup(&compute.InstanceGroup{
+	ig := &compute.InstanceGroup{
 		Name: igName,
 		NamedPorts: []*compute.NamedPort{
 			{
@@ -139,88 +229,70 @@ func TestCreateLoadBalancer(t *testing.T) {
 				Port: nodePort,
 			},
 		},
-	}, igZone)
-	if err := lbc.CreateLoadBalancer(&ing, true /*forceUpdate*/); err != nil {
+	}
+	if igErr := lbc.igp.CreateInstanceGroup(ig, igZone); igErr != nil {
+		return nil, igErr
+	}
+	return ing, nil
+}
+
+func TestDeleteLoadBalancer(t *testing.T) {
+	lbName := "lb-name"
+	nodePort := int64(32211)
+	igName := "my-fake-ig"
+	igZone := "my-fake-zone"
+	zoneLink := fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/fake-project/zones/%s", igZone)
+	lbc := newLoadBalancerSyncer(lbName)
+	ipAddress := &compute.Address{
+		Name:    "ipAddressName",
+		Address: "1.2.3.4",
+	}
+	// Reserve a global address. User is supposed to do this before calling CreateLoadBalancer.
+	lbc.ipp.ReserveGlobalAddress(ipAddress)
+	ing, err := setupLBCForCreateIng(lbc, nodePort, igName, igZone, zoneLink, ipAddress)
+	if err != nil {
+		t.Fatalf("%s", err)
+	}
+	if err := lbc.CreateLoadBalancer(ing, true /*forceUpdate*/); err != nil {
 		t.Fatalf("unexpected error %s", err)
 	}
-	// Verify client actions.
-	actions := client.Actions()
-	// Verify that the client should have been used to fetch service and ingress.
-	if len(actions) != 2 {
-		t.Fatalf("unexpected actions: %v, expected 2 (get svc and get ing)", actions)
-	}
-	getSvcName := actions[0].(core.GetAction).GetName()
-	if getSvcName != "my-svc" {
-		t.Errorf("unexpected get for %s, expected: my-svc", getSvcName)
-	}
-	getIngName := actions[1].(core.GetAction).GetName()
-	if getIngName != ing.Name {
-		t.Errorf("unexpected get for %s, expected: %s", getIngName, ing.Name)
-	}
-	// Verify that the expected healthcheck was created.
 	fhc := lbc.hcs.(*healthcheck.FakeHealthCheckSyncer)
-	if len(fhc.EnsuredHealthChecks) != 1 {
-		t.Fatalf("unexpected number of health checks. expected: %d, got: %d", 1, len(fhc.EnsuredHealthChecks))
+	if len(fhc.EnsuredHealthChecks) == 0 {
+		t.Errorf("unexpected health checks not created")
 	}
-	hc := fhc.EnsuredHealthChecks[0]
-	if hc.LBName != lbName || hc.Port.Port != nodePort {
-		t.Errorf("unexpected health check: %v\nexpected: lbname: %s, port: %d", hc, lbName, nodePort)
-	}
-	// Verify that the expected backend service was created.
 	fbs := lbc.bss.(*backendservice.FakeBackendServiceSyncer)
-	if len(fbs.EnsuredBackendServices) != 1 {
-		t.Fatalf("unexpected number of backend services. expected: %d, got: %d", 1, len(fbs.EnsuredBackendServices))
+	if len(fbs.EnsuredBackendServices) == 0 {
+		t.Errorf("unexpected backend services not created")
 	}
-	bs := fbs.EnsuredBackendServices[0]
-	if bs.LBName != lbName {
-		t.Errorf("unexpected lb name in backend service. expected: %s, got: %s", lbName, bs.LBName)
-	}
-	if bs.Port.Port != nodePort {
-		t.Errorf("unexpected port in backend service. expected port %d, got: %d", nodePort, bs.Port.Port)
-	}
-	if len(bs.HCMap) != 1 || bs.HCMap[nodePort] == nil {
-		t.Errorf("unexpected health check map in backend service. expected an entry for port %d, got: %v", nodePort, bs.HCMap)
-	}
-	if len(bs.NPMap) != 1 || bs.NPMap[nodePort] == nil {
-		t.Errorf("unexpected node port map in backend service. expected an entry for port %d, got: %v", nodePort, bs.NPMap)
-	}
-	if len(bs.IGLinks) != 1 || bs.IGLinks[0] != expectedIGLink {
-		t.Errorf("unexpected instance group in backend service. expected %s, got: %s", expectedIGLink, bs.IGLinks)
-	}
-	// Verify that the expected urlmap was created.
 	fum := lbc.ums.(*urlmap.FakeURLMapSyncer)
-	if len(fum.EnsuredURLMaps) != 1 {
-		t.Fatalf("unexpected number of url maps. expected: %d, got: %d", 1, len(fum.EnsuredURLMaps))
+	if len(fum.EnsuredURLMaps) == 0 {
+		t.Errorf("unexpected url maps not created")
 	}
-	um := fum.EnsuredURLMaps[0]
-	if hc.LBName != lbName {
-		t.Errorf("unexpected url map: %v\nexpected: lbname: %s", um, lbName)
-	}
-	// Verify that the expected target proxy was created.
 	ftp := lbc.tps.(*targetproxy.FakeTargetProxySyncer)
-	if len(ftp.EnsuredTargetProxies) != 1 {
-		t.Fatalf("unexpected number of target proxies. expected: %d, got: %d", 1, len(ftp.EnsuredTargetProxies))
+	if len(ftp.EnsuredTargetProxies) == 0 {
+		t.Errorf("unexpected target proxies not created")
 	}
-	tp := ftp.EnsuredTargetProxies[0]
-	if tp.UmLink != urlmap.FakeUrlSelfLink {
-		t.Errorf("unexpected url map link in target proxy. expected: %s, got: %s", urlmap.FakeUrlSelfLink, tp.UmLink)
-	}
-	// Verify that the expected forwarding rule was created.
 	ffr := lbc.frs.(*forwardingrule.FakeForwardingRuleSyncer)
-	if len(ffr.EnsuredForwardingRules) != 1 {
-		t.Fatalf("unexpected number of forwarding rules. expected: %d, got: %d", 1, len(ffr.EnsuredForwardingRules))
+	if len(ffr.EnsuredForwardingRules) == 0 {
+		t.Errorf("unexpected forwarding rules not created")
 	}
-	fr := ffr.EnsuredForwardingRules[0]
-	if fr.LBName != lbName {
-		t.Errorf("unexpected lbname in forwarding rule. expected: %s, got: %s", lbName, fr.LBName)
+	// Verify that all expected resources are deleted.
+	if err := lbc.DeleteLoadBalancer(ing); err != nil {
+		t.Fatalf("unexpected error in deleting load balancer: %s", err)
 	}
-	if fr.TPLink != targetproxy.FakeTargetProxySelfLink {
-		t.Errorf("unexpected target proxy link in forwarding rule. expected: %s, got: %s", targetproxy.FakeTargetProxySelfLink, fr.TPLink)
+	if len(ffr.EnsuredForwardingRules) != 0 {
+		t.Errorf("unexpected forwarding rules have not been deleted: %v", ffr.EnsuredForwardingRules)
 	}
-	if fr.IPAddress != ipAddress.Address {
-		t.Errorf("unexpected ip address in forwarding rule. expected: %s, got: %s", ipAddress.Address, fr.IPAddress)
+	if len(ftp.EnsuredTargetProxies) != 0 {
+		t.Errorf("unexpected target proxies have not been deleted: %v", ftp.EnsuredTargetProxies)
 	}
-	if fr.LBName != lbName {
-		t.Errorf("unexpected lbname in forwarding rule. expected: %s, got: %s", lbName, fr.LBName)
+	if len(fum.EnsuredURLMaps) != 0 {
+		t.Errorf("unexpected url maps have not been deleted: %v", fum.EnsuredURLMaps)
+	}
+	if len(fbs.EnsuredBackendServices) != 0 {
+		t.Errorf("unexpected backend services have not been deleted: %v", fbs.EnsuredBackendServices)
+	}
+	if len(fhc.EnsuredHealthChecks) != 0 {
+		t.Errorf("unexpected health checks have not been deleted: %v", fhc.EnsuredHealthChecks)
 	}
 }

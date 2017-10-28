@@ -23,6 +23,7 @@ import (
 
 	"github.com/ghodss/yaml"
 	"github.com/golang/glog"
+	"github.com/hashicorp/go-multierror"
 	"github.com/spf13/cobra"
 	"k8s.io/api/extensions/v1beta1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -36,10 +37,10 @@ import (
 )
 
 var (
-	createShortDescription = "Create a multi-cluster ingress."
-	createLongDescription  = `Create a multi-cluster ingress.
+	createShortDescription = "Create a multicluster ingress."
+	createLongDescription  = `Create a multicluster ingress.
 
-	Takes an ingress spec and a list of clusters and creates a multi-cluster ingress targetting those clusters.
+	Takes an ingress spec and a list of clusters and creates a multicluster ingress targetting those clusters.
 	`
 )
 
@@ -69,8 +70,8 @@ var getClientset = func(kubeconfigPath, contextName string) (kubeclient.Interfac
 type CreateOptions struct {
 	// Name of the YAML file containing ingress spec.
 	IngressFilename string
-	// Path to kubeconfig.
-	Kubeconfig string
+	// Path to kubeconfig file.
+	KubeconfigFilename string
 	// Name of the load balancer.
 	// Required.
 	LBName string
@@ -93,7 +94,7 @@ func NewCmdCreate(out, err io.Writer) *cobra.Command {
 		Long:  createLongDescription,
 		// TODO(nikhiljindal): Add an example.
 		Run: func(cmd *cobra.Command, args []string) {
-			if err := ValidateArgs(&options, args); err != nil {
+			if err := ValidateCreateArgs(&options, args); err != nil {
 				fmt.Println(err)
 				return
 			}
@@ -102,13 +103,14 @@ func NewCmdCreate(out, err io.Writer) *cobra.Command {
 			}
 		},
 	}
-	AddFlags(cmd, &options)
+	AddCreateFlags(cmd, &options)
 	return cmd
 }
 
-func AddFlags(cmd *cobra.Command, options *CreateOptions) error {
+func AddCreateFlags(cmd *cobra.Command, options *CreateOptions) error {
 	cmd.Flags().StringVarP(&options.IngressFilename, "ingress", "i", options.IngressFilename, "filename containing ingress spec")
-	cmd.Flags().StringVarP(&options.Kubeconfig, "kubeconfig", "k", options.Kubeconfig, "path to kubeconfig")
+	cmd.Flags().StringVarP(&options.KubeconfigFilename, "kubeconfig", "k", options.KubeconfigFilename, "path to kubeconfig file")
+	// TODO(nikhiljindal): Add a short flag "-p" if it seems useful.
 	cmd.Flags().StringVarP(&options.GCPProject, "gcp-project", "", options.GCPProject, "name of the gcp project")
 	cmd.Flags().BoolVarP(&options.ForceUpdate, "force", "f", options.ForceUpdate, "overwrite existing settings if they are different.")
 	// TODO Add a verbose flag that turns on glog logging, or figure out how
@@ -116,7 +118,7 @@ func AddFlags(cmd *cobra.Command, options *CreateOptions) error {
 	return nil
 }
 
-func ValidateArgs(options *CreateOptions, args []string) error {
+func ValidateCreateArgs(options *CreateOptions, args []string) error {
 	if len(args) != 1 {
 		return fmt.Errorf("unexpected args: %v. Expected one arg as name of load balancer.", args)
 	}
@@ -138,7 +140,7 @@ func RunCreate(options *CreateOptions, args []string) error {
 	if err := unmarshall(options.IngressFilename, &ing); err != nil {
 		return fmt.Errorf("error in unmarshalling the yaml file %s, err: %s", options.IngressFilename, err)
 	}
-	clientset, err := getClientset(options.Kubeconfig, "" /*contextName*/)
+	clientset, err := getClientset(options.KubeconfigFilename, "" /*contextName*/)
 	if err != nil {
 		return fmt.Errorf("unexpected error in instantiating clientset: %v", err)
 	}
@@ -148,7 +150,7 @@ func RunCreate(options *CreateOptions, args []string) error {
 	}
 
 	// Create ingress in all clusters.
-	if err := createIngress(options.Kubeconfig, options.IngressFilename); err != nil {
+	if err := createIngress(options.KubeconfigFilename, options.IngressFilename); err != nil {
 		return err
 	}
 
@@ -191,26 +193,28 @@ func createIngressInClusters(kubeconfig, ingressFilename string, clusters []stri
 	glog.V(5).Infof("Unmarshaled this ingress:\n%+v", ing)
 
 	// TODO(nikhiljindal): Validate and optionally add the gce-multi-cluster class annotation to the ingress YAML spec.
+	var err error
 	for _, c := range clusters {
 		fmt.Println("\nHandling context:", c)
-		client, err := getClientset(kubeconfig, c)
-		if err != nil {
-			fmt.Println("Error getting kubectl client interface:", err)
-			return err
+		client, clientErr := getClientset(kubeconfig, c)
+		if clientErr != nil {
+			err = multierror.Append(err, fmt.Errorf("Error getting kubectl client interface for context %s:", c, clientErr))
+			continue
 		}
 		glog.V(3).Infof("Using this namespace for ingress: %v", ing.Namespace)
-		actualIng, err := client.Extensions().Ingresses(ing.Namespace).Create(&ing)
+		actualIng, createErr := client.Extensions().Ingresses(ing.Namespace).Create(&ing)
 		glog.V(2).Infof("Ingress Create returned: err:%v. Actual Ingress:%+v", err, actualIng)
-		if err != nil {
+		if createErr != nil {
 			if errors.IsAlreadyExists(err) {
 				fmt.Println("Ingress already exists; moving on.")
 				continue
 			} else {
-				return fmt.Errorf("Error in creating ingress in cluster %s: %s", c, err)
+
+				err = multierror.Append(err, fmt.Errorf("Error in creating ingress in cluster %s: %s", c, createErr))
 			}
 		}
 	}
-	return nil
+	return err
 }
 
 func runCommand(args []string) (string, error) {

@@ -84,6 +84,18 @@ func (s *URLMapSyncer) EnsureURLMap(lbName string, ing *v1beta1.Ingress, beMap b
 	return s.createURLMap(desiredUM)
 }
 
+func (s *URLMapSyncer) DeleteURLMap() error {
+	name := s.namer.URLMapName()
+	fmt.Println("Deleting url map", name)
+	err := s.ump.DeleteUrlMap(name)
+	if err != nil {
+		fmt.Println("error", err, "in deleting url map", name)
+		return err
+	}
+	fmt.Println("url map", name, "deleted successfully")
+	return nil
+}
+
 func (s *URLMapSyncer) updateURLMap(desiredUM *compute.UrlMap) (string, error) {
 	name := desiredUM.Name
 	fmt.Println("Updating existing url map", name, "to match the desired state")

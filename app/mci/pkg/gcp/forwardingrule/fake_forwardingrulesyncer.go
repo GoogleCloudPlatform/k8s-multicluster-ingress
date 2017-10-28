@@ -41,3 +41,8 @@ func (f *FakeForwardingRuleSyncer) EnsureHttpForwardingRule(lbName, ipAddress, t
 	})
 	return nil
 }
+
+func (f *FakeForwardingRuleSyncer) DeleteForwardingRules() error {
+	f.EnsuredForwardingRules = nil
+	return nil
+}

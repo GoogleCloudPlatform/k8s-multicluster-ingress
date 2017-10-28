@@ -19,4 +19,6 @@ type TargetProxySyncerInterface interface {
 	// EnsureHttpTargetProxy ensures that the required http target proxy exists for the given load balancer and url map link.
 	// Returns the self link for the ensured proxy.
 	EnsureHttpTargetProxy(lbName, urlMapLink string) (string, error)
+	// DeleteTargetProxies deletes the target proxies that EnsureTargetProxy would have created.
+	DeleteTargetProxies() error
 }
