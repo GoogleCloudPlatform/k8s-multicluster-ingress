@@ -106,19 +106,24 @@ func TestCreateIngress(t *testing.T) {
 	fakeClient.AddReactor("create", "ingresses", func(action core.Action) (handled bool, ret runtime.Object, err error) {
 		return true, action.(core.CreateAction).GetObject(), nil
 	})
+	clusters := []string{"cluster1", "cluster2"}
 
-	runFn := func() error {
+	runFn := func() ([]string, error) {
 		return createIngress("kubeconfig", "../../../testdata/ingress.yaml")
 	}
 	expectedCommands := []ExpectedCommand{
 		{
 			Args:   []string{"kubectl", "--kubeconfig=kubeconfig", "config", "get-contexts", "-o=name"},
-			Output: "context-1\ncontext-2",
+			Output: strings.Join(clusters, "\n"),
 			Err:    nil,
 		},
 	}
-	if err := run(&fakeClient, expectedCommands, runFn); err != nil {
+	createClusters, err := run(&fakeClient, expectedCommands, runFn)
+	if err != nil {
 		t.Errorf("%s", err)
+	}
+	if !reflect.DeepEqual(createClusters, clusters) {
+		t.Errorf("unexpected list of clusters in which ingress was created. expected: %v, got: %v", clusters, createClusters)
 	}
 	actions := fakeClient.Actions()
 	if len(actions) != 2 {

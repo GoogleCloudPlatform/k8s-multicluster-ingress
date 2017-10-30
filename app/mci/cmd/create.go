@@ -150,23 +150,28 @@ func RunCreate(options *CreateOptions, args []string) error {
 	}
 
 	// Create ingress in all clusters.
-	if err := createIngress(options.KubeconfigFilename, options.IngressFilename); err != nil {
+	clusters, err := createIngress(options.KubeconfigFilename, options.IngressFilename)
+	if err != nil {
 		return err
 	}
 
 	lbs := gcplb.NewLoadBalancerSyncer(options.LBName, clientset, cloudInterface)
-	return lbs.CreateLoadBalancer(&ing, options.ForceUpdate)
+	return lbs.CreateLoadBalancer(&ing, options.ForceUpdate, clusters)
 }
 
 // Extracts the contexts from the given kubeconfig and creates ingress in those context clusters.
-func createIngress(kubeconfig, ingressFilename string) error {
+// Returns the list of clusters in which it created the ingress
+func createIngress(kubeconfig, ingressFilename string) ([]string, error) {
 	// TODO(nikhiljindal): Allow users to specify the list of clusters to create the ingress in
 	// rather than assuming all contexts in kubeconfig.
 	clusters, err := getClusters(kubeconfig)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	return createIngressInClusters(kubeconfig, ingressFilename, clusters)
+	if createErr := createIngressInClusters(kubeconfig, ingressFilename, clusters); createErr != nil {
+		return nil, createErr
+	}
+	return clusters, nil
 }
 
 // Extracts the list of contexts from the given kubeconfig.

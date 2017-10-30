@@ -14,10 +14,17 @@
 
 package forwardingrule
 
+import (
+	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/mci/pkg/gcp/status"
+)
+
 // ForwardingRuleSyncerInterface is an interface to manage GCP forwarding rules.
 type ForwardingRuleSyncerInterface interface {
 	// EnsureHttpForwardingRule ensures that the required http forwarding rule exists.
-	EnsureHttpForwardingRule(lbName, ipAddress, targetProxyLink string) error
+	// clusters is the list of clusters across which the load balancer is spread.
+	EnsureHttpForwardingRule(lbName, ipAddress, targetProxyLink string, clusters []string) error
 	// DeleteForwardingRules deletes the forwarding rules that EnsureForwardingRule would have created.
 	DeleteForwardingRules() error
+	// GetLoadBalancerStatus returns the struct describing the status of the given load balancer.
+	GetLoadBalancerStatus(lbName string) (*status.LoadBalancerStatus, error)
 }

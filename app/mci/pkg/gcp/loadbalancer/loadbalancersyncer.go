@@ -87,7 +87,8 @@ func NewLoadBalancerSyncer(lbName string, client kubeclient.Interface, cloud *gc
 }
 
 // CreateLoadBalancer creates the GCP resources necessary for an L7 GCP load balancer corresponding to the given ingress.
-func (l *LoadBalancerSyncer) CreateLoadBalancer(ing *v1beta1.Ingress, forceUpdate bool) error {
+// clusters is the list of clusters that this load balancer is spread to.
+func (l *LoadBalancerSyncer) CreateLoadBalancer(ing *v1beta1.Ingress, forceUpdate bool, clusters []string) error {
 	var err error
 	ports := l.ingToNodePorts(ing)
 	ipAddr, err := l.getIPAddress(ing)
@@ -125,7 +126,7 @@ func (l *LoadBalancerSyncer) CreateLoadBalancer(ing *v1beta1.Ingress, forceUpdat
 			// Aggregate errors and return all at the end.
 			err = multierror.Append(err, tpErr)
 		}
-		frErr := l.frs.EnsureHttpForwardingRule(l.lbName, ipAddr, tpLink)
+		frErr := l.frs.EnsureHttpForwardingRule(l.lbName, ipAddr, tpLink, clusters)
 		if frErr != nil {
 			// Aggregate errors and return all at the end.
 			err = multierror.Append(err, frErr)
@@ -169,6 +170,16 @@ func (l *LoadBalancerSyncer) DeleteLoadBalancer(ing *v1beta1.Ingress) error {
 	}
 	return err
 }
+
+// PrintStatus prints the current status of the load balancer.
+func (l *LoadBalancerSyncer) PrintStatus() (string, error) {
+	sd, err := l.frs.GetLoadBalancerStatus(l.lbName)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("Load balancer %s has IPAddress %s and is spread across %d clusters (%s)", l.lbName, sd.IPAddress, len(sd.Clusters), strings.Join(sd.Clusters, ",")), nil
+}
+
 func (l *LoadBalancerSyncer) getIPAddress(ing *v1beta1.Ingress) (string, error) {
 	key := annotations.StaticIPNameKey
 	if ing.ObjectMeta.Annotations == nil || ing.ObjectMeta.Annotations[key] == "" {
