@@ -51,27 +51,27 @@ func NewCmdGetStatus(out, err io.Writer) *cobra.Command {
 		Long:  getStatusLongDescription,
 		// TODO(nikhiljindal): Add an example.
 		Run: func(cmd *cobra.Command, args []string) {
-			if err := ValidateGetStatusArgs(&options, args); err != nil {
+			if err := validateGetStatusArgs(&options, args); err != nil {
 				fmt.Println(err)
 				return
 			}
-			if err := RunGetStatus(&options, args); err != nil {
+			if err := runGetStatus(&options, args); err != nil {
 				fmt.Println("Error in getting status of the load balancer:", err)
 			}
 		},
 	}
-	AddGetStatusFlags(cmd, &options)
+	addGetStatusFlags(cmd, &options)
 	return cmd
 }
 
-func AddGetStatusFlags(cmd *cobra.Command, options *GetStatusOptions) error {
+func addGetStatusFlags(cmd *cobra.Command, options *GetStatusOptions) error {
 	// TODO(nikhiljindal): Add a short flag "-p" if it seems useful.
 	cmd.Flags().StringVarP(&options.GCPProject, "gcp-project", "", options.GCPProject, "name of the gcp project")
 	// TODO Add a verbose flag that turns on glog logging.
 	return nil
 }
 
-func ValidateGetStatusArgs(options *GetStatusOptions, args []string) error {
+func validateGetStatusArgs(options *GetStatusOptions, args []string) error {
 	if len(args) != 1 {
 		return fmt.Errorf("unexpected args: %v. Expected one arg as name of load balancer.", args)
 	}
@@ -82,7 +82,7 @@ func ValidateGetStatusArgs(options *GetStatusOptions, args []string) error {
 	return nil
 }
 
-func RunGetStatus(options *GetStatusOptions, args []string) error {
+func runGetStatus(options *GetStatusOptions, args []string) error {
 	options.LBName = args[0]
 
 	cloudInterface, err := cloudinterface.NewGCECloudInterface(options.GCPProject)

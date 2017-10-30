@@ -60,20 +60,20 @@ func NewCmdDelete(out, err io.Writer) *cobra.Command {
 		Long:  deleteLongDescription,
 		// TODO(nikhiljindal): Add an example.
 		Run: func(cmd *cobra.Command, args []string) {
-			if err := ValidateDeleteArgs(&options, args); err != nil {
+			if err := validateDeleteArgs(&options, args); err != nil {
 				fmt.Println(err)
 				return
 			}
-			if err := RunDelete(&options, args); err != nil {
+			if err := runDelete(&options, args); err != nil {
 				fmt.Println("Error in deleting load balancer:", err)
 			}
 		},
 	}
-	AddDeleteFlags(cmd, &options)
+	addDeleteFlags(cmd, &options)
 	return cmd
 }
 
-func AddDeleteFlags(cmd *cobra.Command, options *DeleteOptions) error {
+func addDeleteFlags(cmd *cobra.Command, options *DeleteOptions) error {
 	cmd.Flags().StringVarP(&options.IngressFilename, "ingress", "i", options.IngressFilename, "filename containing ingress spec")
 	cmd.Flags().StringVarP(&options.KubeconfigFilename, "kubeconfig", "k", options.KubeconfigFilename, "path to kubeconfig file")
 	// TODO(nikhiljindal): Add a short flag "-p" if it seems useful.
@@ -82,7 +82,7 @@ func AddDeleteFlags(cmd *cobra.Command, options *DeleteOptions) error {
 	return nil
 }
 
-func ValidateDeleteArgs(options *DeleteOptions, args []string) error {
+func validateDeleteArgs(options *DeleteOptions, args []string) error {
 	if len(args) != 1 {
 		return fmt.Errorf("unexpected args: %v. Expected one arg as name of load balancer.", args)
 	}
@@ -96,7 +96,7 @@ func ValidateDeleteArgs(options *DeleteOptions, args []string) error {
 	return nil
 }
 
-func RunDelete(options *DeleteOptions, args []string) error {
+func runDelete(options *DeleteOptions, args []string) error {
 	options.LBName = args[0]
 
 	// Unmarshal the YAML into ingress struct.
