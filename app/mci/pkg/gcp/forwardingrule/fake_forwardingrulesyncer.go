@@ -14,10 +14,17 @@
 
 package forwardingrule
 
+import (
+	"fmt"
+
+	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/mci/pkg/gcp/status"
+)
+
 type FakeForwardingRule struct {
 	LBName    string
 	IPAddress string
 	TPLink    string
+	Clusters  []string
 }
 
 type FakeForwardingRuleSyncer struct {
@@ -33,11 +40,12 @@ func NewFakeForwardingRuleSyncer() ForwardingRuleSyncerInterface {
 // Ensure this implements ForwardingRuleSyncerInterface.
 var _ ForwardingRuleSyncerInterface = &FakeForwardingRuleSyncer{}
 
-func (f *FakeForwardingRuleSyncer) EnsureHttpForwardingRule(lbName, ipAddress, targetProxyLink string) error {
+func (f *FakeForwardingRuleSyncer) EnsureHttpForwardingRule(lbName, ipAddress, targetProxyLink string, clusters []string) error {
 	f.EnsuredForwardingRules = append(f.EnsuredForwardingRules, FakeForwardingRule{
 		LBName:    lbName,
 		IPAddress: ipAddress,
 		TPLink:    targetProxyLink,
+		Clusters:  clusters,
 	})
 	return nil
 }
@@ -45,4 +53,17 @@ func (f *FakeForwardingRuleSyncer) EnsureHttpForwardingRule(lbName, ipAddress, t
 func (f *FakeForwardingRuleSyncer) DeleteForwardingRules() error {
 	f.EnsuredForwardingRules = nil
 	return nil
+}
+
+func (f *FakeForwardingRuleSyncer) GetLoadBalancerStatus(lbName string) (*status.LoadBalancerStatus, error) {
+	for _, fr := range f.EnsuredForwardingRules {
+		if fr.LBName == lbName {
+			return &status.LoadBalancerStatus{
+				LoadBalancerName: lbName,
+				Clusters:         fr.Clusters,
+				IPAddress:        fr.IPAddress,
+			}, nil
+		}
+	}
+	return nil, fmt.Errorf("load balancer %s does not exist", lbName)
 }
