@@ -60,44 +60,44 @@ func run(fakeClient *fake.Clientset, expectedCmds []ExpectedCommand, runFn func(
 }
 
 func TestValidateCreateArgs(t *testing.T) {
-	// ValidateCreateArgs should return an error with empty options.
+	// validateCreateArgs should return an error with empty options.
 	options := CreateOptions{}
-	if err := ValidateCreateArgs(&options, []string{}); err == nil {
+	if err := validateCreateArgs(&options, []string{}); err == nil {
 		t.Errorf("Expected error for emtpy options")
 	}
 
-	// ValidateCreateArgs should return an error with missing load balancer name.
+	// validateCreateArgs should return an error with missing load balancer name.
 	options = CreateOptions{
 		IngressFilename: "ingress.yaml",
 		GCPProject:      "gcp-project",
 	}
-	if err := ValidateCreateArgs(&options, []string{}); err == nil {
+	if err := validateCreateArgs(&options, []string{}); err == nil {
 		t.Errorf("Expected error for missing load balancer name")
 	}
 
-	// ValidateCreateArgs should return an error with missing ingress.
+	// validateCreateArgs should return an error with missing ingress.
 	options = CreateOptions{
 		GCPProject: "gcp-project",
 	}
-	if err := ValidateCreateArgs(&options, []string{"lbname"}); err == nil {
+	if err := validateCreateArgs(&options, []string{"lbname"}); err == nil {
 		t.Errorf("Expected error for missing ingress")
 	}
 
-	// ValidateCreateArgs should return an error with missing gcp project.
+	// validateCreateArgs should return an error with missing gcp project.
 	options = CreateOptions{
 		IngressFilename: "ingress.yaml",
 	}
-	if err := ValidateCreateArgs(&options, []string{"lbname"}); err == nil {
+	if err := validateCreateArgs(&options, []string{"lbname"}); err == nil {
 		t.Errorf("Expected error for missing gcp project")
 	}
 
-	// ValidateCreateArgs should succeed when all arguments are passed as expected.
+	// validateCreateArgs should succeed when all arguments are passed as expected.
 	options = CreateOptions{
 		IngressFilename: "ingress.yaml",
 		GCPProject:      "gcp-project",
 	}
-	if err := ValidateCreateArgs(&options, []string{"lbname"}); err != nil {
-		t.Errorf("unexpected error from ValidateCreateArgs: %s", err)
+	if err := validateCreateArgs(&options, []string{"lbname"}); err != nil {
+		t.Errorf("unexpected error from validateCreateArgs: %s", err)
 	}
 }
 

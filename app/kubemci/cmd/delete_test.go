@@ -23,44 +23,44 @@ import (
 )
 
 func TestValidateDeleteArgs(t *testing.T) {
-	// ValidateDeleteArgs should return an error with empty options.
+	// validateDeleteArgs should return an error with empty options.
 	options := DeleteOptions{}
-	if err := ValidateDeleteArgs(&options, []string{}); err == nil {
+	if err := validateDeleteArgs(&options, []string{}); err == nil {
 		t.Errorf("Expected error for emtpy options")
 	}
 
-	// ValidateDeleteArgs should return an error with missing load balancer name.
+	// validateDeleteArgs should return an error with missing load balancer name.
 	options = DeleteOptions{
 		IngressFilename: "ingress.yaml",
 		GCPProject:      "gcp-project",
 	}
-	if err := ValidateDeleteArgs(&options, []string{}); err == nil {
+	if err := validateDeleteArgs(&options, []string{}); err == nil {
 		t.Errorf("Expected error for missing load balancer name")
 	}
 
-	// ValidateDeleteArgs should return an error with missing ingress.
+	// validateDeleteArgs should return an error with missing ingress.
 	options = DeleteOptions{
 		GCPProject: "gcp-project",
 	}
-	if err := ValidateDeleteArgs(&options, []string{"lbname"}); err == nil {
+	if err := validateDeleteArgs(&options, []string{"lbname"}); err == nil {
 		t.Errorf("Expected error for missing ingress")
 	}
 
-	// ValidateDeleteArgs should return an error with missing gcp project.
+	// validateDeleteArgs should return an error with missing gcp project.
 	options = DeleteOptions{
 		IngressFilename: "ingress.yaml",
 	}
-	if err := ValidateDeleteArgs(&options, []string{"lbname"}); err == nil {
+	if err := validateDeleteArgs(&options, []string{"lbname"}); err == nil {
 		t.Errorf("Expected error for missing gcp project")
 	}
 
-	// ValidateDeleteArgs should succeed when all arguments are passed as expected.
+	// validateDeleteArgs should succeed when all arguments are passed as expected.
 	options = DeleteOptions{
 		IngressFilename: "ingress.yaml",
 		GCPProject:      "gcp-project",
 	}
-	if err := ValidateDeleteArgs(&options, []string{"lbname"}); err != nil {
-		t.Errorf("unexpected error from ValidateDeleteArgs: %s", err)
+	if err := validateDeleteArgs(&options, []string{"lbname"}); err != nil {
+		t.Errorf("unexpected error from validateDeleteArgs: %s", err)
 	}
 }
 

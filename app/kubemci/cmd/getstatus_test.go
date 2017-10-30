@@ -19,31 +19,31 @@ import (
 )
 
 func TestValidateGetStatusArgs(t *testing.T) {
-	// ValidateGetStatusArgs should return an error with empty options.
+	// validateGetStatusArgs should return an error with empty options.
 	options := GetStatusOptions{}
-	if err := ValidateGetStatusArgs(&options, []string{}); err == nil {
+	if err := validateGetStatusArgs(&options, []string{}); err == nil {
 		t.Errorf("Expected error for emtpy options")
 	}
 
-	// ValidateGetStatusArgs should return an error with missing load balancer name.
+	// validateGetStatusArgs should return an error with missing load balancer name.
 	options = GetStatusOptions{
 		GCPProject: "gcp-project",
 	}
-	if err := ValidateGetStatusArgs(&options, []string{}); err == nil {
+	if err := validateGetStatusArgs(&options, []string{}); err == nil {
 		t.Errorf("Expected error for missing load balancer name")
 	}
 
-	// ValidateGetStatusArgs should return an error with missing gcp project.
+	// validateGetStatusArgs should return an error with missing gcp project.
 	options = GetStatusOptions{}
-	if err := ValidateGetStatusArgs(&options, []string{"lbname"}); err == nil {
+	if err := validateGetStatusArgs(&options, []string{"lbname"}); err == nil {
 		t.Errorf("Expected error for missing gcp-project")
 	}
 
-	// ValidateGetStatusArgs should succeed when all arguments are passed as expected.
+	// validateGetStatusArgs should succeed when all arguments are passed as expected.
 	options = GetStatusOptions{
 		GCPProject: "gcp-project",
 	}
-	if err := ValidateGetStatusArgs(&options, []string{"lbname"}); err != nil {
-		t.Errorf("unexpected error from ValidateGetStatusArgs: %s", err)
+	if err := validateGetStatusArgs(&options, []string{"lbname"}); err != nil {
+		t.Errorf("unexpected error from validateGetStatusArgs: %s", err)
 	}
 }

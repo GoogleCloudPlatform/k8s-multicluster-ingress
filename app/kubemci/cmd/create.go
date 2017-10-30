@@ -94,11 +94,11 @@ func NewCmdCreate(out, err io.Writer) *cobra.Command {
 		Long:  createLongDescription,
 		// TODO(nikhiljindal): Add an example.
 		Run: func(cmd *cobra.Command, args []string) {
-			if err := ValidateCreateArgs(&options, args); err != nil {
+			if err := validateCreateArgs(&options, args); err != nil {
 				fmt.Println(err)
 				return
 			}
-			if err := RunCreate(&options, args); err != nil {
+			if err := runCreate(&options, args); err != nil {
 				fmt.Println("Error in creating load balancer:", err)
 			}
 		},
@@ -118,7 +118,7 @@ func AddCreateFlags(cmd *cobra.Command, options *CreateOptions) error {
 	return nil
 }
 
-func ValidateCreateArgs(options *CreateOptions, args []string) error {
+func validateCreateArgs(options *CreateOptions, args []string) error {
 	if len(args) != 1 {
 		return fmt.Errorf("unexpected args: %v. Expected one arg as name of load balancer.", args)
 	}
