@@ -110,7 +110,7 @@ func RunDelete(options *DeleteOptions, args []string) error {
 	}
 	cloudInterface, err := cloudinterface.NewGCECloudInterface(options.GCPProject)
 	if err != nil {
-		return fmt.Errorf("error in deleting cloud interface: %s", err)
+		return fmt.Errorf("error in creating cloud interface: %s", err)
 	}
 
 	// Delete ingress in all clusters.

@@ -17,6 +17,7 @@ package loadbalancer
 import (
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"testing"
 
 	"google.golang.org/api/compute/v1"
@@ -58,6 +59,7 @@ func TestCreateLoadBalancer(t *testing.T) {
 	igName := "my-fake-ig"
 	igZone := "my-fake-zone"
 	zoneLink := fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/fake-project/zones/%s", igZone)
+	clusters := []string{"cluster1", "cluster2"}
 	lbc := newLoadBalancerSyncer(lbName)
 	ipAddress := &compute.Address{
 		Name:    "ipAddressName",
@@ -69,7 +71,7 @@ func TestCreateLoadBalancer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("%s", err)
 	}
-	if err := lbc.CreateLoadBalancer(ing, true /*forceUpdate*/); err != nil {
+	if err := lbc.CreateLoadBalancer(ing, true /*forceUpdate*/, clusters); err != nil {
 		t.Fatalf("unexpected error %s", err)
 	}
 	// Verify client actions.
@@ -153,6 +155,9 @@ func TestCreateLoadBalancer(t *testing.T) {
 	}
 	if fr.LBName != lbName {
 		t.Errorf("unexpected lbname in forwarding rule. expected: %s, got: %s", lbName, fr.LBName)
+	}
+	if !reflect.DeepEqual(fr.Clusters, clusters) {
+		t.Errorf("unexpected clusters in forwarding rule. expected: %v, got: %v", clusters, fr.Clusters)
 	}
 }
 
@@ -253,7 +258,7 @@ func TestDeleteLoadBalancer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("%s", err)
 	}
-	if err := lbc.CreateLoadBalancer(ing, true /*forceUpdate*/); err != nil {
+	if err := lbc.CreateLoadBalancer(ing, true /*forceUpdate*/, []string{}); err != nil {
 		t.Fatalf("unexpected error %s", err)
 	}
 	fhc := lbc.hcs.(*healthcheck.FakeHealthCheckSyncer)
