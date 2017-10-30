@@ -15,7 +15,7 @@
 package backendservice
 
 import (
-	"google.golang.org/api/compute/v1"
+	compute "google.golang.org/api/compute/v1"
 	ingressbe "k8s.io/ingress-gce/pkg/backends"
 
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/healthcheck"
@@ -42,7 +42,7 @@ func NewFakeBackendServiceSyncer() BackendServiceSyncerInterface {
 // Ensure this implements BackendServiceSyncerInterface.
 var _ BackendServiceSyncerInterface = &FakeBackendServiceSyncer{}
 
-func (h *FakeBackendServiceSyncer) EnsureBackendService(lbName string, ports []ingressbe.ServicePort, hcMap healthcheck.HealthChecksMap, npMap NamedPortsMap, igLinks []string) (BackendServicesMap, error) {
+func (h *FakeBackendServiceSyncer) EnsureBackendService(lbName string, ports []ingressbe.ServicePort, hcMap healthcheck.HealthChecksMap, npMap NamedPortsMap, igLinks []string, forceUpdate bool) (BackendServicesMap, error) {
 	beMap := BackendServicesMap{}
 	for _, p := range ports {
 		h.EnsuredBackendServices = append(h.EnsuredBackendServices, FakeBackendService{

@@ -16,10 +16,12 @@ package backendservice
 
 import (
 	"fmt"
+	"reflect"
+
+	compute "google.golang.org/api/compute/v1"
 
 	"github.com/golang/glog"
-	"github.com/hashicorp/go-multierror"
-	"google.golang.org/api/compute/v1"
+	multierror "github.com/hashicorp/go-multierror"
 	ingressbe "k8s.io/ingress-gce/pkg/backends"
 
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/healthcheck"
@@ -46,7 +48,7 @@ var _ BackendServiceSyncerInterface = &BackendServiceSyncer{}
 // EnsureBackendService ensures that the required backend services exist for the given ports.
 // Does nothing if they exist already, else creates new ones.
 // Returns a map of the kubernetes service name to the corresponding GCE backend service.
-func (b *BackendServiceSyncer) EnsureBackendService(lbName string, ports []ingressbe.ServicePort, hcMap healthcheck.HealthChecksMap, npMap NamedPortsMap, igLinks []string) (BackendServicesMap, error) {
+func (b *BackendServiceSyncer) EnsureBackendService(lbName string, ports []ingressbe.ServicePort, hcMap healthcheck.HealthChecksMap, npMap NamedPortsMap, igLinks []string, forceUpdate bool) (BackendServicesMap, error) {
 	fmt.Println("Ensuring backend services")
 	glog.V(5).Infof("Received health checks map: %v", hcMap)
 	glog.V(5).Infof("Received named ports map: %v", npMap)
@@ -54,7 +56,7 @@ func (b *BackendServiceSyncer) EnsureBackendService(lbName string, ports []ingre
 	var err error
 	ensuredBackendServices := BackendServicesMap{}
 	for _, p := range ports {
-		be, beErr := b.ensureBackendService(lbName, p, hcMap[p.Port], npMap[p.Port], igLinks)
+		be, beErr := b.ensureBackendService(lbName, p, hcMap[p.Port], npMap[p.Port], igLinks, forceUpdate)
 		if beErr != nil {
 			beErr = fmt.Errorf("Error %s in ensuring backend service for port %v", beErr, p)
 			// Try ensuring backend services for all ports and return all errors at once.
@@ -96,7 +98,7 @@ func (b *BackendServiceSyncer) deleteBackendService(port ingressbe.ServicePort) 
 
 // ensureBackendService ensures that the required backend service exists for the given port.
 // Does nothing if it exists already, else creates a new one.
-func (b *BackendServiceSyncer) ensureBackendService(lbName string, port ingressbe.ServicePort, hc *compute.HealthCheck, np *compute.NamedPort, igLinks []string) (*compute.BackendService, error) {
+func (b *BackendServiceSyncer) ensureBackendService(lbName string, port ingressbe.ServicePort, hc *compute.HealthCheck, np *compute.NamedPort, igLinks []string, forceUpdate bool) (*compute.BackendService, error) {
 	fmt.Println("Ensuring backend service for port:", port)
 	if hc == nil {
 		return nil, fmt.Errorf("missing health check probably due to an error in creating health check. Cannot create backend service without health chech link")
@@ -118,12 +120,18 @@ func (b *BackendServiceSyncer) ensureBackendService(lbName string, port ingressb
 		// Backend service with that name exists already. Check if it matches what we want.
 		if backendServiceMatches(desiredBE, existingBE) {
 			// Nothing to do. Desired backend service exists already.
-			fmt.Println("Desired backend service exists already")
+			fmt.Println("Desired backend service exists already. Nothing to do.")
 			return existingBE, nil
 		}
 		// TODO (nikhiljindal): Require explicit permission from user before doing this.
-		fmt.Println("Updating existing backend service", name, "to match the desired state")
-		return b.updateBackendService(desiredBE)
+		if forceUpdate {
+			fmt.Println("Updating existing backend service", name, "to match the desired state as --force specified")
+			return b.updateBackendService(desiredBE)
+		} else {
+			// TODO(G-Harmon): Show diff to user and prompt yes/no for overwriting.
+			fmt.Println("Will not overwrite a differing BackendService without the --force flag.")
+			return nil, fmt.Errorf("will not overwrite BackendService without --force")
+		}
 	}
 	glog.V(5).Infof("Got error %s while trying to get existing backend service %s", err, name)
 	// TODO(nikhiljindal): Handle non NotFound errors. We should create only if the error is NotFound.
@@ -159,9 +167,35 @@ func (b *BackendServiceSyncer) createBackendService(desiredBE *compute.BackendSe
 }
 
 func backendServiceMatches(desiredBE, existingBE *compute.BackendService) bool {
-	// TODO(nikhiljindal): Add proper logic to figure out if the 2 backend services match.
 	// Need to add the --force flag for user to consent overritting before this method can be updated to return false.
-	return true
+	// There are a lot of fields....
+	glog.Infof("Checking backend...")
+
+	if desiredBE.AffinityCookieTtlSec != existingBE.AffinityCookieTtlSec ||
+		!reflect.DeepEqual(desiredBE.Backends, existingBE.Backends) ||
+		!reflect.DeepEqual(desiredBE.CdnPolicy, existingBE.CdnPolicy) ||
+		!reflect.DeepEqual(desiredBE.ConnectionDraining, existingBE.ConnectionDraining) ||
+		desiredBE.Description != existingBE.Description ||
+		desiredBE.EnableCDN != existingBE.EnableCDN ||
+		// Check fingerprint? Not required for insert. required for update.
+		!reflect.DeepEqual(desiredBE.HealthChecks, existingBE.HealthChecks) ||
+		(desiredBE.Iap != nil && existingBE != nil &&
+			(desiredBE.Iap.Enabled != existingBE.Iap.Enabled ||
+				desiredBE.Iap.Oauth2ClientId != existingBE.Iap.Oauth2ClientId ||
+				desiredBE.Iap.Oauth2ClientSecret != existingBE.Iap.Oauth2ClientSecret)) ||
+		desiredBE.LoadBalancingScheme != existingBE.LoadBalancingScheme ||
+		desiredBE.Name != existingBE.Name ||
+		desiredBE.Port != existingBE.Port ||
+		desiredBE.PortName != existingBE.PortName ||
+		desiredBE.Protocol != existingBE.Protocol ||
+		desiredBE.SessionAffinity != existingBE.SessionAffinity ||
+		desiredBE.TimeoutSec != existingBE.TimeoutSec {
+		glog.Infof("BackendServices differ.")
+		return false
+	} else {
+		glog.Infof("BackendServices match.")
+		return true
+	}
 }
 
 func (b *BackendServiceSyncer) desiredBackendService(lbName string, port ingressbe.ServicePort, hcLink, portName string, igLinks []string) *compute.BackendService {
