@@ -79,7 +79,7 @@ func NewCmdDelete(out, err io.Writer) *cobra.Command {
 func addDeleteFlags(cmd *cobra.Command, options *DeleteOptions) error {
 	cmd.Flags().StringVarP(&options.IngressFilename, "ingress", "i", options.IngressFilename, "filename containing ingress spec")
 	cmd.Flags().StringVarP(&options.KubeconfigFilename, "kubeconfig", "k", options.KubeconfigFilename, "path to kubeconfig file")
-	cmd.Flags().StringSliceVar(&options.KubeContexts, "kubecontexts", options.KubeContexts, "contexts in the kubeconfig file to install the ingress into")
+	cmd.Flags().StringSliceVar(&options.KubeContexts, "kubecontexts", options.KubeContexts, "contexts in the kubeconfig file to delete the ingress from")
 	// TODO(nikhiljindal): Add a short flag "-p" if it seems useful.
 	cmd.Flags().StringVarP(&options.GCPProject, "gcp-project", "", options.GCPProject, "name of the gcp project")
 	// TODO Add a verbose flag that turns on glog logging.
