@@ -32,7 +32,7 @@ type ExpectedCommand struct {
 	Err    error
 }
 
-func run(fakeClient *fake.Clientset, expectedCmds []ExpectedCommand, runFn func() ([]string, error)) ([]string, error) {
+func run(fakeClient *fake.Clientset, expectedCmds []ExpectedCommand, runFn func() ([]string, map[string]kubeclient.Interface, error)) ([]string, map[string]kubeclient.Interface, error) {
 	getClientset = func(kubeconfigPath, context string) (kubeclient.Interface, error) {
 		return fakeClient, nil
 	}
@@ -49,14 +49,14 @@ func run(fakeClient *fake.Clientset, expectedCmds []ExpectedCommand, runFn func(
 		i++
 		return output, err
 	}
-	clusters, err := runFn()
+	clusters, clients, err := runFn()
 	if err != nil {
-		return clusters, err
+		return clusters, clients, err
 	}
 	if i != len(expectedCmds) {
-		return clusters, fmt.Errorf("expected [commands, outputs, errs] not called: %s", expectedCmds[i:])
+		return clusters, clients, fmt.Errorf("expected [commands, outputs, errs] not called: %s", expectedCmds[i:])
 	}
-	return clusters, nil
+	return clusters, clients, nil
 }
 
 func TestValidateCreateArgs(t *testing.T) {
@@ -106,24 +106,36 @@ func TestCreateIngress(t *testing.T) {
 	fakeClient.AddReactor("create", "ingresses", func(action core.Action) (handled bool, ret runtime.Object, err error) {
 		return true, action.(core.CreateAction).GetObject(), nil
 	})
-	clusters := []string{"cluster1", "cluster2"}
+	expectedClusters := []string{"cluster1", "cluster2"}
+	expectedClients := map[string]kubeclient.Interface{
+		"cluster1": &fake.Clientset{},
+		"cluster2": &fake.Clientset{},
+	}
 
-	runFn := func() ([]string, error) {
+	runFn := func() ([]string, map[string]kubeclient.Interface, error) {
 		return createIngress("kubeconfig", "../../../testdata/ingress.yaml")
 	}
 	expectedCommands := []ExpectedCommand{
 		{
 			Args:   []string{"kubectl", "--kubeconfig=kubeconfig", "config", "get-contexts", "-o=name"},
-			Output: strings.Join(clusters, "\n"),
+			Output: strings.Join(expectedClusters, "\n"),
 			Err:    nil,
 		},
 	}
-	createClusters, err := run(&fakeClient, expectedCommands, runFn)
+	clusters, clients, err := run(&fakeClient, expectedCommands, runFn)
 	if err != nil {
 		t.Errorf("%s", err)
 	}
-	if !reflect.DeepEqual(createClusters, clusters) {
-		t.Errorf("unexpected list of clusters in which ingress was created. expected: %v, got: %v", clusters, createClusters)
+	if !reflect.DeepEqual(clusters, expectedClusters) {
+		t.Errorf("unexpected list of clusters in which ingress was created. expected: %v, got: %v", expectedClusters, clusters)
+	}
+	if len(clients) != len(expectedClients) {
+		t.Errorf("unexpected set of clients, expected: %v, got: %v", expectedClients, clients)
+	}
+	for k, _ := range expectedClients {
+		if clients[k] == nil {
+			t.Errorf("unexpected set of clients, expected: %v, got: %v", expectedClients, clients)
+		}
 	}
 	actions := fakeClient.Actions()
 	if len(actions) != 2 {

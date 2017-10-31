@@ -18,6 +18,7 @@ import (
 	"testing"
 
 	"k8s.io/apimachinery/pkg/runtime"
+	kubeclient "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/fake"
 	core "k8s.io/client-go/testing"
 )
@@ -70,8 +71,8 @@ func TestDeleteIngress(t *testing.T) {
 		return true, nil, nil
 	})
 
-	runFn := func() ([]string, error) {
-		return []string{}, deleteIngress("kubeconfig", "../../../testdata/ingress.yaml")
+	runFn := func() ([]string, map[string]kubeclient.Interface, error) {
+		return []string{}, nil, deleteIngress("kubeconfig", "../../../testdata/ingress.yaml")
 	}
 	expectedCommands := []ExpectedCommand{
 		{
@@ -80,7 +81,7 @@ func TestDeleteIngress(t *testing.T) {
 			Err:    nil,
 		},
 	}
-	if _, err := run(&fakeClient, expectedCommands, runFn); err != nil {
+	if _, _, err := run(&fakeClient, expectedCommands, runFn); err != nil {
 		t.Errorf("%s", err)
 	}
 
