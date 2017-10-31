@@ -26,6 +26,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	kubeclient "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/fake"
 	core "k8s.io/client-go/testing"
 	"k8s.io/ingress-gce/pkg/annotations"
@@ -47,9 +48,12 @@ func newLoadBalancerSyncer(lbName string) *LoadBalancerSyncer {
 		ums:    urlmap.NewFakeURLMapSyncer(),
 		tps:    targetproxy.NewFakeTargetProxySyncer(),
 		frs:    forwardingrule.NewFakeForwardingRuleSyncer(),
-		client: &fake.Clientset{},
-		igp:    ingressig.NewFakeInstanceGroups(nil),
-		ipp:    ingresslb.NewFakeLoadBalancers(""),
+		clients: map[string]kubeclient.Interface{
+			"cluster1": &fake.Clientset{},
+			"cluster2": &fake.Clientset{},
+		},
+		igp: ingressig.NewFakeInstanceGroups(nil),
+		ipp: ingresslb.NewFakeLoadBalancers(""),
 	}
 }
 
@@ -75,19 +79,33 @@ func TestCreateLoadBalancer(t *testing.T) {
 		t.Fatalf("unexpected error %s", err)
 	}
 	// Verify client actions.
-	client := lbc.client.(*fake.Clientset)
-	actions := client.Actions()
-	// Verify that the client should have been used to fetch service and ingress.
-	if len(actions) != 2 {
-		t.Fatalf("unexpected actions: %v, expected 2 (get svc and get ing)", actions)
+	fetchedSvc := false
+	for k, v := range lbc.clients {
+		client := v.(*fake.Clientset)
+		actions := client.Actions()
+		if len(actions) == 1 {
+			// The action should have been to fetch the ingress.
+			getIngName := actions[0].(core.GetAction).GetName()
+			if getIngName != ing.Name {
+				t.Errorf("unexpected get for %s, expected: %s", getIngName, ing.Name)
+			}
+		} else if len(actions) == 2 {
+			// First action should have been to fetch the service and second one should have been to fetch the ingress.
+			fetchedSvc = true
+			getSvcName := actions[0].(core.GetAction).GetName()
+			if getSvcName != "my-svc" {
+				t.Errorf("unexpected get for %s, expected: my-svc", getSvcName)
+			}
+			getIngName := actions[1].(core.GetAction).GetName()
+			if getIngName != ing.Name {
+				t.Errorf("unexpected get for %s, expected: %s", getIngName, ing.Name)
+			}
+		} else {
+			t.Errorf("unexpected number of actions for client for cluster %s: %v", k, actions)
+		}
 	}
-	getSvcName := actions[0].(core.GetAction).GetName()
-	if getSvcName != "my-svc" {
-		t.Errorf("unexpected get for %s, expected: my-svc", getSvcName)
-	}
-	getIngName := actions[1].(core.GetAction).GetName()
-	if getIngName != ing.Name {
-		t.Errorf("unexpected get for %s, expected: %s", getIngName, ing.Name)
+	if !fetchedSvc {
+		t.Errorf("None of the client was used to fetch the service")
 	}
 	// Verify that the expected healthcheck was created.
 	fhc := lbc.hcs.(*healthcheck.FakeHealthCheckSyncer)
@@ -116,9 +134,10 @@ func TestCreateLoadBalancer(t *testing.T) {
 	if len(bs.NPMap) != 1 || bs.NPMap[nodePort] == nil {
 		t.Errorf("unexpected node port map in backend service. expected an entry for port %d, got: %v", nodePort, bs.NPMap)
 	}
+	// Verify that the instance group from both clusters (same in this case) is added to the backend service.
 	expectedIGLink := fmt.Sprintf("%s/instanceGroups/%s", zoneLink, igName)
-	if len(bs.IGLinks) != 1 || bs.IGLinks[0] != expectedIGLink {
-		t.Errorf("unexpected instance group in backend service. expected %s, got: %s", expectedIGLink, bs.IGLinks)
+	if len(bs.IGLinks) != 2 || bs.IGLinks[0] != expectedIGLink || bs.IGLinks[1] != expectedIGLink {
+		t.Errorf("unexpected instance group in backend service. expected 2 links %s, got: %s", expectedIGLink, bs.IGLinks)
 	}
 	// Verify that the expected urlmap was created.
 	fum := lbc.ums.(*urlmap.FakeURLMapSyncer)
@@ -206,25 +225,27 @@ func setupLBCForCreateIng(lbc *LoadBalancerSyncer, nodePort int64, igName, igZon
 			},
 		},
 	}
-	client := lbc.client.(*fake.Clientset)
-	// Add a reaction to return a fake service.
-	client.AddReactor("get", "services", func(action core.Action) (handled bool, ret runtime.Object, err error) {
-		ret = &v1.Service{
-			Spec: v1.ServiceSpec{
-				Ports: []v1.ServicePort{
-					{
-						Port:     80,
-						NodePort: int32(nodePort),
+	for _, c := range lbc.clients {
+		client := c.(*fake.Clientset)
+		// Add a reaction to return a fake service.
+		client.AddReactor("get", "services", func(action core.Action) (handled bool, ret runtime.Object, err error) {
+			ret = &v1.Service{
+				Spec: v1.ServiceSpec{
+					Ports: []v1.ServicePort{
+						{
+							Port:     80,
+							NodePort: int32(nodePort),
+						},
 					},
 				},
-			},
-		}
-		return true, ret, nil
-	})
-	// Return a fake ingress with the instance groups annotation.
-	client.AddReactor("get", "ingresses", func(action core.Action) (handled bool, ret runtime.Object, err error) {
-		return true, ing, nil
-	})
+			}
+			return true, ret, nil
+		})
+		// Return a fake ingress with the instance groups annotation.
+		client.AddReactor("get", "ingresses", func(action core.Action) (handled bool, ret runtime.Object, err error) {
+			return true, ing, nil
+		})
+	}
 	// Setup the fake instance group provider to return the expected instance group with fake named ports.
 	ig := &compute.InstanceGroup{
 		Name: igName,
@@ -247,6 +268,7 @@ func TestDeleteLoadBalancer(t *testing.T) {
 	igName := "my-fake-ig"
 	igZone := "my-fake-zone"
 	zoneLink := fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/fake-project/zones/%s", igZone)
+	clusters := []string{"cluster1", "cluster2"}
 	lbc := newLoadBalancerSyncer(lbName)
 	ipAddress := &compute.Address{
 		Name:    "ipAddressName",
@@ -258,7 +280,7 @@ func TestDeleteLoadBalancer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("%s", err)
 	}
-	if err := lbc.CreateLoadBalancer(ing, true /*forceUpdate*/, []string{}); err != nil {
+	if err := lbc.CreateLoadBalancer(ing, true /*forceUpdate*/, clusters); err != nil {
 		t.Fatalf("unexpected error %s", err)
 	}
 	fhc := lbc.hcs.(*healthcheck.FakeHealthCheckSyncer)
@@ -299,5 +321,49 @@ func TestDeleteLoadBalancer(t *testing.T) {
 	}
 	if len(fhc.EnsuredHealthChecks) != 0 {
 		t.Errorf("unexpected health checks have not been deleted: %v", fhc.EnsuredHealthChecks)
+	}
+}
+
+func TestGetZoneAndNameFromIGUrl(t *testing.T) {
+	testCases := []struct {
+		igUrl string
+		name  string
+		zone  string
+		err   bool
+	}{
+		{
+			// Parses as expected.
+			igUrl: "https://www.googleapis.com/compute/v1/projects/fake-project/zones/zone1/instanceGroups/ig1",
+			name:  "ig1",
+			zone:  "zone1",
+			err:   false,
+		},
+		{
+			// Can parse partial urls
+			igUrl: "projects/fake-project/zones/zone1/instanceGroups/ig1",
+			name:  "ig1",
+			zone:  "zone1",
+			err:   false,
+		},
+		{
+			// Generates an error on invalid urls.
+			igUrl: "zone1/ig1",
+			err:   true,
+		},
+	}
+	for i, c := range testCases {
+		zone, name, err := getZoneAndNameFromIGUrl(c.igUrl)
+		if (err != nil) != c.err {
+			t.Fatalf("test %d: expected err: %v, got: %s", i, c.err, err)
+		}
+		if c.err {
+			continue
+		}
+		if name != c.name {
+			t.Errorf("test %d: expected name: %s, got: %s", i, c.name, name)
+		}
+		if zone != c.zone {
+			t.Errorf("test %d: expected zone: %s, got: %s", i, c.zone, zone)
+		}
 	}
 }

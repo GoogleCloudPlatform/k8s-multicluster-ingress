@@ -24,6 +24,7 @@ import (
 	"k8s.io/api/extensions/v1beta1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	kubeclient "k8s.io/client-go/kubernetes"
 
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/cloudinterface"
 	gcplb "github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/loadbalancer"
@@ -113,12 +114,14 @@ func runDelete(options *DeleteOptions, args []string) error {
 		return fmt.Errorf("error in creating cloud interface: %s", err)
 	}
 
-	// Delete ingress in all clusters.
+	// Delete ingress from all clusters.
 	if delErr := deleteIngress(options.KubeconfigFilename, options.IngressFilename); delErr != nil {
 		err = multierror.Append(err, delErr)
 	}
 
-	lbs := gcplb.NewLoadBalancerSyncer(options.LBName, clientset, cloudInterface)
+	// DeleteLoadBalancer uses a random client from the given clientset map,
+	// so it is fine to pass a map with just one client.
+	lbs := gcplb.NewLoadBalancerSyncer(options.LBName, map[string]kubeclient.Interface{"": clientset}, cloudInterface)
 	if delErr := lbs.DeleteLoadBalancer(&ing); delErr != nil {
 		err = multierror.Append(err, delErr)
 	}
