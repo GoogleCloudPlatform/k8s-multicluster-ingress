@@ -72,7 +72,7 @@ func TestDeleteIngress(t *testing.T) {
 	})
 
 	runFn := func() ([]string, map[string]kubeclient.Interface, error) {
-		return []string{}, nil, deleteIngress("kubeconfig", "../../../testdata/ingress.yaml")
+		return []string{}, nil, deleteIngress("kubeconfig", []string{}, "../../../testdata/ingress.yaml")
 	}
 	expectedCommands := []ExpectedCommand{
 		{

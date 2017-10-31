@@ -43,6 +43,8 @@ type DeleteOptions struct {
 	IngressFilename string
 	// Path to kubeconfig file.
 	KubeconfigFilename string
+	// Names of the contexts to use from the kubeconfig file.
+	KubeContexts []string
 	// Name of the load balancer.
 	// Required.
 	LBName string
@@ -77,6 +79,7 @@ func NewCmdDelete(out, err io.Writer) *cobra.Command {
 func addDeleteFlags(cmd *cobra.Command, options *DeleteOptions) error {
 	cmd.Flags().StringVarP(&options.IngressFilename, "ingress", "i", options.IngressFilename, "filename containing ingress spec")
 	cmd.Flags().StringVarP(&options.KubeconfigFilename, "kubeconfig", "k", options.KubeconfigFilename, "path to kubeconfig file")
+	cmd.Flags().StringSliceVar(&options.KubeContexts, "kubecontexts", options.KubeContexts, "contexts in the kubeconfig file to install the ingress into")
 	// TODO(nikhiljindal): Add a short flag "-p" if it seems useful.
 	cmd.Flags().StringVarP(&options.GCPProject, "gcp-project", "", options.GCPProject, "name of the gcp project")
 	// TODO Add a verbose flag that turns on glog logging.
@@ -115,7 +118,7 @@ func runDelete(options *DeleteOptions, args []string) error {
 	}
 
 	// Delete ingress from all clusters.
-	if delErr := deleteIngress(options.KubeconfigFilename, options.IngressFilename); delErr != nil {
+	if delErr := deleteIngress(options.KubeconfigFilename, options.KubeContexts, options.IngressFilename); delErr != nil {
 		err = multierror.Append(err, delErr)
 	}
 
@@ -129,10 +132,8 @@ func runDelete(options *DeleteOptions, args []string) error {
 }
 
 // Extracts the contexts from the given kubeconfig and deletes ingress in those context clusters.
-func deleteIngress(kubeconfig, ingressFilename string) error {
-	// TODO(nikhiljindal): Allow users to specify the list of clusters to delete the ingress in
-	// rather than assuming all contexts in kubeconfig.
-	clusters, err := getClusters(kubeconfig)
+func deleteIngress(kubeconfig string, kubeContexts []string, ingressFilename string) error {
+	clusters, err := getClusters(kubeconfig, kubeContexts)
 	if err != nil {
 		return err
 	}

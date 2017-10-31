@@ -113,7 +113,7 @@ func TestCreateIngress(t *testing.T) {
 	}
 
 	runFn := func() ([]string, map[string]kubeclient.Interface, error) {
-		return createIngress("kubeconfig", "../../../testdata/ingress.yaml")
+		return createIngress("kubeconfig", []string{}, "../../../testdata/ingress.yaml")
 	}
 	expectedCommands := []ExpectedCommand{
 		{

@@ -72,6 +72,8 @@ type CreateOptions struct {
 	IngressFilename string
 	// Path to kubeconfig file.
 	KubeconfigFilename string
+	// Names of the contexts to use from the kubeconfig file.
+	KubeContexts []string
 	// Name of the load balancer.
 	// Required.
 	LBName string
@@ -110,6 +112,7 @@ func NewCmdCreate(out, err io.Writer) *cobra.Command {
 func addCreateFlags(cmd *cobra.Command, options *CreateOptions) error {
 	cmd.Flags().StringVarP(&options.IngressFilename, "ingress", "i", options.IngressFilename, "filename containing ingress spec")
 	cmd.Flags().StringVarP(&options.KubeconfigFilename, "kubeconfig", "k", options.KubeconfigFilename, "path to kubeconfig file")
+	cmd.Flags().StringSliceVar(&options.KubeContexts, "kubecontexts", options.KubeContexts, "contexts in the kubeconfig file to install the ingress into")
 	// TODO(nikhiljindal): Add a short flag "-p" if it seems useful.
 	cmd.Flags().StringVarP(&options.GCPProject, "gcp-project", "", options.GCPProject, "name of the gcp project")
 	cmd.Flags().BoolVarP(&options.ForceUpdate, "force", "f", options.ForceUpdate, "overwrite existing settings if they are different.")
@@ -146,7 +149,7 @@ func runCreate(options *CreateOptions, args []string) error {
 	}
 
 	// Create ingress in all clusters.
-	clusters, clients, err := createIngress(options.KubeconfigFilename, options.IngressFilename)
+	clusters, clients, err := createIngress(options.KubeconfigFilename, options.KubeContexts, options.IngressFilename)
 	if err != nil {
 		return err
 	}
@@ -157,10 +160,8 @@ func runCreate(options *CreateOptions, args []string) error {
 
 // Extracts the contexts from the given kubeconfig and creates ingress in those context clusters.
 // Returns the list of clusters in which it created the ingress and a map of clients for each of those clusters.
-func createIngress(kubeconfig, ingressFilename string) ([]string, map[string]kubeclient.Interface, error) {
-	// TODO(nikhiljindal): Allow users to specify the list of clusters to create the ingress in
-	// rather than assuming all contexts in kubeconfig.
-	clusters, err := getClusters(kubeconfig)
+func createIngress(kubeconfig string, kubeContexts []string, ingressFilename string) ([]string, map[string]kubeclient.Interface, error) {
+	clusters, err := getClusters(kubeconfig, kubeContexts)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -169,12 +170,13 @@ func createIngress(kubeconfig, ingressFilename string) ([]string, map[string]kub
 }
 
 // Extracts the list of contexts from the given kubeconfig.
-func getClusters(kubeconfig string) ([]string, error) {
+func getClusters(kubeconfig string, kubeContexts []string) ([]string, error) {
 	kubectlArgs := []string{"kubectl"}
 	if kubeconfig != "" {
 		kubectlArgs = append(kubectlArgs, fmt.Sprintf("--kubeconfig=%s", kubeconfig))
 	}
 	contextArgs := append(kubectlArgs, []string{"config", "get-contexts", "-o=name"}...)
+	contextArgs = append(contextArgs, kubeContexts...)
 	output, err := runCommand(contextArgs)
 	if err != nil {
 		return nil, fmt.Errorf("error in getting contexts from kubeconfig: %s", err)
