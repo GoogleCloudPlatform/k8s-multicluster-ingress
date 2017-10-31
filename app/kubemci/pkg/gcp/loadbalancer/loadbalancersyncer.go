@@ -36,11 +36,14 @@ import (
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce"
 
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/backendservice"
+	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/firewallrule"
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/forwardingrule"
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/healthcheck"
 	utilsnamer "github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/namer"
+	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/networktags"
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/targetproxy"
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/urlmap"
+	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/utils"
 )
 
 const (
@@ -62,6 +65,8 @@ type LoadBalancerSyncer struct {
 	tps targetproxy.TargetProxySyncerInterface
 	// Forwarding rule syncer to sync the required forwarding rule.
 	frs forwardingrule.ForwardingRuleSyncerInterface
+	// Firewall rule syncer to sync the required firewall rule.
+	fws firewallrule.FirewallRuleSyncerInterface
 	// Kubernetes clients to send requests to kubernetes apiservers.
 	// This is a map from cluster name to the client for that cluster.
 	clients map[string]kubeclient.Interface
@@ -72,8 +77,13 @@ type LoadBalancerSyncer struct {
 	ipp ingresslb.LoadBalancers
 }
 
-func NewLoadBalancerSyncer(lbName string, clients map[string]kubeclient.Interface, cloud *gce.GCECloud) *LoadBalancerSyncer {
+func NewLoadBalancerSyncer(lbName string, clients map[string]kubeclient.Interface, cloud *gce.GCECloud, gcpProjectId string) (*LoadBalancerSyncer, error) {
+
 	namer := utilsnamer.NewNamer(mciPrefix, lbName)
+	ntg, err := networktags.NewNetworkTagsGetter(gcpProjectId)
+	if err != nil {
+		return nil, err
+	}
 	return &LoadBalancerSyncer{
 		lbName:  lbName,
 		hcs:     healthcheck.NewHealthCheckSyncer(namer, cloud),
@@ -81,10 +91,11 @@ func NewLoadBalancerSyncer(lbName string, clients map[string]kubeclient.Interfac
 		ums:     urlmap.NewURLMapSyncer(namer, cloud),
 		tps:     targetproxy.NewTargetProxySyncer(namer, cloud),
 		frs:     forwardingrule.NewForwardingRuleSyncer(namer, cloud),
+		fws:     firewallrule.NewFirewallRuleSyncer(namer, cloud, ntg),
 		clients: clients,
 		igp:     cloud,
 		ipp:     cloud,
-	}
+	}, nil
 }
 
 // CreateLoadBalancer creates the GCP resources necessary for an L7 GCP load balancer corresponding to the given ingress.
@@ -112,8 +123,12 @@ func (l *LoadBalancerSyncer) CreateLoadBalancer(ing *v1beta1.Ingress, forceUpdat
 	if igErr != nil {
 		return multierror.Append(err, igErr)
 	}
+	igsForBE := []string{}
+	for k := range igs {
+		igsForBE = append(igsForBE, igs[k]...)
+	}
 	// Create backend service. This should always be called after the health check since backend service needs to point to the health check.
-	backendServices, beErr := l.bss.EnsureBackendService(l.lbName, ports, healthChecks, namedPorts, igs)
+	backendServices, beErr := l.bss.EnsureBackendService(l.lbName, ports, healthChecks, namedPorts, igsForBE)
 	if beErr != nil {
 		// Aggregate errors and return all at the end.
 		err = multierror.Append(err, beErr)
@@ -142,6 +157,10 @@ func (l *LoadBalancerSyncer) CreateLoadBalancer(ing *v1beta1.Ingress, forceUpdat
 		// TODO(nikhiljindal): Support creating https target proxy and forwarding rule.
 		err = multierror.Append(err, fmt.Errorf("This tool does not support creating HTTPS target proxy and forwarding rule yet."))
 	}
+	if fwErr := l.fws.EnsureFirewallRule(l.lbName, ports, igs); fwErr != nil {
+		// Aggregate errors and return all at the end.
+		err = multierror.Append(err, fwErr)
+	}
 	return err
 }
 
@@ -158,6 +177,11 @@ func (l *LoadBalancerSyncer) DeleteLoadBalancer(ing *v1beta1.Ingress) error {
 	// We delete resources in the reverse order in which they were created.
 	// For ex: we create health checks before creating backend services (so that backend service can point to the health check),
 	// but delete backend service before deleting health check. We cannot delete the health check when backend service is still pointing to it.
+	if fwErr := l.fws.DeleteFirewallRules(); fwErr != nil {
+		// Aggregate errors and return all at the end.
+		err = multierror.Append(err, fwErr)
+	}
+
 	if frErr := l.frs.DeleteForwardingRules(); frErr != nil {
 		// Aggregate errors and return all at the end.
 		err = multierror.Append(err, frErr)
@@ -208,9 +232,10 @@ func (l *LoadBalancerSyncer) getIPAddress(ing *v1beta1.Ingress) (string, error) 
 // Returns links to all instance groups and named ports on any one of them.
 // Note that it picks an instance group at random and returns the named ports for that instance group, assuming that the named ports are same on all instance groups.
 // Also note that this returns all named ports on the instance group and not just the ones relevant to the given ingress.
-func (l *LoadBalancerSyncer) getIGsAndNamedPorts(ing *v1beta1.Ingress) ([]string, backendservice.NamedPortsMap, error) {
+func (l *LoadBalancerSyncer) getIGsAndNamedPorts(ing *v1beta1.Ingress) (map[string][]string, backendservice.NamedPortsMap, error) {
 	var err error
-	var igs []string
+	igs := make(map[string][]string, len(l.clients))
+	var igFromLastCluster string
 	// Get instance groups from all clusters.
 	for cluster, client := range l.clients {
 		igsFromCluster, getIGsErr := l.getIGs(ing, client, cluster)
@@ -218,14 +243,16 @@ func (l *LoadBalancerSyncer) getIGsAndNamedPorts(ing *v1beta1.Ingress) ([]string
 			err = multierror.Append(err, getIGsErr)
 			continue
 		}
-		igs = append(igs, igsFromCluster...)
+		igs[cluster] = igsFromCluster
+		igFromLastCluster = igsFromCluster[0]
 	}
 	if len(igs) == 0 {
 		err = multierror.Append(err, fmt.Errorf("Cannot fetch named ports since fetching instance groups failed"))
 		return nil, backendservice.NamedPortsMap{}, err
 	}
-	// Compute named ports from the first instance group.
-	namedPorts, namedPortsErr := l.getNamedPorts(igs[0])
+	// Compute named ports for igs from the last cluster.
+	// We can compute it from any instance group, all are expected to have the same named ports.
+	namedPorts, namedPortsErr := l.getNamedPorts(igFromLastCluster)
 	if namedPortsErr != nil {
 		err = multierror.Append(err, namedPortsErr)
 	}
@@ -278,7 +305,7 @@ func (l *LoadBalancerSyncer) getIGs(ing *v1beta1.Ingress, client kubeclient.Inte
 }
 
 func (l *LoadBalancerSyncer) getNamedPorts(igUrl string) (backendservice.NamedPortsMap, error) {
-	zone, name, err := getZoneAndNameFromIGUrl(igUrl)
+	zone, name, err := utils.GetZoneAndNameFromIGUrl(igUrl)
 	if err != nil {
 		return nil, err
 	}
@@ -294,24 +321,6 @@ func (l *LoadBalancerSyncer) getNamedPorts(igUrl string) (backendservice.NamedPo
 	}
 	return namedPorts, nil
 }
-
-// Returns the zone from a GCP Zone URL.
-func getZoneAndNameFromIGUrl(igUrl string) (string, string, error) {
-	// Split the string by "/instanceGroups/".
-	components := strings.Split(igUrl, "/instanceGroups/")
-	if len(components) != 2 {
-		return "", "", fmt.Errorf("Error in parsing instance groups URL: %s, expected it to contain /instanceGroups", igUrl)
-	}
-	zoneUrl := components[0]
-	name := components[1]
-	// To get zone name from zone Url, split the string by "/" and use the last element.
-	components = strings.Split(zoneUrl, "/")
-	if len(components) == 0 {
-		return "", "", fmt.Errorf("Error in parsing instance groups URL: %s, expected it to contain zone Url")
-	}
-	return components[len(components)-1], name, nil
-}
-
 func (l *LoadBalancerSyncer) ingToNodePorts(ing *v1beta1.Ingress, client kubeclient.Interface) []ingressbe.ServicePort {
 	var knownPorts []ingressbe.ServicePort
 	defaultBackend := ing.Spec.Backend
@@ -367,7 +376,7 @@ PortLoop:
 	}
 
 	if port == nil {
-		return ingressbe.ServicePort{}, fmt.Errorf("could not find matching nodeport for backend %v and service %s/%s", be, be.ServiceName, namespace)
+		return ingressbe.ServicePort{}, fmt.Errorf("could not find matching nodeport for backend %v and service %s/%s. Looking for port %v in %v", be, namespace, be.ServiceName, be.ServicePort, svc.Spec.Ports)
 	}
 
 	proto := ingressutils.ProtocolHTTP

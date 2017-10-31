@@ -34,6 +34,7 @@ import (
 	ingresslb "k8s.io/ingress-gce/pkg/loadbalancers"
 
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/backendservice"
+	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/firewallrule"
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/forwardingrule"
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/healthcheck"
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/targetproxy"
@@ -48,6 +49,7 @@ func newLoadBalancerSyncer(lbName string) *LoadBalancerSyncer {
 		ums:    urlmap.NewFakeURLMapSyncer(),
 		tps:    targetproxy.NewFakeTargetProxySyncer(),
 		frs:    forwardingrule.NewFakeForwardingRuleSyncer(),
+		fws:    firewallrule.NewFakeFirewallRuleSyncer(),
 		clients: map[string]kubeclient.Interface{
 			"cluster1": &fake.Clientset{},
 			"cluster2": &fake.Clientset{},
@@ -178,6 +180,15 @@ func TestCreateLoadBalancer(t *testing.T) {
 	if !reflect.DeepEqual(fr.Clusters, clusters) {
 		t.Errorf("unexpected clusters in forwarding rule. expected: %v, got: %v", clusters, fr.Clusters)
 	}
+	// Verify that the expected firewall rule was created.
+	ffw := lbc.fws.(*firewallrule.FakeFirewallRuleSyncer)
+	if len(ffw.EnsuredFirewallRules) != 1 {
+		t.Fatalf("unexpected number of firewall rules. expected: %d, got: %d", 1, len(ffw.EnsuredFirewallRules))
+	}
+	fw := ffw.EnsuredFirewallRules[0]
+	if fw.LBName != lbName {
+		t.Errorf("unexpected lbname in forwarding rule. expected: %s, got: %s", lbName, fw.LBName)
+	}
 }
 
 func setupLBCForCreateIng(lbc *LoadBalancerSyncer, nodePort int64, igName, igZone, zoneLink string, ipAddress *compute.Address) (*v1beta1.Ingress, error) {
@@ -303,9 +314,16 @@ func TestDeleteLoadBalancer(t *testing.T) {
 	if len(ffr.EnsuredForwardingRules) == 0 {
 		t.Errorf("unexpected forwarding rules not created")
 	}
+	ffw := lbc.fws.(*firewallrule.FakeFirewallRuleSyncer)
+	if len(ffw.EnsuredFirewallRules) == 0 {
+		t.Errorf("unexpected firewall rules not created")
+	}
 	// Verify that all expected resources are deleted.
 	if err := lbc.DeleteLoadBalancer(ing); err != nil {
 		t.Fatalf("unexpected error in deleting load balancer: %s", err)
+	}
+	if len(ffw.EnsuredFirewallRules) != 0 {
+		t.Errorf("unexpected firewall rules have not been deleted: %v", ffw.EnsuredFirewallRules)
 	}
 	if len(ffr.EnsuredForwardingRules) != 0 {
 		t.Errorf("unexpected forwarding rules have not been deleted: %v", ffr.EnsuredForwardingRules)
@@ -321,49 +339,5 @@ func TestDeleteLoadBalancer(t *testing.T) {
 	}
 	if len(fhc.EnsuredHealthChecks) != 0 {
 		t.Errorf("unexpected health checks have not been deleted: %v", fhc.EnsuredHealthChecks)
-	}
-}
-
-func TestGetZoneAndNameFromIGUrl(t *testing.T) {
-	testCases := []struct {
-		igUrl string
-		name  string
-		zone  string
-		err   bool
-	}{
-		{
-			// Parses as expected.
-			igUrl: "https://www.googleapis.com/compute/v1/projects/fake-project/zones/zone1/instanceGroups/ig1",
-			name:  "ig1",
-			zone:  "zone1",
-			err:   false,
-		},
-		{
-			// Can parse partial urls
-			igUrl: "projects/fake-project/zones/zone1/instanceGroups/ig1",
-			name:  "ig1",
-			zone:  "zone1",
-			err:   false,
-		},
-		{
-			// Generates an error on invalid urls.
-			igUrl: "zone1/ig1",
-			err:   true,
-		},
-	}
-	for i, c := range testCases {
-		zone, name, err := getZoneAndNameFromIGUrl(c.igUrl)
-		if (err != nil) != c.err {
-			t.Fatalf("test %d: expected err: %v, got: %s", i, c.err, err)
-		}
-		if c.err {
-			continue
-		}
-		if name != c.name {
-			t.Errorf("test %d: expected name: %s, got: %s", i, c.name, name)
-		}
-		if zone != c.zone {
-			t.Errorf("test %d: expected zone: %s, got: %s", i, c.zone, zone)
-		}
 	}
 }

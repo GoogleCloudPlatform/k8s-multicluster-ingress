@@ -122,14 +122,11 @@ func (b *BackendServiceSyncer) ensureBackendService(lbName string, port ingressb
 			return existingBE, nil
 		}
 		// TODO (nikhiljindal): Require explicit permission from user before doing this.
-		fmt.Println("Updating existing backend service", name, "to match the desired state")
 		return b.updateBackendService(desiredBE)
 	}
 	glog.V(5).Infof("Got error %s while trying to get existing backend service %s", err, name)
 	// TODO(nikhiljindal): Handle non NotFound errors. We should create only if the error is NotFound.
 	// Create the backend service.
-	fmt.Println("Creating backend service", name)
-	glog.V(5).Infof("Creating backend service %v", *desiredBE)
 	return b.createBackendService(desiredBE)
 }
 
