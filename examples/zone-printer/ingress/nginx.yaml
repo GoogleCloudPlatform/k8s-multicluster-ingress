@@ -3,7 +3,7 @@ kind: Ingress
 metadata:
   name: nginx
   annotations:
-    kubernetes.io/ingress.global-static-ip-name: ip-for-kubemci
+    kubernetes.io/ingress.global-static-ip-name: $ZP_KUBEMCI_IP
     kubernetes.io/ingress.class: gce-multi-cluster
 spec:
   backend:
