@@ -103,11 +103,11 @@ func NewCmdCreate(out, err io.Writer) *cobra.Command {
 			}
 		},
 	}
-	AddCreateFlags(cmd, &options)
+	addCreateFlags(cmd, &options)
 	return cmd
 }
 
-func AddCreateFlags(cmd *cobra.Command, options *CreateOptions) error {
+func addCreateFlags(cmd *cobra.Command, options *CreateOptions) error {
 	cmd.Flags().StringVarP(&options.IngressFilename, "ingress", "i", options.IngressFilename, "filename containing ingress spec")
 	cmd.Flags().StringVarP(&options.KubeconfigFilename, "kubeconfig", "k", options.KubeconfigFilename, "path to kubeconfig file")
 	// TODO(nikhiljindal): Add a short flag "-p" if it seems useful.
@@ -140,38 +140,32 @@ func runCreate(options *CreateOptions, args []string) error {
 	if err := unmarshall(options.IngressFilename, &ing); err != nil {
 		return fmt.Errorf("error in unmarshalling the yaml file %s, err: %s", options.IngressFilename, err)
 	}
-	clientset, err := getClientset(options.KubeconfigFilename, "" /*contextName*/)
-	if err != nil {
-		return fmt.Errorf("unexpected error in instantiating clientset: %v", err)
-	}
 	cloudInterface, err := cloudinterface.NewGCECloudInterface(options.GCPProject)
 	if err != nil {
 		return fmt.Errorf("error in creating cloud interface: %s", err)
 	}
 
 	// Create ingress in all clusters.
-	clusters, err := createIngress(options.KubeconfigFilename, options.IngressFilename)
+	clusters, clients, err := createIngress(options.KubeconfigFilename, options.IngressFilename)
 	if err != nil {
 		return err
 	}
 
-	lbs := gcplb.NewLoadBalancerSyncer(options.LBName, clientset, cloudInterface)
+	lbs := gcplb.NewLoadBalancerSyncer(options.LBName, clients, cloudInterface)
 	return lbs.CreateLoadBalancer(&ing, options.ForceUpdate, clusters)
 }
 
 // Extracts the contexts from the given kubeconfig and creates ingress in those context clusters.
-// Returns the list of clusters in which it created the ingress
-func createIngress(kubeconfig, ingressFilename string) ([]string, error) {
+// Returns the list of clusters in which it created the ingress and a map of clients for each of those clusters.
+func createIngress(kubeconfig, ingressFilename string) ([]string, map[string]kubeclient.Interface, error) {
 	// TODO(nikhiljindal): Allow users to specify the list of clusters to create the ingress in
 	// rather than assuming all contexts in kubeconfig.
 	clusters, err := getClusters(kubeconfig)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	if createErr := createIngressInClusters(kubeconfig, ingressFilename, clusters); createErr != nil {
-		return nil, createErr
-	}
-	return clusters, nil
+	clients, createErr := createIngressInClusters(kubeconfig, ingressFilename, clusters)
+	return clusters, clients, createErr
 }
 
 // Extracts the list of contexts from the given kubeconfig.
@@ -190,10 +184,11 @@ func getClusters(kubeconfig string) ([]string, error) {
 }
 
 // Creates the given ingress in the given list of clusters.
-func createIngressInClusters(kubeconfig, ingressFilename string, clusters []string) error {
+func createIngressInClusters(kubeconfig, ingressFilename string, clusters []string) (map[string]kubeclient.Interface, error) {
+	clients := map[string]kubeclient.Interface{}
 	var ing v1beta1.Ingress
 	if err := unmarshall(ingressFilename, &ing); err != nil {
-		return fmt.Errorf("error in unmarshalling the yaml file %s, err: %s", ingressFilename, err)
+		return clients, fmt.Errorf("error in unmarshalling the yaml file %s, err: %s", ingressFilename, err)
 	}
 	glog.V(5).Infof("Unmarshaled this ingress:\n%+v", ing)
 
@@ -206,6 +201,7 @@ func createIngressInClusters(kubeconfig, ingressFilename string, clusters []stri
 			err = multierror.Append(err, fmt.Errorf("Error getting kubectl client interface for context %s:", c, clientErr))
 			continue
 		}
+		clients[c] = client
 		glog.V(3).Infof("Using this namespace for ingress: %v", ing.Namespace)
 		actualIng, createErr := client.Extensions().Ingresses(ing.Namespace).Create(&ing)
 		glog.V(2).Infof("Ingress Create returned: err:%v. Actual Ingress:%+v", err, actualIng)
@@ -219,7 +215,7 @@ func createIngressInClusters(kubeconfig, ingressFilename string, clusters []stri
 			}
 		}
 	}
-	return err
+	return clients, err
 }
 
 func runCommand(args []string) (string, error) {

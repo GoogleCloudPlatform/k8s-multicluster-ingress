@@ -62,8 +62,9 @@ type LoadBalancerSyncer struct {
 	tps targetproxy.TargetProxySyncerInterface
 	// Forwarding rule syncer to sync the required forwarding rule.
 	frs forwardingrule.ForwardingRuleSyncerInterface
-	// kubernetes client to send requests to kubernetes apiserver.
-	client kubeclient.Interface
+	// Kubernetes clients to send requests to kubernetes apiservers.
+	// This is a map from cluster name to the client for that cluster.
+	clients map[string]kubeclient.Interface
 	// Instance groups provider to call GCE APIs to manage GCE instance groups.
 	igp ingressig.InstanceGroups
 	// IP addresses provider to manage GCP IP addresses.
@@ -71,18 +72,18 @@ type LoadBalancerSyncer struct {
 	ipp ingresslb.LoadBalancers
 }
 
-func NewLoadBalancerSyncer(lbName string, client kubeclient.Interface, cloud *gce.GCECloud) *LoadBalancerSyncer {
+func NewLoadBalancerSyncer(lbName string, clients map[string]kubeclient.Interface, cloud *gce.GCECloud) *LoadBalancerSyncer {
 	namer := utilsnamer.NewNamer(mciPrefix, lbName)
 	return &LoadBalancerSyncer{
-		lbName: lbName,
-		hcs:    healthcheck.NewHealthCheckSyncer(namer, cloud),
-		bss:    backendservice.NewBackendServiceSyncer(namer, cloud),
-		ums:    urlmap.NewURLMapSyncer(namer, cloud),
-		tps:    targetproxy.NewTargetProxySyncer(namer, cloud),
-		frs:    forwardingrule.NewForwardingRuleSyncer(namer, cloud),
-		client: client,
-		igp:    cloud,
-		ipp:    cloud,
+		lbName:  lbName,
+		hcs:     healthcheck.NewHealthCheckSyncer(namer, cloud),
+		bss:     backendservice.NewBackendServiceSyncer(namer, cloud),
+		ums:     urlmap.NewURLMapSyncer(namer, cloud),
+		tps:     targetproxy.NewTargetProxySyncer(namer, cloud),
+		frs:     forwardingrule.NewForwardingRuleSyncer(namer, cloud),
+		clients: clients,
+		igp:     cloud,
+		ipp:     cloud,
 	}
 }
 
@@ -199,14 +200,39 @@ func (l *LoadBalancerSyncer) getIPAddress(ing *v1beta1.Ingress) (string, error) 
 // Note that it picks an instance group at random and returns the named ports for that instance group, assuming that the named ports are same on all instance groups.
 // Also note that this returns all named ports on the instance group and not just the ones relevant to the given ingress.
 func (l *LoadBalancerSyncer) getIGsAndNamedPorts(ing *v1beta1.Ingress) ([]string, backendservice.NamedPortsMap, error) {
+	var err error
+	var igs []string
+	// Get instance groups from all clusters.
+	for cluster, client := range l.clients {
+		igsFromCluster, getIGsErr := l.getIGs(ing, client, cluster)
+		if getIGsErr != nil {
+			err = multierror.Append(err, getIGsErr)
+			continue
+		}
+		igs = append(igs, igsFromCluster...)
+	}
+	if len(igs) == 0 {
+		err = multierror.Append(err, fmt.Errorf("Cannot fetch named ports since fetching instance groups failed"))
+		return nil, backendservice.NamedPortsMap{}, err
+	}
+	// Compute named ports from the first instance group.
+	namedPorts, namedPortsErr := l.getNamedPorts(igs[0])
+	if namedPortsErr != nil {
+		err = multierror.Append(err, namedPortsErr)
+	}
+	return igs, namedPorts, err
+}
+
+func (l *LoadBalancerSyncer) getIGs(ing *v1beta1.Ingress, client kubeclient.Interface, cluster string) ([]string, error) {
+	fmt.Println("Determining instance groups for cluster", cluster)
 	key := annotations.InstanceGroupsAnnotationKey
 	// Keep trying until ingress gets the instance group annotation.
 	// TODO(nikhiljindal): Check if we need exponential backoff.
 	for try := true; try; time.Sleep(1 * time.Second) {
 		// Fetch the ingress from a cluster.
-		ing, err := l.getIng(ing.Name, ing.Namespace)
+		ing, err := getIng(ing.Name, ing.Namespace, client)
 		if err != nil {
-			return nil, nil, fmt.Errorf("error %s in fetching ingress", err)
+			return nil, fmt.Errorf("error %s in fetching ingress", err)
 		}
 		if ing.Annotations == nil || ing.Annotations[key] == "" {
 			// keep trying
@@ -223,7 +249,7 @@ func (l *LoadBalancerSyncer) getIGsAndNamedPorts(ing *v1beta1.Ingress) ([]string
 		}
 		var values []InstanceGroupsAnnotationValue
 		if err := json.Unmarshal([]byte(annotationValue), &values); err != nil {
-			return nil, nil, fmt.Errorf("error in parsing annotation key %s, value %s: %s", key, annotationValue, err)
+			return nil, fmt.Errorf("error in parsing annotation key %s, value %s: %s", key, annotationValue, err)
 		}
 		if len(values) == 0 {
 			// keep trying
@@ -235,27 +261,44 @@ func (l *LoadBalancerSyncer) getIGsAndNamedPorts(ing *v1beta1.Ingress) ([]string
 		for _, ig := range values {
 			igs = append(igs, fmt.Sprintf("%s/instanceGroups/%s", ig.Zone, ig.Name))
 		}
-		// Compute named ports from the first instance group.
-		zone := getZoneFromURL(values[0].Zone)
-		ig, err := l.igp.GetInstanceGroup(values[0].Name, zone)
-		if err != nil {
-			return nil, nil, err
-		}
-		fmt.Printf("Fetched instance group: %s/%s, got named ports: %#v", zone, values[0].Name, ig.NamedPorts)
-		namedPorts := backendservice.NamedPortsMap{}
-		for _, np := range ig.NamedPorts {
-			namedPorts[np.Port] = np
-		}
-		return igs, namedPorts, nil
+		return igs, nil
 	}
-	return nil, nil, nil
+	return nil, nil
+}
+
+func (l *LoadBalancerSyncer) getNamedPorts(igUrl string) (backendservice.NamedPortsMap, error) {
+	zone, name, err := getZoneAndNameFromIGUrl(igUrl)
+	if err != nil {
+		return nil, err
+	}
+	fmt.Println("Fetching instance group:", name, zone)
+	ig, err := l.igp.GetInstanceGroup(name, zone)
+	if err != nil {
+		return nil, err
+	}
+	fmt.Println("Fetched instance group:", zone, "/", name, "got named ports:", ig.NamedPorts)
+	namedPorts := backendservice.NamedPortsMap{}
+	for _, np := range ig.NamedPorts {
+		namedPorts[np.Port] = np
+	}
+	return namedPorts, nil
 }
 
 // Returns the zone from a GCP Zone URL.
-func getZoneFromURL(zoneURL string) string {
-	// Split the string by "/" and return the last element.
-	components := strings.Split(zoneURL, "/")
-	return components[len(components)-1]
+func getZoneAndNameFromIGUrl(igUrl string) (string, string, error) {
+	// Split the string by "/instanceGroups/".
+	components := strings.Split(igUrl, "/instanceGroups/")
+	if len(components) != 2 {
+		return "", "", fmt.Errorf("Error in parsing instance groups URL: %s, expected it to contain /instanceGroups", igUrl)
+	}
+	zoneUrl := components[0]
+	name := components[1]
+	// To get zone name from zone Url, split the string by "/" and use the last element.
+	components = strings.Split(zoneUrl, "/")
+	if len(components) == 0 {
+		return "", "", fmt.Errorf("Error in parsing instance groups URL: %s, expected it to contain zone Url")
+	}
+	return components[len(components)-1], name, nil
 }
 
 func (l *LoadBalancerSyncer) ingToNodePorts(ing *v1beta1.Ingress) []ingressbe.ServicePort {
@@ -331,9 +374,26 @@ PortLoop:
 }
 
 func (l *LoadBalancerSyncer) getSvc(svcName, nsName string) (*v1.Service, error) {
-	return l.client.CoreV1().Services(nsName).Get(svcName, metav1.GetOptions{})
+	client, err := getClient(l.clients)
+	if err != nil {
+		return nil, err
+	}
+	return client.CoreV1().Services(nsName).Get(svcName, metav1.GetOptions{})
 }
 
-func (l *LoadBalancerSyncer) getIng(ingName, nsName string) (*v1beta1.Ingress, error) {
-	return l.client.ExtensionsV1beta1().Ingresses(nsName).Get(ingName, metav1.GetOptions{})
+func getIng(ingName, nsName string, client kubeclient.Interface) (*v1beta1.Ingress, error) {
+	return client.ExtensionsV1beta1().Ingresses(nsName).Get(ingName, metav1.GetOptions{})
+}
+
+// Returns a client at random from the given map of clients.
+// Returns an error if the map is empty.
+func getClient(clients map[string]kubeclient.Interface) (kubeclient.Interface, error) {
+	if len(clients) == 0 {
+		return nil, fmt.Errorf("could not find client to send requests to kubernetes cluster")
+	}
+	// Return the client for any cluster.
+	for k, _ := range clients {
+		return clients[k], nil
+	}
+	return nil, nil
 }
