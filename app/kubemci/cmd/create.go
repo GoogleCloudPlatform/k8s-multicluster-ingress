@@ -132,7 +132,7 @@ func validateCreateArgs(options *CreateOptions, args []string) error {
 	return nil
 }
 
-func RunCreate(options *CreateOptions, args []string) error {
+func runCreate(options *CreateOptions, args []string) error {
 	options.LBName = args[0]
 
 	// Unmarshal the YAML into ingress struct.

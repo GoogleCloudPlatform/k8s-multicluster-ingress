@@ -70,8 +70,8 @@ func TestDeleteIngress(t *testing.T) {
 		return true, nil, nil
 	})
 
-	runFn := func() error {
-		return deleteIngress("kubeconfig", "../../../testdata/ingress.yaml")
+	runFn := func() ([]string, error) {
+		return []string{}, deleteIngress("kubeconfig", "../../../testdata/ingress.yaml")
 	}
 	expectedCommands := []ExpectedCommand{
 		{
@@ -80,7 +80,7 @@ func TestDeleteIngress(t *testing.T) {
 			Err:    nil,
 		},
 	}
-	if err := run(&fakeClient, expectedCommands, runFn); err != nil {
+	if _, err := run(&fakeClient, expectedCommands, runFn); err != nil {
 		t.Errorf("%s", err)
 	}
 
