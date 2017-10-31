@@ -1,0 +1,11 @@
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: nginx
+  annotations:
+    kubernetes.io/ingress.global-static-ip-name: ip-for-kubemci
+    kubernetes.io/ingress.class: gce-multi-cluster
+spec:
+  backend:
+    serviceName: nginx
+    servicePort: 80
