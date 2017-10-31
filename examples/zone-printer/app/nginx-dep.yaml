@@ -1,0 +1,44 @@
+apiVersion: apps/v1beta2
+kind: Deployment
+metadata:
+  name: nginx
+  labels:
+    app: nginx
+    type: demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nginx
+  template:
+    metadata:
+      labels:
+        app: nginx
+    spec:
+      containers:
+      - image: nginx
+        name: frontend
+        ports:
+          - containerPort: 80
+        volumeMounts:
+        - name: html-dir
+          mountPath: /usr/share/nginx/html
+      - image: busybox
+        name: zone-fetcher
+        command:
+          - "/bin/sh"
+          - "-c"
+          - "/zonefetch/zonefetch.sh"
+        volumeMounts:
+        - name: zone-fetch
+          mountPath: /zonefetch
+        - name: html-dir
+          mountPath: /usr/share/nginx/html
+      volumes:
+        - name: zone-fetch
+          configMap:
+            defaultMode: 0777
+            name: zone-fetch
+        - name: html-dir
+          emptyDir:
+            medium: ""

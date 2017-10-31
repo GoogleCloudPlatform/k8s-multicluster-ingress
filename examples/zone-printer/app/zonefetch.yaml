@@ -1,0 +1,24 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: zone-fetch
+data:
+  zonefetch.sh: |-
+    #!/bin/sh
+    
+    wget -q --header "Metadata-Flavor: Google" "http://metadata.google.internal/computeMetadata/v1/instance/zone"
+    
+    zone=$(cat zone | sed -e "s#^projects/[[:digit:]]\+/zones/\(.*\)#\1#")
+    
+    cat <<EOF >/usr/share/nginx/html/index.html
+    <!DOCTYPE html>
+    <html>
+    <head>
+    <title>Welcome to the global site!</title>
+    </head>
+    <body>
+    <h1>Welcome to the global site! You are being served from ${zone}</h1>
+    <p>Congratulations!</p>
+    EOF
+
+    while true; do sleep 100d; done
