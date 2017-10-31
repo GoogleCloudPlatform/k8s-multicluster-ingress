@@ -78,7 +78,7 @@ func NewCmdDelete(out, err io.Writer) *cobra.Command {
 
 func addDeleteFlags(cmd *cobra.Command, options *DeleteOptions) error {
 	cmd.Flags().StringVarP(&options.IngressFilename, "ingress", "i", options.IngressFilename, "[required] filename containing ingress spec")
-	cmd.Flags().StringVarP(&options.KubeconfigFilename, "kubeconfig", "k", options.KubeconfigFilename, "[optional] path to kubeconfig file")
+	cmd.Flags().StringVarP(&options.KubeconfigFilename, "kubeconfig", "k", options.KubeconfigFilename, "[required] path to kubeconfig file")
 	cmd.Flags().StringSliceVar(&options.KubeContexts, "kubecontexts", options.KubeContexts, "[optional] contexts in the kubeconfig file to delete the ingress from")
 	// TODO(nikhiljindal): Add a short flag "-p" if it seems useful.
 	cmd.Flags().StringVarP(&options.GCPProject, "gcp-project", "", options.GCPProject, "[required] name of the gcp project")
@@ -96,6 +96,9 @@ func validateDeleteArgs(options *DeleteOptions, args []string) error {
 	}
 	if options.GCPProject == "" {
 		return fmt.Errorf("unexpected missing argument gcp-project.")
+	}
+	if options.KubeconfigFilename == "" {
+		return fmt.Errorf("unexpected missing argument kubeconfig.")
 	}
 	return nil
 }
