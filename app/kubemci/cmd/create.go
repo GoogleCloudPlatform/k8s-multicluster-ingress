@@ -151,7 +151,10 @@ func runCreate(options *CreateOptions, args []string) error {
 		return err
 	}
 
-	lbs := gcplb.NewLoadBalancerSyncer(options.LBName, clients, cloudInterface)
+	lbs, err := gcplb.NewLoadBalancerSyncer(options.LBName, clients, cloudInterface, options.GCPProject)
+	if err != nil {
+		return err
+	}
 	return lbs.CreateLoadBalancer(&ing, options.ForceUpdate, clusters)
 }
 

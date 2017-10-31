@@ -121,7 +121,10 @@ func runDelete(options *DeleteOptions, args []string) error {
 
 	// DeleteLoadBalancer uses a random client from the given clientset map,
 	// so it is fine to pass a map with just one client.
-	lbs := gcplb.NewLoadBalancerSyncer(options.LBName, map[string]kubeclient.Interface{"": clientset}, cloudInterface)
+	lbs, err := gcplb.NewLoadBalancerSyncer(options.LBName, map[string]kubeclient.Interface{"": clientset}, cloudInterface, options.GCPProject)
+	if err != nil {
+		return err
+	}
 	if delErr := lbs.DeleteLoadBalancer(&ing); delErr != nil {
 		err = multierror.Append(err, delErr)
 	}
