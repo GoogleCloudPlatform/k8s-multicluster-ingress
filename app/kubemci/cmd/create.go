@@ -28,6 +28,7 @@ import (
 	"k8s.io/api/extensions/v1beta1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	kubeclient "k8s.io/client-go/kubernetes"
+	"k8s.io/ingress-gce/pkg/annotations"
 	// gcp is needed for GKE cluster auth to work.
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 	"k8s.io/client-go/tools/clientcmd"
@@ -42,6 +43,7 @@ var (
 
 	Takes an ingress spec and a list of clusters and creates a multicluster ingress targetting those clusters.
 	`
+	defaultIngressNamespace = "default"
 )
 
 // Extracted out here to allow overriding in tests.
@@ -137,7 +139,7 @@ func runCreate(options *CreateOptions, args []string) error {
 
 	// Unmarshal the YAML into ingress struct.
 	var ing v1beta1.Ingress
-	if err := unmarshall(options.IngressFilename, &ing); err != nil {
+	if err := unmarshallAndApplyDefaults(options.IngressFilename, &ing); err != nil {
 		return fmt.Errorf("error in unmarshalling the yaml file %s, err: %s", options.IngressFilename, err)
 	}
 	cloudInterface, err := cloudinterface.NewGCECloudInterface(options.GCPProject)
@@ -146,7 +148,7 @@ func runCreate(options *CreateOptions, args []string) error {
 	}
 
 	// Create ingress in all clusters.
-	clusters, clients, err := createIngress(options.KubeconfigFilename, options.IngressFilename)
+	clusters, clients, err := createIngress(options.KubeconfigFilename, &ing)
 	if err != nil {
 		return err
 	}
@@ -157,14 +159,14 @@ func runCreate(options *CreateOptions, args []string) error {
 
 // Extracts the contexts from the given kubeconfig and creates ingress in those context clusters.
 // Returns the list of clusters in which it created the ingress and a map of clients for each of those clusters.
-func createIngress(kubeconfig, ingressFilename string) ([]string, map[string]kubeclient.Interface, error) {
+func createIngress(kubeconfig string, ing *v1beta1.Ingress) ([]string, map[string]kubeclient.Interface, error) {
 	// TODO(nikhiljindal): Allow users to specify the list of clusters to create the ingress in
 	// rather than assuming all contexts in kubeconfig.
 	clusters, err := getClusters(kubeconfig)
 	if err != nil {
 		return nil, nil, err
 	}
-	clients, createErr := createIngressInClusters(kubeconfig, ingressFilename, clusters)
+	clients, createErr := createIngressInClusters(kubeconfig, ing, clusters)
 	return clusters, clients, createErr
 }
 
@@ -184,15 +186,8 @@ func getClusters(kubeconfig string) ([]string, error) {
 }
 
 // Creates the given ingress in the given list of clusters.
-func createIngressInClusters(kubeconfig, ingressFilename string, clusters []string) (map[string]kubeclient.Interface, error) {
+func createIngressInClusters(kubeconfig string, ing *v1beta1.Ingress, clusters []string) (map[string]kubeclient.Interface, error) {
 	clients := map[string]kubeclient.Interface{}
-	var ing v1beta1.Ingress
-	if err := unmarshall(ingressFilename, &ing); err != nil {
-		return clients, fmt.Errorf("error in parsing the yaml file %s, err: %s", ingressFilename, err)
-	}
-	glog.V(5).Infof("Unmarshaled this ingress:\n%+v", ing)
-
-	// TODO(nikhiljindal): Validate and optionally add the gce-multi-cluster class annotation to the ingress YAML spec.
 	var err error
 	for _, c := range clusters {
 		fmt.Println("\nHandling context:", c)
@@ -203,7 +198,7 @@ func createIngressInClusters(kubeconfig, ingressFilename string, clusters []stri
 		}
 		clients[c] = client
 		glog.V(3).Infof("Using this namespace for ingress: %v", ing.Namespace)
-		actualIng, createErr := client.Extensions().Ingresses(ing.Namespace).Create(&ing)
+		actualIng, createErr := client.Extensions().Ingresses(ing.Namespace).Create(ing)
 		glog.V(2).Infof("Ingress Create returned: err:%v. Actual Ingress:%+v", err, actualIng)
 		if createErr != nil {
 			if errors.IsAlreadyExists(createErr) {
@@ -235,6 +230,27 @@ func unmarshall(filename string, ing *v1beta1.Ingress) error {
 	// Unmarshall into ingress struct.
 	if err := yaml.Unmarshal(bytes, ing); err != nil {
 		return err
+	}
+	return nil
+}
+
+func unmarshallAndApplyDefaults(filename string, ing *v1beta1.Ingress) error {
+	if err := unmarshall(filename, ing); err != nil {
+		return err
+	}
+	if ing.Namespace == "" {
+		ing.Namespace = defaultIngressNamespace
+	}
+	ingAnnotations := annotations.IngAnnotations(ing.ObjectMeta.Annotations)
+	class := ingAnnotations.IngressClass()
+	if class == "" {
+		if ing.Annotations == nil {
+			ing.Annotations = annotations.IngAnnotations{}
+		}
+		ing.Annotations[annotations.IngressClassKey] = annotations.GceMultiIngressClass
+		glog.V(3).Infof("Adding class annotation to be of type %v\n", annotations.GceMultiIngressClass)
+	} else if class != annotations.GceMultiIngressClass {
+		return fmt.Errorf("error definining ingress class to %v, must be %v", class, annotations.GceMultiIngressClass)
 	}
 	return nil
 }

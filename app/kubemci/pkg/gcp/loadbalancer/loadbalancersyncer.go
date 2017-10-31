@@ -195,7 +195,7 @@ func (l *LoadBalancerSyncer) getIPAddress(ing *v1beta1.Ingress) (string, error) 
 	if ing.ObjectMeta.Annotations == nil || ing.ObjectMeta.Annotations[key] == "" {
 		// TODO(nikhiljindal): Add logic to reserve a new IP address if user has not specified any.
 		// If we do that then we should also add the new IP address as annotation to the ingress created in clusters.
-		return "", fmt.Errorf("No static ip specified. Multicluster ingresses require a pre-reserved static IP, which can be specified using %s annotation", key)
+		return "", fmt.Errorf("The annotation %v has not been specified. Multicluster ingresses require a pre-reserved static IP", key)
 	}
 	ipName := ing.ObjectMeta.Annotations[key]
 	ip, err := l.ipp.GetGlobalAddress(ipName)
