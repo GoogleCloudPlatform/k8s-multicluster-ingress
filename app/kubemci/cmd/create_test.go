@@ -32,7 +32,7 @@ type ExpectedCommand struct {
 	Err    error
 }
 
-func run(fakeClient *fake.Clientset, expectedCmds []ExpectedCommand, runFn func() error) error {
+func run(fakeClient *fake.Clientset, expectedCmds []ExpectedCommand, runFn func() ([]string, error)) ([]string, error) {
 	getClientset = func(kubeconfigPath, context string) (kubeclient.Interface, error) {
 		return fakeClient, nil
 	}
@@ -49,14 +49,14 @@ func run(fakeClient *fake.Clientset, expectedCmds []ExpectedCommand, runFn func(
 		i++
 		return output, err
 	}
-	err := runFn()
+	clusters, err := runFn()
 	if err != nil {
-		return err
+		return clusters, err
 	}
 	if i != len(expectedCmds) {
-		return fmt.Errorf("expected [commands, outputs, errs] not called: %s", expectedCmds[i:])
+		return clusters, fmt.Errorf("expected [commands, outputs, errs] not called: %s", expectedCmds[i:])
 	}
-	return nil
+	return clusters, nil
 }
 
 func TestValidateCreateArgs(t *testing.T) {

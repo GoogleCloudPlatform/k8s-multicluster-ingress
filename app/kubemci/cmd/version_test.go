@@ -20,17 +20,17 @@ import (
 
 func TestValidateVersionArgs(t *testing.T) {
 	// validateVersionArgs should return an error with non-empty args.
-	if err := validateVersionArgs(&options, []string{"arg1"}); err == nil {
+	if err := validateVersionArgs([]string{"arg1"}); err == nil {
 		t.Errorf("Expected error for non-empty args")
 	}
 	// validateVersionArgs should succeed with empty args.
-	if err := validateVersionArgs(&options, []string{}); err != nil {
+	if err := validateVersionArgs([]string{}); err != nil {
 		t.Errorf("unexpected error from validateVersionArgs: %s", err)
 	}
 }
 
 func TestRunVersion(t *testing.T) {
-	if err := runVersion(); err != nil {
+	if err := runVersion([]string{}); err != nil {
 		t.Fatalf("unexpected error in running runVersion: %s", err)
 	}
 }
