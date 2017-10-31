@@ -15,6 +15,7 @@
 package healthcheck
 
 import (
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"time"
@@ -118,7 +119,9 @@ func (h *HealthCheckSyncer) ensureHealthCheck(lbName string, port ingressbe.Serv
 	existingHC, err := h.hcp.GetHealthCheck(name)
 	if err == nil {
 		fmt.Println("Health check", name, "exists already. Checking if it matches our desired health check")
-		glog.V(5).Infof("Existing health check: %+v\n, desired health check: %+v\n", existingHC, desiredHC)
+		jsonExisting, _ := json.Marshal(existingHC)
+		jsonDesired, _ := json.Marshal(desiredHC)
+		glog.V(5).Infof("Existing health check:\n%v\nDesired health check:\n%v\n", string(jsonExisting), string(jsonDesired))
 		// Health check with that name exists already. Check if it matches what we want.
 		if healthCheckMatches(&desiredHC, existingHC) {
 			// Nothing to do. Desired health check exists already.
@@ -201,13 +204,14 @@ func (h *HealthCheckSyncer) desiredHealthCheck(lbName string, port ingressbe.Ser
 		// Number of healthchecks to fail before the vm is deemed unhealthy.
 		UnhealthyThreshold: DefaultUnhealthyThreshold,
 		Type:               string(port.Protocol),
-		// TODO: Try Kind: compute#healthCheck
+		Kind:               "compute#healthCheck",
 	}
 	switch port.Protocol {
 	case "HTTP":
 		hc.HttpHealthCheck = &compute.HTTPHealthCheck{
 			Port:        port.Port,
 			RequestPath: "/healthz", // TODO(nikhiljindal): Allow customization.
+			ProxyHeader: "NONE",
 		}
 		break
 	case "HTTPS":
