@@ -207,13 +207,13 @@ func (h *HealthCheckSyncer) desiredHealthCheck(lbName string, port ingressbe.Ser
 	case "HTTP":
 		hc.HttpHealthCheck = &compute.HTTPHealthCheck{
 			Port:        port.Port,
-			RequestPath: "/healthz", // TODO(nikhiljindal): Allow customization.
+			RequestPath: "/", // TODO(nikhiljindal): Allow customization.
 		}
 		break
 	case "HTTPS":
 		hc.HttpsHealthCheck = &compute.HTTPSHealthCheck{
-			Port:        port.Port,  // TODO(nikhiljindal): Allow customization.
-			RequestPath: "/healthz", // TODO(nikhiljindal): Allow customization.
+			Port:        port.Port, // TODO(nikhiljindal): Allow customization.
+			RequestPath: "/",       // TODO(nikhiljindal): Allow customization.
 		}
 		break
 	default:
