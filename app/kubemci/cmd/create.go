@@ -204,7 +204,7 @@ func createIngressInClusters(kubeconfig, ingressFilename string, clusters []stri
 		clients[c] = client
 		glog.V(3).Infof("Using this namespace for ingress: %v", ing.Namespace)
 		actualIng, createErr := client.Extensions().Ingresses(ing.Namespace).Create(&ing)
-		glog.V(2).Infof("Ingress Create returned: err:%v. Actual Ingress:%+v", err, actualIng)
+		glog.V(2).Infof("Ingress Create returned: err:%v. Actual Ingress:%+v", createErr, actualIng)
 		if createErr != nil {
 			if errors.IsAlreadyExists(createErr) {
 				fmt.Println("Ingress already exists; moving on.")
