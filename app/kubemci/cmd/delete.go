@@ -105,7 +105,7 @@ func runDelete(options *DeleteOptions, args []string) error {
 
 	// Unmarshal the YAML into ingress struct.
 	var ing v1beta1.Ingress
-	if err := unmarshall(options.IngressFilename, &ing); err != nil {
+	if err := unmarshallAndApplyDefaults(options.IngressFilename, &ing); err != nil {
 		return fmt.Errorf("error in unmarshalling the yaml file %s, err: %s", options.IngressFilename, err)
 	}
 	clientset, err := getClientset(options.KubeconfigFilename, "" /*contextName*/)
@@ -118,7 +118,7 @@ func runDelete(options *DeleteOptions, args []string) error {
 	}
 
 	// Delete ingress from all clusters.
-	if delErr := deleteIngress(options.KubeconfigFilename, options.KubeContexts, options.IngressFilename); delErr != nil {
+	if delErr := deleteIngress(options.KubeconfigFilename, options.KubeContexts, &ing); delErr != nil {
 		err = multierror.Append(err, delErr)
 	}
 
@@ -132,23 +132,16 @@ func runDelete(options *DeleteOptions, args []string) error {
 }
 
 // Extracts the contexts from the given kubeconfig and deletes ingress in those context clusters.
-func deleteIngress(kubeconfig string, kubeContexts []string, ingressFilename string) error {
+func deleteIngress(kubeconfig string, kubeContexts []string, ing *v1beta1.Ingress) error {
 	clusters, err := getClusters(kubeconfig, kubeContexts)
 	if err != nil {
 		return err
 	}
-	return deleteIngressInClusters(kubeconfig, ingressFilename, clusters)
+	return deleteIngressInClusters(kubeconfig, ing, clusters)
 }
 
 // Deletes the given ingress in the given list of clusters.
-func deleteIngressInClusters(kubeconfig, ingressFilename string, clusters []string) error {
-	var ing v1beta1.Ingress
-	if err := unmarshall(ingressFilename, &ing); err != nil {
-		return fmt.Errorf("error in unmarshalling the yaml file %s, err: %s", ingressFilename, err)
-	}
-	glog.V(5).Infof("Unmarshaled this ingress:\n%+v", ing)
-
-	// TODO(nikhiljindal): Validate and optionally add the gce-multi-cluster class annotation to the ingress YAML spec.
+func deleteIngressInClusters(kubeconfig string, ing *v1beta1.Ingress, clusters []string) error {
 	var err error
 	for _, c := range clusters {
 		fmt.Println("\nHandling context:", c)
