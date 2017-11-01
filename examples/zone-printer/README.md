@@ -123,7 +123,7 @@ single kubeconfig file with just the contexts we care about
 # Use KUBECONFIG to specify the context filenames we created in
 # the previous step
 KUBECONFIG=mciuseast:mcieuwest:mciasiaeast kubectl config view \
-  --flatten > mcikubeconfig
+  --flatten > zpkubeconfig
 ```
 
 #### Creating new clusters
@@ -139,25 +139,30 @@ gcloud container clusters create \
     --cluster-version=1.8.1-gke.0 \
     --zone=us-east4-a \
     cluster-us-east
-KUBECONFIG=./mcikubeconfig gcloud container clusters get-credentials \
+
+KUBECONFIG=./zpkubeconfig gcloud container clusters get-credentials \
     --zone=us-east4-a \
     cluster-us-east
+
 
 # Create a cluster in eu-west and get its credentials
 gcloud container clusters create \
     --cluster-version=1.8.1-gke.0 \
     --zone=europe-west1-c \
     cluster-eu-west
-KUBECONFIG=./mcikubeconfig gcloud container clusters get-credentials \
+
+KUBECONFIG=./zpkubeconfig gcloud container clusters get-credentials \
     --zone=europe-west1-c \
     cluster-eu-west
+
 
 # Create a cluster in asia-east and get its credentials
 gcloud container clusters create \
     --cluster-version=1.8.1-gke.0 \
     --zone=asia-east1-b \
     cluster-asia-east
-KUBECONFIG=./mcikubeconfig gcloud container clusters get-credentials \
+
+KUBECONFIG=./zpkubeconfig gcloud container clusters get-credentials \
     --zone=asia-east1-b \
     cluster-asia-east
 ```
@@ -170,7 +175,7 @@ application manifests. This could be accomplished by running the
 following loop:
 
 ```shell
-for ctx in $(kubectl config get-contexts --kubeconfig=./mcikubeconfig -o name); do
+for ctx in $(kubectl config get-contexts --kubeconfig=./zpkubeconfig -o name); do
   kubectl --context="${ctx}" create -f app/
 done
 ```
@@ -202,7 +207,7 @@ Run kubemci to create the multi-cluster ingress.
 kubemci create zone-printer \
     --ingress=ingress/nginx.yaml \
     --gcp-project=$PROJECT \
-    --kubeconfig=./mcikubeconfig
+    --kubeconfig=./zpkubeconfig
 ```
 
 Voila! You should have a multi-cluster ingress once the command
@@ -226,7 +231,7 @@ Delete the multi-cluster ingress by using the `kubemci delete` command.
 kubemci delete zone-printer \
     --ingress=ingress/nginx.yaml \
     --gcp-project=$PROJECT \
-    --kubeconfig=./mcikubeconfig
+    --kubeconfig=./zpkubeconfig
 ```
 
 Delete the GKE clusters if you created them earlier in this tutorial
