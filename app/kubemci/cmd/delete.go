@@ -52,6 +52,9 @@ type DeleteOptions struct {
 	// Required
 	// TODO(nikhiljindal): This should be optional. Figure it out from gcloud settings.
 	GCPProject string
+	// Name of the namespace for the ingress. Overrides the namespace in the IngressFilename (if present).
+	// Optional.
+	Namespace string
 }
 
 func NewCmdDelete(out, err io.Writer) *cobra.Command {
@@ -82,6 +85,7 @@ func addDeleteFlags(cmd *cobra.Command, options *DeleteOptions) error {
 	cmd.Flags().StringSliceVar(&options.KubeContexts, "kubecontexts", options.KubeContexts, "[optional] contexts in the kubeconfig file to delete the ingress from")
 	// TODO(nikhiljindal): Add a short flag "-p" if it seems useful.
 	cmd.Flags().StringVarP(&options.GCPProject, "gcp-project", "", options.GCPProject, "[required] name of the gcp project")
+	cmd.Flags().StringVarP(&options.Namespace, "namespace", "n", options.Namespace, "[optional] namespace for the ingress unless provided by ingress spec")
 	// TODO Add a verbose flag that turns on glog logging.
 	return nil
 }
@@ -108,7 +112,7 @@ func runDelete(options *DeleteOptions, args []string) error {
 
 	// Unmarshal the YAML into ingress struct.
 	var ing v1beta1.Ingress
-	if err := unmarshallAndApplyDefaults(options.IngressFilename, &ing); err != nil {
+	if err := unmarshallAndApplyDefaults(options.IngressFilename, options.Namespace, &ing); err != nil {
 		return fmt.Errorf("error in unmarshalling the yaml file %s, err: %s", options.IngressFilename, err)
 	}
 	clientset, err := getClientset(options.KubeconfigFilename, "" /*contextName*/)
