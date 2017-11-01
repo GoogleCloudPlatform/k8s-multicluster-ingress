@@ -110,21 +110,21 @@ func TestEnsureHealthCheck(t *testing.T) {
 
 func TestHealthCheckMatches(t *testing.T) {
 	var check compute.HealthCheck
-	if !healthCheckMatches(&check, &check) {
+	if !healthCheckMatches(check, check) {
 		t.Errorf("Want healthCheckMatches(c, c) = true. got false.")
 	}
 	check2 := check
 	check2.Description = "foo"
-	if healthCheckMatches(&check, &check2) {
+	if healthCheckMatches(check, check2) {
 		t.Errorf("Want healthCheckMatches(c, c2) = false, c.description differs. got true.")
 	}
 	check.Description = "foo"
-	if !healthCheckMatches(&check, &check2) {
+	if !healthCheckMatches(check, check2) {
 		t.Errorf("Health checks should be identical again c:%v, c2:%v", check, check2)
 	}
 	// CreationTimestamp should be ignored.
 	check2.CreationTimestamp = "1234"
-	if !healthCheckMatches(&check, &check2) {
+	if !healthCheckMatches(check, check2) {
 		t.Errorf("Health checks only differ in creation timestamp, watch Matches(c, c2)=true, got false")
 	}
 }

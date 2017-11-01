@@ -128,7 +128,7 @@ func (l *LoadBalancerSyncer) CreateLoadBalancer(ing *v1beta1.Ingress, forceUpdat
 		igsForBE = append(igsForBE, igs[k]...)
 	}
 	// Create backend service. This should always be called after the health check since backend service needs to point to the health check.
-	backendServices, beErr := l.bss.EnsureBackendService(l.lbName, ports, healthChecks, namedPorts, igsForBE)
+	backendServices, beErr := l.bss.EnsureBackendService(l.lbName, ports, healthChecks, namedPorts, igsForBE, forceUpdate)
 	if beErr != nil {
 		// Aggregate errors and return all at the end.
 		err = multierror.Append(err, beErr)
@@ -314,11 +314,13 @@ func (l *LoadBalancerSyncer) getNamedPorts(igUrl string) (backendservice.NamedPo
 	if err != nil {
 		return nil, err
 	}
-	fmt.Println("Fetched instance group:", zone, "/", name, "got named ports:", ig.NamedPorts)
+	fmt.Printf("Fetched instance group: %s/%s got named ports: ", zone, name)
 	namedPorts := backendservice.NamedPortsMap{}
 	for _, np := range ig.NamedPorts {
+		fmt.Printf("port: %v ", np)
 		namedPorts[np.Port] = np
 	}
+	fmt.Printf("\n")
 	return namedPorts, nil
 }
 func (l *LoadBalancerSyncer) ingToNodePorts(ing *v1beta1.Ingress, client kubeclient.Interface) []ingressbe.ServicePort {

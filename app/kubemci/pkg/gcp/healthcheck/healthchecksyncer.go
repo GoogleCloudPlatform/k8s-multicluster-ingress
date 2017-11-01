@@ -15,6 +15,7 @@
 package healthcheck
 
 import (
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"time"
@@ -107,6 +108,11 @@ func (h *HealthCheckSyncer) deleteHealthCheck(port ingressbe.ServicePort) error 
 	return nil
 }
 
+func getJsonIgnoreErr(v interface{}) string {
+	output, _ := json.Marshal(v)
+	return string(output)
+}
+
 func (h *HealthCheckSyncer) ensureHealthCheck(lbName string, port ingressbe.ServicePort, forceUpdate bool) (*compute.HealthCheck, error) {
 	fmt.Println("Ensuring health check for port:", port)
 	desiredHC, err := h.desiredHealthCheck(lbName, port)
@@ -118,9 +124,9 @@ func (h *HealthCheckSyncer) ensureHealthCheck(lbName string, port ingressbe.Serv
 	existingHC, err := h.hcp.GetHealthCheck(name)
 	if err == nil {
 		fmt.Println("Health check", name, "exists already. Checking if it matches our desired health check")
-		glog.V(5).Infof("Existing health check: %+v\n, desired health check: %+v\n", existingHC, desiredHC)
+		glog.V(5).Infof("Existing health check:\n%v\nDesired health check:\n%v\n", getJsonIgnoreErr(existingHC), getJsonIgnoreErr(desiredHC))
 		// Health check with that name exists already. Check if it matches what we want.
-		if healthCheckMatches(&desiredHC, existingHC) {
+		if healthCheckMatches(desiredHC, *existingHC) {
 			// Nothing to do. Desired health check exists already.
 			fmt.Println("Desired health check exists already")
 			return existingHC, nil
@@ -166,7 +172,13 @@ func (h *HealthCheckSyncer) createHealthCheck(desiredHC *compute.HealthCheck) (*
 	return h.hcp.GetHealthCheck(name)
 }
 
-func healthCheckMatches(desiredHC, existingHC *compute.HealthCheck) bool {
+func healthCheckMatches(desiredHC, existingHC compute.HealthCheck) bool {
+	// Clear fields we don't care about to make the printout easier to read.
+	existingHC.CreationTimestamp = ""
+	existingHC.Id = 0
+	existingHC.SelfLink = ""
+	glog.V(5).Infof("\nexisting (minus ignored fields):%v\ndesired:%v", getJsonIgnoreErr(existingHC), getJsonIgnoreErr(desiredHC))
+	// TODO(G-Harmon): We should ignore specific fields instead of checking specific ones.
 	if desiredHC.CheckIntervalSec != existingHC.CheckIntervalSec ||
 		// Ignore creationTimestamp.
 		desiredHC.Description != existingHC.Description ||
@@ -201,19 +213,21 @@ func (h *HealthCheckSyncer) desiredHealthCheck(lbName string, port ingressbe.Ser
 		// Number of healthchecks to fail before the vm is deemed unhealthy.
 		UnhealthyThreshold: DefaultUnhealthyThreshold,
 		Type:               string(port.Protocol),
-		// TODO: Try Kind: compute#healthCheck
+		Kind:               "compute#healthCheck",
 	}
 	switch port.Protocol {
 	case "HTTP":
 		hc.HttpHealthCheck = &compute.HTTPHealthCheck{
 			Port:        port.Port,
 			RequestPath: "/", // TODO(nikhiljindal): Allow customization.
+			ProxyHeader: "NONE",
 		}
 		break
 	case "HTTPS":
 		hc.HttpsHealthCheck = &compute.HTTPSHealthCheck{
 			Port:        port.Port, // TODO(nikhiljindal): Allow customization.
 			RequestPath: "/",       // TODO(nikhiljindal): Allow customization.
+			// TODO(G-Harmon): When HTTPS support is added, we likely need to set ProxyHeader, like HTTP does.
 		}
 		break
 	default:
