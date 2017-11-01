@@ -26,6 +26,7 @@ const (
 	targetHttpsProxyPrefix    = "tps"
 	httpForwardingRulePrefix  = "fw"
 	httpsForwardingRulePrefix = "fws"
+	firewallRulePrefix        = "fr"
 
 	// A delimiter used for clarity in naming GCE resources.
 	lbNameDelimiter = "--"
@@ -85,6 +86,10 @@ func (n *Namer) HttpsForwardingRuleName() string {
 
 func (n *Namer) HttpForwardingRuleName() string {
 	return n.decorateName(fmt.Sprintf("%v-%v", n.prefix, httpForwardingRulePrefix))
+}
+
+func (n *Namer) FirewallRuleName() string {
+	return n.decorateName(fmt.Sprintf("%v-%v", n.prefix, firewallRulePrefix))
 }
 
 func (n *Namer) decorateName(name string) string {

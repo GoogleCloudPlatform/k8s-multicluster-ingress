@@ -90,7 +90,10 @@ func runGetStatus(options *GetStatusOptions, args []string) error {
 		return fmt.Errorf("error in creating cloud interface: %s", err)
 	}
 
-	lbs := gcplb.NewLoadBalancerSyncer(options.LBName, nil /* clientset */, cloudInterface)
+	lbs, err := gcplb.NewLoadBalancerSyncer(options.LBName, nil /* clientset */, cloudInterface, options.GCPProject)
+	if err != nil {
+		return err
+	}
 	status, err := lbs.PrintStatus()
 	if err != nil {
 		return err
