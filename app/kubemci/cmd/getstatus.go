@@ -66,7 +66,7 @@ func NewCmdGetStatus(out, err io.Writer) *cobra.Command {
 
 func addGetStatusFlags(cmd *cobra.Command, options *GetStatusOptions) error {
 	// TODO(nikhiljindal): Add a short flag "-p" if it seems useful.
-	cmd.Flags().StringVarP(&options.GCPProject, "gcp-project", "", options.GCPProject, "name of the gcp project")
+	cmd.Flags().StringVarP(&options.GCPProject, "gcp-project", "", options.GCPProject, "[required] name of the gcp project")
 	// TODO Add a verbose flag that turns on glog logging.
 	return nil
 }
