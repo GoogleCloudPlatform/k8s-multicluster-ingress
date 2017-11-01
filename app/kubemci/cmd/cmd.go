@@ -15,6 +15,7 @@
 package cmd
 
 import (
+	"flag"
 	"io"
 
 	"github.com/spf13/cobra"
@@ -33,9 +34,12 @@ func NewCommand(in io.Reader, out, err io.Writer) *cobra.Command {
 		Short: shortDescription,
 		Long:  longDescription,
 	}
-	rootCmd.AddCommand(NewCmdCreate(out, err))
-	rootCmd.AddCommand(NewCmdDelete(out, err))
-	rootCmd.AddCommand(NewCmdGetStatus(out, err))
-	rootCmd.AddCommand(NewCmdGetVersion(out, err))
+	rootCmd.AddCommand(
+		NewCmdCreate(out, err),
+		NewCmdDelete(out, err),
+		NewCmdGetStatus(out, err),
+		NewCmdGetVersion(out, err),
+	)
+	rootCmd.PersistentFlags().AddGoFlagSet(flag.CommandLine)
 	return rootCmd
 }

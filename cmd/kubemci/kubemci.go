@@ -20,17 +20,11 @@ import (
 	"os"
 
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/cmd/kubemci/app"
-	"github.com/golang/glog"
 )
 
 func main() {
 	// Workaround for https://github.com/kubernetes/kubernetes/issues/17162
-	flag.Parse()
-	if glog.V(2) {
-		fmt.Println("Turning on debug logging to STDERR")
-		flag.Set("logtostderr", "true")
-	}
-
+	flag.CommandLine.Parse([]string{})
 	if err := app.Run(); err != nil {
 		fmt.Println(err)
 		os.Exit(1)
