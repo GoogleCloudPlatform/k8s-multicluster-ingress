@@ -110,12 +110,12 @@ func NewCmdCreate(out, err io.Writer) *cobra.Command {
 }
 
 func addCreateFlags(cmd *cobra.Command, options *CreateOptions) error {
-	cmd.Flags().StringVarP(&options.IngressFilename, "ingress", "i", options.IngressFilename, "filename containing ingress spec")
-	cmd.Flags().StringVarP(&options.KubeconfigFilename, "kubeconfig", "k", options.KubeconfigFilename, "path to kubeconfig file")
-	cmd.Flags().StringSliceVar(&options.KubeContexts, "kubecontexts", options.KubeContexts, "contexts in the kubeconfig file to install the ingress into")
+	cmd.Flags().StringVarP(&options.IngressFilename, "ingress", "i", options.IngressFilename, "[required] filename containing ingress spec")
+	cmd.Flags().StringVarP(&options.KubeconfigFilename, "kubeconfig", "k", options.KubeconfigFilename, "[optional] path to kubeconfig file")
+	cmd.Flags().StringSliceVar(&options.KubeContexts, "kubecontexts", options.KubeContexts, "[optional] contexts in the kubeconfig file to install the ingress into")
 	// TODO(nikhiljindal): Add a short flag "-p" if it seems useful.
-	cmd.Flags().StringVarP(&options.GCPProject, "gcp-project", "", options.GCPProject, "name of the gcp project")
-	cmd.Flags().BoolVarP(&options.ForceUpdate, "force", "f", options.ForceUpdate, "overwrite existing settings if they are different.")
+	cmd.Flags().StringVarP(&options.GCPProject, "gcp-project", "", options.GCPProject, "[required] name of the gcp project")
+	cmd.Flags().BoolVarP(&options.ForceUpdate, "force", "f", options.ForceUpdate, "[optional] overwrite existing settings if they are different")
 	// TODO Add a verbose flag that turns on glog logging, or figure out how
 	// to accept glog flags in addition to the cobra flags.
 	return nil
