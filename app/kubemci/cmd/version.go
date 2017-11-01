@@ -22,22 +22,25 @@ import (
 )
 
 var (
-	versionDescription = "Prints the version of this tool"
+	versionShortDescription = "Prints the version of this tool"
+	versionLongDescription  = `Prints the version of this tool
+
+	Release builds have versions of the form x.y.z.
+	version x.y.z+ indicates that the client has some changes over the x.y.z release.
+	`
 )
 
 const (
 	// String indicating the client version.
-	// x.y.z+ indicates that the client has some changes over the x.y.z release.
-	// Release builds should have versions of the form x.y.z.
 	// TODO(nikhiljindal): Add more useful information such as build date, git commit, etc similar to kubectl.
-	clientVersion = "0.0.0+"
+	clientVersion = "0.0.1"
 )
 
 func NewCmdGetVersion(out, err io.Writer) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "version",
-		Short: versionDescription,
-		Long:  versionDescription,
+		Short: versionShortDescription,
+		Long:  versionLongDescription,
 		// TODO(nikhiljindal): Add an example.
 		Run: func(cmd *cobra.Command, args []string) {
 			if err := validateVersionArgs(args); err != nil {
