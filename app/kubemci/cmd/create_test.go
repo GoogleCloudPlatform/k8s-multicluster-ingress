@@ -69,8 +69,9 @@ func TestValidateCreateArgs(t *testing.T) {
 
 	// validateCreateArgs should return an error with missing load balancer name.
 	options = CreateOptions{
-		IngressFilename: "ingress.yaml",
-		GCPProject:      "gcp-project",
+		IngressFilename:    "ingress.yaml",
+		GCPProject:         "gcp-project",
+		KubeconfigFilename: "kubeconfig",
 	}
 	if err := validateCreateArgs(&options, []string{}); err == nil {
 		t.Errorf("Expected error for missing load balancer name")
@@ -78,7 +79,8 @@ func TestValidateCreateArgs(t *testing.T) {
 
 	// validateCreateArgs should return an error with missing ingress.
 	options = CreateOptions{
-		GCPProject: "gcp-project",
+		GCPProject:         "gcp-project",
+		KubeconfigFilename: "kubeconfig",
 	}
 	if err := validateCreateArgs(&options, []string{"lbname"}); err == nil {
 		t.Errorf("Expected error for missing ingress")
@@ -86,16 +88,27 @@ func TestValidateCreateArgs(t *testing.T) {
 
 	// validateCreateArgs should return an error with missing gcp project.
 	options = CreateOptions{
-		IngressFilename: "ingress.yaml",
+		IngressFilename:    "ingress.yaml",
+		KubeconfigFilename: "kubeconfig",
 	}
 	if err := validateCreateArgs(&options, []string{"lbname"}); err == nil {
 		t.Errorf("Expected error for missing gcp project")
 	}
 
-	// validateCreateArgs should succeed when all arguments are passed as expected.
+	// validateCreateArgs should return an error with missing kubeconfig.
 	options = CreateOptions{
 		IngressFilename: "ingress.yaml",
 		GCPProject:      "gcp-project",
+	}
+	if err := validateCreateArgs(&options, []string{"lbname"}); err == nil {
+		t.Errorf("Expected error for missing kubeconfig")
+	}
+
+	// validateCreateArgs should succeed when all arguments are passed as expected.
+	options = CreateOptions{
+		IngressFilename:    "ingress.yaml",
+		GCPProject:         "gcp-project",
+		KubeconfigFilename: "kubeconfig",
 	}
 	if err := validateCreateArgs(&options, []string{"lbname"}); err != nil {
 		t.Errorf("unexpected error from validateCreateArgs: %s", err)
