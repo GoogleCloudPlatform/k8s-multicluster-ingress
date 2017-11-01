@@ -93,7 +93,7 @@ func NewCmdCreate(out, err io.Writer) *cobra.Command {
 	var options CreateOptions
 
 	cmd := &cobra.Command{
-		Use:   "create",
+		Use:   "create [lbname]",
 		Short: createShortDescription,
 		Long:  createLongDescription,
 		// TODO(nikhiljindal): Add an example.

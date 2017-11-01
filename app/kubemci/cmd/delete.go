@@ -58,7 +58,7 @@ func NewCmdDelete(out, err io.Writer) *cobra.Command {
 	var options DeleteOptions
 
 	cmd := &cobra.Command{
-		Use:   "delete",
+		Use:   "delete [lbname]",
 		Short: deleteShortDescription,
 		Long:  deleteLongDescription,
 		// TODO(nikhiljindal): Add an example.

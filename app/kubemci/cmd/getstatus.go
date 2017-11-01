@@ -46,7 +46,7 @@ func NewCmdGetStatus(out, err io.Writer) *cobra.Command {
 	var options GetStatusOptions
 
 	cmd := &cobra.Command{
-		Use:   "get-status",
+		Use:   "get-status [lbname]",
 		Short: getStatusShortDescription,
 		Long:  getStatusLongDescription,
 		// TODO(nikhiljindal): Add an example.
