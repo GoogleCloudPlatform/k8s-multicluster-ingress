@@ -74,7 +74,7 @@ func TestDeleteIngress(t *testing.T) {
 
 	runFn := func() ([]string, map[string]kubeclient.Interface, error) {
 		var ing v1beta1.Ingress
-		if err := unmarshallAndApplyDefaults("../../../testdata/ingress.yaml", &ing); err != nil {
+		if err := unmarshallAndApplyDefaults("../../../testdata/ingress.yaml", "", &ing); err != nil {
 			return nil, nil, err
 		}
 		return nil, nil, deleteIngress("kubeconfig", []string{}, &ing)
