@@ -74,6 +74,11 @@ gcloud components install kubectl
 > **Note:**: If you don't already have Kubernetes cluster on GCP,
 skip to the next subsection on [creating new clusters](#creating-new-clusters).
 
+`kubemci` requires Kubernetes clusters that are v1.8.1 or newer. Please
+ensure that all the clusters you are using in this tutorial satisfy the
+minimum version requirement. You can check your cluster version using
+the `kubectl version` command.
+
 If you already have clusters with their credentials in your local
 kubeconfig (`$HOME/.kube/config` by default) file, you need to ensure
 that you either only have clusters you are going to use for this
@@ -123,9 +128,10 @@ KUBECONFIG=mciuseast:mcieuwest:mciasiaeast kubectl config view \
 
 #### Creating new clusters
 
-You need at least two Kubernetes clusters in two different GCP zones to
-verify that `kubemci` works. Let's create three GKE clusters and get
-their credentials for the purposes of this tutorial:
+You need at least two Kubernetes clusters in two different GCP zones
+to verify that `kubemci` works. Clusters must be v1.8.1 or newer.
+Let's create three GKE clusters and get their credentials for the
+purposes of this tutorial:
 
 ```shell
 # Create a cluster in us-east and get its credentials
@@ -199,7 +205,7 @@ kubemci create zone-printer \
     --kubeconfig=./mcikubeconfig
 ```
 
-Viola! You should have a multi-cluster ingress once the command
+Voila! You should have a multi-cluster ingress once the command
 successfully exits!
 
 
