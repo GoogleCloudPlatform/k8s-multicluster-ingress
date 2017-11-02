@@ -105,7 +105,7 @@ in-use and then extracting that context to its own file.
 ```shell
 # First, do this for the us-east one.
 kubectl config use-context us-east
-kubectl config view  --minify --flatten > mciuseast
+kubectl config view --minify --flatten > mciuseast
 
 # Second, do this for the eu-west one.
 kubectl config use-context eu-west
@@ -196,7 +196,7 @@ Replace the value of `kubernetes.io/ingress.global-static-ip-name`
 annotation in `ingress/nginx.yaml` with the value of $ZP_KUBEMCI_IP.
 
 ```shell
-sed -e "s/\$ZP_KUBEMCI_IP/${ZP_KUBEMCI_IP}/" ingress/nginx.yaml
+sed -i -e "s/\$ZP_KUBEMCI_IP/${ZP_KUBEMCI_IP}/" ingress/nginx.yaml
 ```
 
 ## 4. Deploy the Multi-Cluster Ingress (with kubemci)
@@ -223,7 +223,13 @@ by using `kubemci get-status` command.
 kubemci get-status zone-printer --gcp-project=$PROJECT
 ```
 
-## 6. Clean up
+## 6. Test the Multicluster Ingress
+
+It may take several minutes for the ingress to propagate, but once it does, you
+can test it by curl'ing the IP from the get-status command. You should see it
+report a zone from the nearest region.
+
+## 7. Clean up
 
 Delete the multi-cluster ingress by using the `kubemci delete` command.
 
