@@ -23,6 +23,7 @@ import (
 
 	"github.com/golang/glog"
 	multierror "github.com/hashicorp/go-multierror"
+	"k8s.io/apimachinery/pkg/util/diff"
 	ingressbe "k8s.io/ingress-gce/pkg/backends"
 
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/healthcheck"
@@ -58,6 +59,7 @@ func (b *BackendServiceSyncer) EnsureBackendService(lbName string, ports []ingre
 		be, beErr := b.ensureBackendService(lbName, p, hcMap[p.Port], npMap[p.Port], igLinks, forceUpdate)
 		if beErr != nil {
 			beErr = fmt.Errorf("Error %s in ensuring backend service for port %v", beErr, p)
+			fmt.Printf("Error ensuring backend service for port %v: %v. Continuing.", p, beErr)
 			// Try ensuring backend services for all ports and return all errors at once.
 			err = multierror.Append(err, beErr)
 			continue
@@ -178,7 +180,8 @@ func (b *BackendServiceSyncer) createBackendService(desiredBE *compute.BackendSe
 }
 
 func backendServiceMatches(desiredBE, existingBE *compute.BackendService) bool {
-	return desiredBE.AffinityCookieTtlSec == existingBE.AffinityCookieTtlSec &&
+	// TODO(G-Harmon): Switch to ignoring specific fields, to be safer when fields are later added.
+	equal := desiredBE.AffinityCookieTtlSec == existingBE.AffinityCookieTtlSec &&
 		reflect.DeepEqual(desiredBE.Backends, existingBE.Backends) &&
 		reflect.DeepEqual(desiredBE.CdnPolicy, existingBE.CdnPolicy) &&
 		reflect.DeepEqual(desiredBE.ConnectionDraining, existingBE.ConnectionDraining) &&
@@ -199,6 +202,10 @@ func backendServiceMatches(desiredBE, existingBE *compute.BackendService) bool {
 		desiredBE.Protocol == existingBE.Protocol &&
 		desiredBE.SessionAffinity == existingBE.SessionAffinity &&
 		desiredBE.TimeoutSec == existingBE.TimeoutSec
+	if !equal {
+		glog.Infof("Diff:\n%v", diff.ObjectDiff(desiredBE, existingBE))
+	}
+	return equal
 }
 
 func (b *BackendServiceSyncer) desiredBackendService(lbName string, port ingressbe.ServicePort, hcLink, portName string, igLinks []string) *compute.BackendService {

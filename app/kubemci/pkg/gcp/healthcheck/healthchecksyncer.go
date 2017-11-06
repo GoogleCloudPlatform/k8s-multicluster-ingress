@@ -23,6 +23,8 @@ import (
 	"github.com/golang/glog"
 	multierror "github.com/hashicorp/go-multierror"
 	compute "google.golang.org/api/compute/v1"
+	"google.golang.org/api/googleapi"
+	"k8s.io/apimachinery/pkg/util/diff"
 	ingressbe "k8s.io/ingress-gce/pkg/backends"
 	ingresshc "k8s.io/ingress-gce/pkg/healthchecks"
 
@@ -109,7 +111,10 @@ func (h *HealthCheckSyncer) deleteHealthCheck(port ingressbe.ServicePort) error 
 }
 
 func getJsonIgnoreErr(v interface{}) string {
-	output, _ := json.Marshal(v)
+	output, err := json.Marshal(v)
+	if err != nil {
+		glog.Warningf("Marshalling error: %v", err)
+	}
 	return string(output)
 }
 
@@ -137,7 +142,6 @@ func (h *HealthCheckSyncer) ensureHealthCheck(lbName string, port ingressbe.Serv
 		} else {
 			// TODO(G-Harmon): prompt yes/no for overwriting.
 			fmt.Println("Will not overwrite this differing health check without the --force flag.")
-			glog.V(3).Infof("Existing check:\n%+v\nNew check:\n%+v\n", existingHC, desiredHC)
 			return nil, fmt.Errorf("will not overwrite healthcheck without --force")
 		}
 	}
@@ -177,26 +181,13 @@ func healthCheckMatches(desiredHC, existingHC compute.HealthCheck) bool {
 	existingHC.CreationTimestamp = ""
 	existingHC.Id = 0
 	existingHC.SelfLink = ""
-	glog.V(5).Infof("\nexisting (minus ignored fields):%v\ndesired:%v", getJsonIgnoreErr(existingHC), getJsonIgnoreErr(desiredHC))
-	// TODO(G-Harmon): We should ignore specific fields instead of checking specific ones.
-	if desiredHC.CheckIntervalSec != existingHC.CheckIntervalSec ||
-		// Ignore creationTimestamp.
-		desiredHC.Description != existingHC.Description ||
-		desiredHC.HealthyThreshold != existingHC.HealthyThreshold ||
-		!reflect.DeepEqual(desiredHC.HttpHealthCheck, existingHC.HttpHealthCheck) ||
-		!reflect.DeepEqual(desiredHC.HttpsHealthCheck, existingHC.HttpsHealthCheck) ||
-		// Ignore id.
-		desiredHC.Kind != existingHC.Kind ||
-		desiredHC.Name != existingHC.Name ||
-		// Ignore selfLink because it's not set in desiredHC.
-		desiredHC.TimeoutSec != existingHC.TimeoutSec ||
-		desiredHC.Type != existingHC.Type ||
-		desiredHC.UnhealthyThreshold != existingHC.UnhealthyThreshold {
-		glog.V(2).Infof("Health checks differ.")
-		return false
+	existingHC.ServerResponse = googleapi.ServerResponse{}
+
+	equal := reflect.DeepEqual(existingHC, desiredHC)
+	if !equal {
+		glog.Infof("Diff:\n%v", diff.ObjectDiff(desiredHC, existingHC))
 	}
-	glog.V(2).Infof("Health checks match.")
-	return true
+	return equal
 }
 
 func (h *HealthCheckSyncer) desiredHealthCheck(lbName string, port ingressbe.ServicePort) (compute.HealthCheck, error) {
