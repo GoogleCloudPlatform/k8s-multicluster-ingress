@@ -19,9 +19,10 @@ import (
 	"encoding/hex"
 	"fmt"
 
+	compute "google.golang.org/api/compute/v1"
+
 	"github.com/golang/glog"
-	"github.com/hashicorp/go-multierror"
-	"google.golang.org/api/compute/v1"
+	multierror "github.com/hashicorp/go-multierror"
 	"k8s.io/api/extensions/v1beta1"
 	ingresslb "k8s.io/ingress-gce/pkg/loadbalancers"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -219,6 +220,7 @@ func (s *URLMapSyncer) ingToURLMap(ing *v1beta1.Ingress, beMap backendservice.Ba
 	}
 	defaultBackend, beErr := getBackendService(ing.Spec.Backend, ing.Namespace, beMap)
 	if beErr != nil {
+		fmt.Printf("Error getting backend service %s: %v", ing.Spec.Backend.ServiceName, beErr)
 		err = multierror.Append(err, beErr)
 		return nil, err
 	}
