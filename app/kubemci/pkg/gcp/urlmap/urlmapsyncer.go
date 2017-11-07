@@ -18,12 +18,15 @@ import (
 	"crypto/md5"
 	"encoding/hex"
 	"fmt"
+	"reflect"
 
 	compute "google.golang.org/api/compute/v1"
+	"google.golang.org/api/googleapi"
 
 	"github.com/golang/glog"
 	multierror "github.com/hashicorp/go-multierror"
 	"k8s.io/api/extensions/v1beta1"
+	"k8s.io/apimachinery/pkg/util/diff"
 	ingresslb "k8s.io/ingress-gce/pkg/loadbalancers"
 	"k8s.io/ingress-gce/pkg/utils"
 
@@ -55,9 +58,8 @@ func NewURLMapSyncer(namer *utilsnamer.Namer, ump ingresslb.LoadBalancers) URLMa
 // Ensure this implements URLMapSyncerInterface.
 var _ URLMapSyncerInterface = &URLMapSyncer{}
 
-// EnsureURLMap ensures that the required url map exists.
-// Does nothing if it exists already, else creates a new one.
-func (s *URLMapSyncer) EnsureURLMap(lbName string, ing *v1beta1.Ingress, beMap backendservice.BackendServicesMap) (string, error) {
+// See interfaces.go comment.
+func (s *URLMapSyncer) EnsureURLMap(lbName string, ing *v1beta1.Ingress, beMap backendservice.BackendServicesMap, forceUpdate bool) (string, error) {
 	fmt.Println("Ensuring url map")
 	var err error
 	desiredUM, err := s.desiredURLMap(lbName, ing, beMap)
@@ -70,14 +72,26 @@ func (s *URLMapSyncer) EnsureURLMap(lbName string, ing *v1beta1.Ingress, beMap b
 	if err == nil {
 		fmt.Println("url map", name, "exists already. Checking if it matches our desired url map", name)
 		glog.V(5).Infof("Existing url map: %v\n, desired url map: %v", existingUM, desiredUM)
+		// Fingerprint is required (and we get an error if it's not set).
+		// TODO(G-Harmon): Figure out how to properly calculate the
+		// FP. Using Sha256 returned a googleapi error. We shouldn't use
+		// the existing FP when we're changing the object (as it seems
+		// like it's used for some oportunistic optimization on the
+		// server side).
+		desiredUM.Fingerprint = existingUM.Fingerprint
 		// URL Map with that name exists already. Check if it matches what we want.
 		if urlMapMatches(desiredUM, existingUM) {
 			// Nothing to do. Desired url map exists already.
 			fmt.Println("Desired url map exists already")
 			return existingUM.SelfLink, nil
 		}
-		// TODO: Require explicit permission from user before doing this.
-		return s.updateURLMap(desiredUM)
+		if forceUpdate {
+			fmt.Println("Updating existing URL Map", name, "to match the desired state")
+			return s.updateURLMap(desiredUM)
+		} else {
+			fmt.Println("Will not overwrite this differing URL Map without the --force flag.")
+			return "", fmt.Errorf("will not overwrite URL Map without --force")
+		}
 	}
 	glog.V(5).Infof("Got error %s while trying to get existing url map %s. Will try to create new one", err, name)
 	// TODO: Handle non NotFound errors. We should create only if the error is NotFound.
@@ -129,9 +143,21 @@ func (s *URLMapSyncer) createURLMap(desiredUM *compute.UrlMap) (string, error) {
 }
 
 func urlMapMatches(desiredUM, existingUM *compute.UrlMap) bool {
-	// TODO: Add proper logic to figure out if the 2 url maps match.
-	// Need to add the --force flag for user to consent overritting before this method can be updated to return false.
-	return true
+	// Clear output-only fields to do our comparison
+	existingUM.CreationTimestamp = ""
+	existingUM.Kind = ""
+	existingUM.Id = 0
+	existingUM.SelfLink = ""
+	existingUM.ServerResponse = googleapi.ServerResponse{}
+
+	glog.V(5).Infof("desired UM:\n%+v", desiredUM)
+	glog.V(5).Infof("existing UM:\n%+v", existingUM)
+
+	equal := reflect.DeepEqual(existingUM, desiredUM)
+	if !equal {
+		glog.V(1).Infof("Diff:\n%v", diff.ObjectDiff(desiredUM, existingUM))
+	}
+	return equal
 }
 
 func (s *URLMapSyncer) desiredURLMap(lbName string, ing *v1beta1.Ingress, beMap backendservice.BackendServicesMap) (*compute.UrlMap, error) {
@@ -142,11 +168,16 @@ func (s *URLMapSyncer) desiredURLMap(lbName string, ing *v1beta1.Ingress, beMap 
 	}
 	gceMap, err := s.ingToURLMap(ing, beMap)
 	if err != nil {
+		fmt.Println("Error getting URL map from Ingress:", err)
 		return nil, err
 	}
 	um.DefaultService = gceMap.GetDefaultBackend().SelfLink
-	um.HostRules = []*compute.HostRule{}
-	um.PathMatchers = []*compute.PathMatcher{}
+	if len(gceMap) > 0 {
+		// Only create these slices if we have data; otherwise we get a
+		// DeepEqual mismatch when comparing to what the server returns.
+		um.HostRules = []*compute.HostRule{}
+		um.PathMatchers = []*compute.PathMatcher{}
+	}
 
 	// Code taken from kubernetes/ingress-gce/L7s.UpdateUrlMap.
 	// TODO: Refactor it to share code.

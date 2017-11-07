@@ -60,7 +60,7 @@ func (b *BackendServiceSyncer) EnsureBackendService(lbName string, ports []ingre
 		be, beErr := b.ensureBackendService(lbName, p, hcMap[p.Port], npMap[p.Port], igLinks, forceUpdate)
 		if beErr != nil {
 			beErr = fmt.Errorf("Error %s in ensuring backend service for port %v", beErr, p)
-			fmt.Printf("Error ensuring backend service for port %v: %v. Continuing.", p, beErr)
+			fmt.Printf("Error ensuring backend service for port %v: %v. Continuing.\n", p, beErr)
 			// Try ensuring backend services for all ports and return all errors at once.
 			err = multierror.Append(err, beErr)
 			continue

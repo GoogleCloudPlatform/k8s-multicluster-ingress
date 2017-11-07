@@ -130,11 +130,11 @@ func (l *LoadBalancerSyncer) CreateLoadBalancer(ing *v1beta1.Ingress, forceUpdat
 	// Create backend service. This should always be called after the health check since backend service needs to point to the health check.
 	backendServices, beErr := l.bss.EnsureBackendService(l.lbName, ports, healthChecks, namedPorts, igsForBE, forceUpdate)
 	if beErr != nil {
-		fmt.Printf("Error ensuring backend service for %s: %v", l.lbName, beErr)
+		fmt.Printf("Error ensuring backend service for %s: %v\n", l.lbName, beErr)
 		// Aggregate errors and return all at the end.
 		err = multierror.Append(err, beErr)
 	}
-	umLink, umErr := l.ums.EnsureURLMap(l.lbName, ing, backendServices)
+	umLink, umErr := l.ums.EnsureURLMap(l.lbName, ing, backendServices, forceUpdate)
 	if umErr != nil {
 		// Aggregate errors and return all at the end.
 		err = multierror.Append(err, umErr)
@@ -315,7 +315,7 @@ func (l *LoadBalancerSyncer) getNamedPorts(igUrl string) (backendservice.NamedPo
 	if err != nil {
 		return nil, err
 	}
-	fmt.Printf("Fetched instance group: %s/%s got named ports: ", zone, name)
+	fmt.Printf("Fetched instance group: %s/%s, got named ports: ", zone, name)
 	namedPorts := backendservice.NamedPortsMap{}
 	for _, np := range ig.NamedPorts {
 		fmt.Printf("port: %v ", np)

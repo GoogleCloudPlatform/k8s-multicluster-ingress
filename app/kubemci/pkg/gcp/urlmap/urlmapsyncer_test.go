@@ -15,15 +15,18 @@
 package urlmap
 
 import (
+	"strings"
 	"testing"
 
-	"google.golang.org/api/compute/v1"
+	compute "google.golang.org/api/compute/v1"
+
 	"k8s.io/api/extensions/v1beta1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	ingresslb "k8s.io/ingress-gce/pkg/loadbalancers"
 
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/backendservice"
 	utilsnamer "github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/namer"
+	"github.com/golang/glog"
 )
 
 func TestEnsureURLMap(t *testing.T) {
@@ -50,19 +53,62 @@ func TestEnsureURLMap(t *testing.T) {
 	if _, err := ump.GetUrlMap(umName); err == nil {
 		t.Fatalf("expected NotFound error, got nil")
 	}
-	umLink, err := ums.EnsureURLMap(lbName, ing, beMap)
-	if err != nil {
-		t.Fatalf("expected no error in ensuring url map, actual: %v", err)
+	testCases := []struct {
+		desc string
+		// In's
+		lBName      string
+		forceUpdate bool
+		// Out's
+		ensureErr bool
+	}{
+		{
+			desc:        "initial write (force=false)",
+			lBName:      "lb-name",
+			forceUpdate: false,
+			ensureErr:   false,
+		},
+		{
+			desc:        "write same (force=false)",
+			lBName:      "lb-name",
+			forceUpdate: false,
+			ensureErr:   false,
+		},
+		{
+			desc:        "write different (force=false)",
+			lBName:      "lb-name2",
+			forceUpdate: false,
+			ensureErr:   true,
+		},
+		{
+			desc:        "write different (force=true)",
+			lBName:      "lb-name3",
+			forceUpdate: true,
+			ensureErr:   false,
+		},
 	}
-	// Verify that GET does not return NotFound.
-	um, err := ump.GetUrlMap(umName)
-	if err != nil {
-		t.Fatalf("expected nil error, actual: %v", err)
+
+	for _, c := range testCases {
+		glog.Infof("\nTest case: %s", c.desc)
+		umLink, err := ums.EnsureURLMap(c.lBName, ing, beMap, c.forceUpdate)
+		if (err != nil) != c.ensureErr {
+			t.Errorf("Ensuring URL map... expected err? %v. actual: %v", c.ensureErr, err)
+		}
+		if c.ensureErr {
+			t.Logf("Skipping validation.")
+			continue
+		}
+		// Verify that GET does not return NotFound.
+		um, err := ump.GetUrlMap(umName)
+		if err != nil {
+			t.Errorf("expected nil error, actual: %v", err)
+		}
+		if um.SelfLink != umLink {
+			t.Errorf("unexpected self link in returned url map. expected: %s, got: %s", umLink, um.SelfLink)
+		}
+		if !strings.Contains(um.Description, c.lBName) {
+			t.Errorf("Expected description to contain lb name (%s). got:%s", c.lBName, um.Description)
+		}
 	}
-	if um.SelfLink != umLink {
-		t.Errorf("unexpected self link in returned url map. expected: %s, got: %s", umLink, um.SelfLink)
-	}
-	// TODO(nikhiljindal): Test update existing url map.
 }
 
 func TestDeleteURLMap(t *testing.T) {
@@ -85,7 +131,7 @@ func TestDeleteURLMap(t *testing.T) {
 	namer := utilsnamer.NewNamer("mci1", lbName)
 	umName := namer.URLMapName()
 	ums := NewURLMapSyncer(namer, ump)
-	if _, err := ums.EnsureURLMap(lbName, ing, beMap); err != nil {
+	if _, err := ums.EnsureURLMap(lbName, ing, beMap, false /*forceUpdate*/); err != nil {
 		t.Fatalf("expected no error in ensuring url map, actual: %v", err)
 	}
 	if _, err := ump.GetUrlMap(umName); err != nil {
