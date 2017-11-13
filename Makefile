@@ -37,5 +37,11 @@ cover:
 	@echo "+ $@"
 	@go list -f '{{if len .TestGoFiles}}"go test -coverprofile={{.Dir}}/.coverprofile {{.ImportPath}}"{{end}}' $(shell go list ${PKG}/... | grep -v vendor) | xargs -L 1 sh -c
 
+coveralls:
+	@echo "+ $@"
+# Make sure goveralls is installed.
+	@go get github.com/mattn/goveralls
+	@goveralls -repotoken $(cat /etc/coveralls-token/coveralls.txt)
+
 build:
 	go build -a -installsuffix cgo ${GOPATH}/src/${PKG}/cmd/kubemci/kubemci.go
