@@ -87,6 +87,12 @@ type CreateOptions struct {
 	// the resource does not exist, or is already the correct
 	// value, then 'force' is a no-op.
 	ForceUpdate bool
+	// Name of the namespace for the ingress when none is provided (mismatch of option with spec causes an error).
+	// Optional.
+	Namespace string
+	// Static IP Name for the ingress when none is provided (mismatch of option with spec causes an error).
+	// Optional.
+	StaticIPName string
 }
 
 func NewCmdCreate(out, err io.Writer) *cobra.Command {
@@ -118,6 +124,8 @@ func addCreateFlags(cmd *cobra.Command, options *CreateOptions) error {
 	// TODO(nikhiljindal): Add a short flag "-p" if it seems useful.
 	cmd.Flags().StringVarP(&options.GCPProject, "gcp-project", "", options.GCPProject, "[required] name of the gcp project")
 	cmd.Flags().BoolVarP(&options.ForceUpdate, "force", "f", options.ForceUpdate, "[optional] overwrite existing settings if they are different")
+	cmd.Flags().StringVarP(&options.Namespace, "namespace", "n", options.Namespace, "[optional] namespace for the ingress only if left unspecified by ingress spec")
+	cmd.Flags().StringVarP(&options.StaticIPName, "static-ip", "", options.StaticIPName, "[optional] Global Static IP name to use only if left unspecified by ingress spec")
 	// TODO Add a verbose flag that turns on glog logging, or figure out how
 	// to accept glog flags in addition to the cobra flags.
 	return nil
@@ -145,9 +153,19 @@ func runCreate(options *CreateOptions, args []string) error {
 
 	// Unmarshal the YAML into ingress struct.
 	var ing v1beta1.Ingress
-	if err := unmarshallAndApplyDefaults(options.IngressFilename, &ing); err != nil {
+	if err := unmarshallAndApplyDefaults(options.IngressFilename, options.Namespace, &ing); err != nil {
 		return fmt.Errorf("error in unmarshalling the yaml file %s, err: %s", options.IngressFilename, err)
 	}
+	ingAnnotations := annotations.IngAnnotations(ing.Annotations)
+	if ingAnnotations == nil || ingAnnotations.StaticIPName() == "" {
+		if options.StaticIPName == "" {
+			return fmt.Errorf("ingress spec must provide a Global Static IP through annotation of %q (alternatively, use --static-ip flag)", annotations.StaticIPNameKey)
+		}
+		addAnnotation(&ing, annotations.StaticIPNameKey, options.StaticIPName)
+	} else if options.StaticIPName != "" && ingAnnotations.StaticIPName() != options.StaticIPName {
+		return fmt.Errorf("the StaticIPName from the provided ingress %q does not match --static-ip=%v. You must pass '--static-ip=%v' to perform this operation.", ingAnnotations.StaticIPName(), options.StaticIPName, ingAnnotations.StaticIPName())
+	}
+
 	cloudInterface, err := cloudinterface.NewGCECloudInterface(options.GCPProject)
 	if err != nil {
 		return fmt.Errorf("error in creating cloud interface: %s", err)
@@ -243,20 +261,31 @@ func unmarshall(filename string, ing *v1beta1.Ingress) error {
 	return nil
 }
 
-func unmarshallAndApplyDefaults(filename string, ing *v1beta1.Ingress) error {
+// TODO Move to ingress-gce/pkg/annotations
+func addAnnotation(ing *v1beta1.Ingress, key, val string) {
+	if ing.Annotations == nil {
+		ing.Annotations = annotations.IngAnnotations{}
+	}
+	ing.Annotations[key] = val
+}
+
+func unmarshallAndApplyDefaults(filename, namespace string, ing *v1beta1.Ingress) error {
 	if err := unmarshall(filename, ing); err != nil {
 		return err
 	}
 	if ing.Namespace == "" {
-		ing.Namespace = defaultIngressNamespace
+		if namespace == "" {
+			ing.Namespace = defaultIngressNamespace
+		} else {
+			ing.Namespace = namespace
+		}
+	} else if namespace != "" && ing.Namespace != namespace {
+		return fmt.Errorf("the namespace from the provided ingress %q does not match the namespace %q. You must pass '--namespace=%v' to perform this operation.", ing.Namespace, namespace, ing.Namespace)
 	}
 	ingAnnotations := annotations.IngAnnotations(ing.Annotations)
 	class := ingAnnotations.IngressClass()
 	if class == "" {
-		if ing.Annotations == nil {
-			ing.Annotations = annotations.IngAnnotations{}
-		}
-		ing.Annotations[annotations.IngressClassKey] = annotations.GceMultiIngressClass
+		addAnnotation(ing, annotations.IngressClassKey, annotations.GceMultiIngressClass)
 		glog.V(3).Infof("Adding class annotation to be of type %v\n", annotations.GceMultiIngressClass)
 	} else if class != annotations.GceMultiIngressClass {
 		return fmt.Errorf("ingress class is %v, must be %v", class, annotations.GceMultiIngressClass)
