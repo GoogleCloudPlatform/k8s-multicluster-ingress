@@ -15,9 +15,7 @@
 package cmd
 
 import (
-	"fmt"
 	"reflect"
-	"strings"
 	"testing"
 
 	"k8s.io/api/extensions/v1beta1"
@@ -26,39 +24,6 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 	core "k8s.io/client-go/testing"
 )
-
-type ExpectedCommand struct {
-	Args   []string
-	Output string
-	Err    error
-}
-
-func run(fakeClient *fake.Clientset, expectedCmds []ExpectedCommand, runFn func() ([]string, map[string]kubeclient.Interface, error)) ([]string, map[string]kubeclient.Interface, error) {
-	getClientset = func(kubeconfigPath, context string) (kubeclient.Interface, error) {
-		return fakeClient, nil
-	}
-
-	i := 0
-	executeCommand = func(args []string) (string, error) {
-		if i >= len(expectedCmds) {
-			return "", fmt.Errorf("unexpected command: %s", strings.Join(args, " "))
-		}
-		if !reflect.DeepEqual(args, expectedCmds[i].Args) {
-			return "", fmt.Errorf("unexpected command: %s, was expecting   : %s", strings.Join(args, " "), strings.Join(expectedCmds[i].Args, " "))
-		}
-		output, err := expectedCmds[i].Output, expectedCmds[i].Err
-		i++
-		return output, err
-	}
-	clusters, clients, err := runFn()
-	if err != nil {
-		return clusters, clients, err
-	}
-	if i != len(expectedCmds) {
-		return clusters, clients, fmt.Errorf("expected [commands, outputs, errs] not called: %s", expectedCmds[i:])
-	}
-	return clusters, clients, nil
-}
 
 func TestValidateCreateArgs(t *testing.T) {
 	// validateCreateArgs should return an error with empty options.
@@ -115,45 +80,23 @@ func TestValidateCreateArgs(t *testing.T) {
 	}
 }
 
-func TestCreateIngress(t *testing.T) {
+func TestCreateIngressInClusters(t *testing.T) {
 	fakeClient := fake.Clientset{}
 	fakeClient.AddReactor("create", "ingresses", func(action core.Action) (handled bool, ret runtime.Object, err error) {
 		return true, action.(core.CreateAction).GetObject(), nil
 	})
-	expectedClusters := []string{"cluster1", "cluster2"}
-	expectedClients := map[string]kubeclient.Interface{
-		"cluster1": &fake.Clientset{},
-		"cluster2": &fake.Clientset{},
+	clients := map[string]kubeclient.Interface{
+		"cluster1": &fakeClient,
+		"cluster2": &fakeClient,
 	}
-
-	runFn := func() ([]string, map[string]kubeclient.Interface, error) {
-		var ing v1beta1.Ingress
-		if err := unmarshallAndApplyDefaults("../../../testdata/ingress.yaml", "", &ing); err != nil {
-			return nil, nil, err
-		}
-		return createIngress("kubeconfig", []string{}, &ing)
+	var ing v1beta1.Ingress
+	if err := unmarshallAndApplyDefaults("../../../testdata/ingress.yaml", "", &ing); err != nil {
+		t.Fatalf("%s", err)
 	}
-	expectedCommands := []ExpectedCommand{
-		{
-			Args:   []string{"kubectl", "--kubeconfig=kubeconfig", "config", "get-contexts", "-o=name"},
-			Output: strings.Join(expectedClusters, "\n"),
-			Err:    nil,
-		},
-	}
-	clusters, clients, err := run(&fakeClient, expectedCommands, runFn)
+	// Verify that on calling createIngressInClusters, fakeClient sees 2 actions to create the ingress.
+	clusters, err := createIngressInClusters(&ing, clients)
 	if err != nil {
-		t.Errorf("%s", err)
-	}
-	if !reflect.DeepEqual(clusters, expectedClusters) {
-		t.Errorf("unexpected list of clusters in which ingress was created. expected: %v, got: %v", expectedClusters, clusters)
-	}
-	if len(clients) != len(expectedClients) {
-		t.Errorf("unexpected set of clients, expected: %v, got: %v", expectedClients, clients)
-	}
-	for k, _ := range expectedClients {
-		if clients[k] == nil {
-			t.Errorf("unexpected set of clients, expected: %v, got: %v", expectedClients, clients)
-		}
+		t.Fatalf("%s", err)
 	}
 	actions := fakeClient.Actions()
 	if len(actions) != 2 {
@@ -162,8 +105,13 @@ func TestCreateIngress(t *testing.T) {
 	if !actions[0].Matches("create", "ingresses") {
 		t.Errorf("Expected ingress creation.")
 	}
-	// TODO(G-Harmon): Verify that the ingress matches testdata/ingress.yaml
 	if !actions[1].Matches("create", "ingresses") {
 		t.Errorf("Expected ingress creation.")
 	}
+	expectedClusters := []string{"cluster1", "cluster2"}
+	if !reflect.DeepEqual(clusters, expectedClusters) {
+		t.Errorf("unexpected list of clusters, expected: %v, got: %v", expectedClusters, clusters)
+	}
+	// TODO(G-Harmon): Verify that the ingress matches testdata/ingress.yaml
+	// TODO(nikhiljindal): Also add tests for error cases including one for already exists.
 }

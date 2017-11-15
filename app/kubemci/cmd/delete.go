@@ -28,6 +28,7 @@ import (
 
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/cloudinterface"
 	gcplb "github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/loadbalancer"
+	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/kubeutils"
 )
 
 var (
@@ -115,23 +116,18 @@ func runDelete(options *DeleteOptions, args []string) error {
 	if err := unmarshallAndApplyDefaults(options.IngressFilename, options.Namespace, &ing); err != nil {
 		return fmt.Errorf("error in unmarshalling the yaml file %s, err: %s", options.IngressFilename, err)
 	}
-	clientset, err := getClientset(options.KubeconfigFilename, "" /*contextName*/)
-	if err != nil {
-		return fmt.Errorf("unexpected error in instantiating clientset: %v", err)
-	}
 	cloudInterface, err := cloudinterface.NewGCECloudInterface(options.GCPProject)
 	if err != nil {
 		return fmt.Errorf("error in creating cloud interface: %s", err)
 	}
 
 	// Delete ingress from all clusters.
-	if delErr := deleteIngress(options.KubeconfigFilename, options.KubeContexts, &ing); delErr != nil {
+	clients, delErr := deleteIngress(options.KubeconfigFilename, options.KubeContexts, &ing)
+	if delErr != nil {
 		err = multierror.Append(err, delErr)
 	}
 
-	// DeleteLoadBalancer uses a random client from the given clientset map,
-	// so it is fine to pass a map with just one client.
-	lbs, err := gcplb.NewLoadBalancerSyncer(options.LBName, map[string]kubeclient.Interface{"": clientset}, cloudInterface, options.GCPProject)
+	lbs, err := gcplb.NewLoadBalancerSyncer(options.LBName, clients, cloudInterface, options.GCPProject)
 	if err != nil {
 		return err
 	}
@@ -142,25 +138,20 @@ func runDelete(options *DeleteOptions, args []string) error {
 }
 
 // Extracts the contexts from the given kubeconfig and deletes ingress in those context clusters.
-func deleteIngress(kubeconfig string, kubeContexts []string, ing *v1beta1.Ingress) error {
-	clusters, err := getClusters(kubeconfig, kubeContexts)
+func deleteIngress(kubeconfig string, kubeContexts []string, ing *v1beta1.Ingress) (map[string]kubeclient.Interface, error) {
+	clients, err := kubeutils.GetClients(kubeconfig, kubeContexts)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	return deleteIngressInClusters(kubeconfig, ing, clusters)
+	return clients, deleteIngressInClusters(ing, clients)
 }
 
-// Deletes the given ingress in the given list of clusters.
-func deleteIngressInClusters(kubeconfig string, ing *v1beta1.Ingress, clusters []string) error {
+// Deletes the given ingress from all clusters corresponding to the given clients.
+func deleteIngressInClusters(ing *v1beta1.Ingress, clients map[string]kubeclient.Interface) error {
 	var err error
-	for _, c := range clusters {
-		fmt.Println("\nHandling context:", c)
-		client, clientErr := getClientset(kubeconfig, c)
-		if clientErr != nil {
-			err = multierror.Append(err, fmt.Errorf("Error getting kubectl client interface for context %s:", c, clientErr))
-			continue
-		}
-		glog.V(3).Infof("Using this namespace for ingress: %v", ing.Namespace)
+	for cluster, client := range clients {
+		glog.V(4).Infof("Deleting Ingress from cluster: %v...", cluster)
+		glog.V(3).Infof("Using namespace %s for ingress %s", ing.Namespace, ing.Name)
 		deleteErr := client.Extensions().Ingresses(ing.Namespace).Delete(ing.Name, &metav1.DeleteOptions{})
 		glog.V(2).Infof("Error in deleting ingress %s: %s", ing.Name, deleteErr)
 		if deleteErr != nil {
@@ -168,7 +159,7 @@ func deleteIngressInClusters(kubeconfig string, ing *v1beta1.Ingress, clusters [
 				fmt.Println("Ingress doesnt exist; moving on.")
 				continue
 			} else {
-				err = multierror.Append(err, fmt.Errorf("Error in deleting ingress from cluster %s: %s", c, deleteErr))
+				err = multierror.Append(err, fmt.Errorf("Error in deleting ingress from cluster %s: %s", cluster, deleteErr))
 			}
 		}
 	}
