@@ -1,8 +1,11 @@
 # kubemci demo
 
 This directory contains code for kubemci demo.
-To try it out, follow the setup instructions detailed below and then run
-`demo.sh`.
+To try it out, download/build `kubemci`, follow the setup instructions detailed
+below and then run `demo.sh`. After creating the multicluster ingress, the
+script will keep connecting to its IP address until it receives a CTRL-C. This
+is to show when the loadbalancer has been fully setup. (TODO: automatically
+detect when the loadbalancer is fully setup.)
 
 # Setup
 
@@ -26,7 +29,9 @@ You can create a new IP address by running:
 To update `ingress/nginx.yaml` to use your reserved IP address name, run:
 `sed -i -e "s/\$ZP_KUBEMCI_IP/${ZP_KUBEMCI_IP}/" ../ingress/nginx.yaml`
 
+Edit `demo.sh` to include your IP address in the `IP` variable.
+
 ## GCP Project
 
 The script assumes a GCP project with the name `kubemci-demo-project`. Replace
-it everywhere in `demo.sh` with your project name.
+`PROJECT` in `demo.sh` with your project name.
