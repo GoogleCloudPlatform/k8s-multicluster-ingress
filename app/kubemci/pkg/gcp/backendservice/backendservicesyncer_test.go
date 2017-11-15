@@ -96,7 +96,7 @@ func TestEnsureBackendService(t *testing.T) {
 			},
 		}, []string{igLink}, c.forceUpdate)
 		if (err != nil) != c.ensureErr {
-			t.Errorf("expected an error, got:%v, in ensuring backend service, actual: %v", err)
+			t.Errorf("expected (error != nil) = %v, in ensuring backend service, got error: %v", c.ensureErr, err)
 		}
 		if c.ensureErr {
 			// Can't do validation if we expected an error.
@@ -116,7 +116,7 @@ func TestEnsureBackendService(t *testing.T) {
 			t.Errorf("unexpected health check in backend service. expected: %s, got: %v", c.hcLink, be.HealthChecks)
 		}
 		if be.Port != port || be.PortName != portName {
-			t.Errorf("unexpected port and port name, expected: %s/%s, got: %s/%s", portName, port, be.PortName, be.Port)
+			t.Errorf("unexpected port and port name, expected: %s/%d, got: %s/%d", portName, port, be.PortName, be.Port)
 		}
 		if len(be.Backends) != 1 || be.Backends[0].Group != igLink {
 			t.Errorf("unexpected backends in backend service. expected one backend for %s, got: %v", igLink, be.Backends)

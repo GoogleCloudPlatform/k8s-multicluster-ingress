@@ -119,7 +119,7 @@ func TestGetClusterContexts(t *testing.T) {
 	for index, c := range testCases {
 		clusters, err := runGetClusterContexts(c.kubeContexts, c.expectedCmds)
 		if c.expectedErr != (err != nil) {
-			t.Errorf("case %d: unexpected error, expected err != nil: %s, got err: %s", index, c.expectedErr, err)
+			t.Errorf("case %d: unexpected error, expected err != nil: %v, got err: %s", index, c.expectedErr, err)
 		}
 		if err != nil {
 			continue
@@ -174,7 +174,7 @@ func TestGetClientsForContexts(t *testing.T) {
 		getClientset = c.getClientset
 		clients, err := getClientsForContexts("kubeconfig", c.kubeContexts)
 		if c.expectedErr != (err != nil) {
-			t.Errorf("case %d: unexpected error, expected err != nil: %s, got err: %s", index, c.expectedErr, err)
+			t.Errorf("case %d: unexpected error, expected err != nil: %v, got err: %s", index, c.expectedErr, err)
 		}
 		if err != nil {
 			continue
