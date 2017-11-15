@@ -49,7 +49,7 @@ func TestEnsureFirewallRule(t *testing.T) {
 			Protocol: "HTTP",
 			SvcName:  types.NamespacedName{Name: kubeSvcName},
 		},
-	}, map[string][]string{"cluster1": []string{igLink}})
+	}, map[string][]string{"cluster1": {igLink}})
 	if err != nil {
 		t.Fatalf("expected no error in ensuring firewall rule, actual: %v", err)
 	}
@@ -93,7 +93,7 @@ func TestDeleteFirewallRule(t *testing.T) {
 			Protocol: "HTTP",
 			SvcName:  types.NamespacedName{Name: kubeSvcName},
 		},
-	}, map[string][]string{"cluster1": []string{igLink}})
+	}, map[string][]string{"cluster1": {igLink}})
 	if err != nil {
 		t.Fatalf("expected no error in ensuring firewall rule, actual: %v", err)
 	}

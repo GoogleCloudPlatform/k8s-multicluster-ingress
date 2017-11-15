@@ -183,7 +183,7 @@ func TestGetClientsForContexts(t *testing.T) {
 		if len(clients) != len(c.expectedClients) {
 			t.Errorf("unexpected set of clients, expected: %v, got: %v", c.expectedClients, clients)
 		}
-		for k, _ := range c.expectedClients {
+		for k := range c.expectedClients {
 			if clients[k] == nil {
 				t.Errorf("unexpected set of clients, expected: %v, got: %v", c.expectedClients, clients)
 			}

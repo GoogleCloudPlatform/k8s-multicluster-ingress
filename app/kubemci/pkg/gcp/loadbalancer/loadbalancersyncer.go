@@ -411,7 +411,7 @@ func getAnyClient(clients map[string]kubeclient.Interface) (kubeclient.Interface
 		return nil, fmt.Errorf("could not find client to send requests to kubernetes cluster")
 	}
 	// Return the client for any cluster.
-	for k, _ := range clients {
+	for k := range clients {
 		return clients[k], nil
 	}
 	return nil, nil
