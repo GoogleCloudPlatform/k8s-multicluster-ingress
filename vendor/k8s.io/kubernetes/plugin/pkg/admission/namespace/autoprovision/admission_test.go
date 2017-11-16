@@ -27,7 +27,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/apiserver/pkg/admission"
 	core "k8s.io/client-go/testing"
-	"k8s.io/kubernetes/pkg/api"
+	api "k8s.io/kubernetes/pkg/apis/core"
 	clientset "k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset"
 	"k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset/fake"
 	informers "k8s.io/kubernetes/pkg/client/informers/informers_generated/internalversion"
@@ -35,12 +35,12 @@ import (
 )
 
 // newHandlerForTest returns the admission controller configured for testing.
-func newHandlerForTest(c clientset.Interface) (admission.Interface, informers.SharedInformerFactory, error) {
+func newHandlerForTest(c clientset.Interface) (admission.MutationInterface, informers.SharedInformerFactory, error) {
 	f := informers.NewSharedInformerFactory(c, 5*time.Minute)
 	handler := NewProvision()
-	pluginInitializer := kubeadmission.NewPluginInitializer(c, f, nil, nil, nil)
+	pluginInitializer := kubeadmission.NewPluginInitializer(c, f, nil, nil, nil, nil, nil)
 	pluginInitializer.Initialize(handler)
-	err := admission.Validate(handler)
+	err := admission.ValidateInitialization(handler)
 	return handler, f, err
 }
 
@@ -129,19 +129,15 @@ func TestAdmissionNamespaceExists(t *testing.T) {
 
 // TestIgnoreAdmission validates that a request is ignored if its not a create
 func TestIgnoreAdmission(t *testing.T) {
-	namespace := "test"
 	mockClient := newMockClientForTest([]string{})
 	handler, informerFactory, err := newHandlerForTest(mockClient)
 	if err != nil {
 		t.Errorf("unexpected error initializing handler: %v", err)
 	}
 	informerFactory.Start(wait.NeverStop)
-	chainHandler := admission.NewChainHandler(handler)
 
-	pod := newPod(namespace)
-	err = chainHandler.Admit(admission.NewAttributesRecord(&pod, nil, api.Kind("Pod").WithVersion("version"), pod.Namespace, pod.Name, api.Resource("pods").WithVersion("version"), "", admission.Update, nil))
-	if err != nil {
-		t.Errorf("unexpected error returned from admission handler")
+	if handler.Handles(admission.Update) {
+		t.Errorf("expected not to handle Update")
 	}
 	if hasCreateNamespaceAction(mockClient) {
 		t.Errorf("unexpected create namespace action")

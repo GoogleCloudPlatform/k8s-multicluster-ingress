@@ -34,6 +34,11 @@ function setup-os-params {
 
 function config-ip-firewall {
   echo "Configuring IP firewall rules"
+
+  # Do not consider loopback addresses as martian source or destination while
+  # routing. This enables the use of 127/8 for local routing purposes.
+  sysctl -w net.ipv4.conf.all.route_localnet=1
+
   # The GCI image has host firewall which drop most inbound/forwarded packets.
   # We need to add rules to accept all TCP/UDP/ICMP packets.
   if iptables -L INPUT | grep "Chain INPUT (policy DROP)" > /dev/null; then
@@ -52,8 +57,22 @@ function config-ip-firewall {
   iptables -N KUBE-METADATA-SERVER
   iptables -I FORWARD -p tcp -d 169.254.169.254 --dport 80 -j KUBE-METADATA-SERVER
 
-  if [[ -n "${KUBE_FIREWALL_METADATA_SERVER:-}" ]]; then
+  if [[ "${ENABLE_METADATA_CONCEALMENT:-}" == "true" ]]; then
     iptables -A KUBE-METADATA-SERVER -j DROP
+  fi
+
+  # Flush iptables nat table
+  iptables -t nat -F || true
+
+  echo "Add rules for ip masquerade"
+  if [[ "${NON_MASQUERADE_CIDR:-}" == "0.0.0.0/0" ]]; then
+    iptables -t nat -N IP-MASQ
+    iptables -t nat -A POSTROUTING -m comment --comment "ip-masq: ensure nat POSTROUTING directs all non-LOCAL destination traffic to our custom IP-MASQ chain" -m addrtype ! --dst-type LOCAL -j IP-MASQ
+    iptables -t nat -A IP-MASQ -d 169.254.0.0/16 -m comment --comment "ip-masq: local traffic is not subject to MASQUERADE" -j RETURN
+    iptables -t nat -A IP-MASQ -d 10.0.0.0/8 -m comment --comment "ip-masq: local traffic is not subject to MASQUERADE" -j RETURN
+    iptables -t nat -A IP-MASQ -d 172.16.0.0/12 -m comment --comment "ip-masq: local traffic is not subject to MASQUERADE" -j RETURN
+    iptables -t nat -A IP-MASQ -d 192.168.0.0/16 -m comment --comment "ip-masq: local traffic is not subject to MASQUERADE" -j RETURN
+    iptables -t nat -A IP-MASQ -m comment --comment "ip-masq: outbound traffic is subject to MASQUERADE (must be last in chain)" -j MASQUERADE
   fi
 }
 
@@ -225,10 +244,6 @@ function create-node-pki {
     KUBELET_KEY_PATH="${pki_dir}/kubelet.key"
     write-pki-data "${KUBELET_KEY}" "${KUBELET_KEY_PATH}"
   fi
-
-  # TODO(mikedanese): remove this when we don't support downgrading to versions
-  # < 1.6.
-  ln -sf "${CA_CERT_BUNDLE_PATH}" /etc/srv/kubernetes/ca.crt
 }
 
 function create-master-pki {
@@ -278,11 +293,6 @@ function create-master-pki {
 
   SERVICEACCOUNT_KEY_PATH="${pki_dir}/serviceaccount.key"
   write-pki-data "${SERVICEACCOUNT_KEY}" "${SERVICEACCOUNT_KEY_PATH}"
-
-  # TODO(mikedanese): remove this when we don't support downgrading to versions
-  # < 1.6.
-  ln -sf "${APISERVER_SERVER_KEY_PATH}" /etc/srv/kubernetes/server.key
-  ln -sf "${APISERVER_SERVER_CERT_PATH}" /etc/srv/kubernetes/server.cert
 
   if [[ ! -z "${REQUESTHEADER_CA_CERT:-}" ]]; then
     AGGREGATOR_CA_KEY_PATH="${pki_dir}/aggr_ca.key"
@@ -405,7 +415,7 @@ EOF
   if [[ -n "${SECONDARY_RANGE_NAME:-}" ]]; then
     use_cloud_config="true"
     cat <<EOF >> /etc/gce.conf
-secondary-range-name = ${SECONDARY-RANGE-NAME}
+secondary-range-name = ${SECONDARY_RANGE_NAME}
 EOF
   fi
   if [[ "${use_cloud_config}" != "true" ]]; then
@@ -836,6 +846,12 @@ function assemble-docker-flags {
   docker_opts+=" --log-opt=max-size=${DOCKER_LOG_MAX_SIZE:-10m}"
   docker_opts+=" --log-opt=max-file=${DOCKER_LOG_MAX_FILE:-5}"
 
+  # Disable live-restore if the environment variable is set.
+
+  if [[ "${DISABLE_DOCKER_LIVE_RESTORE:-false}" == "true" ]]; then
+    docker_opts+=" --live-restore=false"
+  fi
+
   echo "DOCKER_OPTS=\"${docker_opts} ${EXTRA_DOCKER_OPTS:-}\"" > /etc/default/docker
 
   if [[ "${use_net_plugin}" == "true" ]]; then
@@ -933,7 +949,9 @@ function start-kubelet {
     flags+=" --cni-bin-dir=/home/kubernetes/bin"
     if [[ "${NETWORK_POLICY_PROVIDER:-}" == "calico" ]]; then
       # Calico uses CNI always.
-      if [[ "${KUBERNETES_PRIVATE_MASTER:-}" == "true" ]]; then
+      # Keep KUBERNETES_PRIVATE_MASTER for backward compatibility.
+      # Note that network policy won't work for master node.
+      if [[ "${KUBERNETES_PRIVATE_MASTER:-}" == "true" || "${KUBERNETES_MASTER:-}" == "true" ]]; then
         flags+=" --network-plugin=${NETWORK_PROVIDER}"
       else
         flags+=" --network-plugin=cni"
@@ -966,6 +984,9 @@ function start-kubelet {
   if [[ -n "${NODE_LABELS:-}" ]]; then
     node_labels="${node_labels:+${node_labels},}${NODE_LABELS}"
   fi
+  if [[ -n "${NON_MASTER_NODE_LABELS:-}" && "${KUBERNETES_MASTER:-}" != "true" ]]; then
+    node_labels="${node_labels:+${node_labels},}${NON_MASTER_NODE_LABELS}"
+  fi
   if [[ -n "${node_labels:-}" ]]; then
     flags+=" --node-labels=${node_labels}"
   fi
@@ -981,6 +1002,13 @@ function start-kubelet {
   if [[ -n "${ROTATE_CERTIFICATES:-}" ]]; then
     flags+=" --rotate-certificates=true"
   fi
+  if [[ -n "${CONTAINER_RUNTIME:-}" ]]; then
+    flags+=" --container-runtime=${CONTAINER_RUNTIME}"
+  fi
+  if [[ -n "${CONTAINER_RUNTIME_ENDPOINT:-}" ]]; then
+    flags+=" --container-runtime-endpoint=${CONTAINER_RUNTIME_ENDPOINT}"
+  fi
+
 
   local -r kubelet_env_file="/etc/default/kubelet"
   echo "KUBELET_OPTS=\"${flags}\"" > "${kubelet_env_file}"
@@ -1002,9 +1030,6 @@ ExecStart=${kubelet_bin} \$KUBELET_OPTS
 WantedBy=multi-user.target
 EOF
 
-  # Flush iptables nat table
-  iptables -t nat -F || true
-
   systemctl start kubelet.service
 }
 
@@ -1014,6 +1039,7 @@ function start-node-problem-detector {
   echo "Start node problem detector"
   local -r npd_bin="${KUBE_HOME}/bin/node-problem-detector"
   local -r km_config="${KUBE_HOME}/node-problem-detector/config/kernel-monitor.json"
+  # TODO(random-liu): Handle this for alternative container runtime.
   local -r dm_config="${KUBE_HOME}/node-problem-detector/config/docker-monitor.json"
   echo "Using node problem detector binary at ${npd_bin}"
   local flags="${NPD_TEST_LOG_LEVEL:-"--v=2"} ${NPD_TEST_ARGS:-}"
@@ -1119,7 +1145,7 @@ function start-kube-proxy {
 # $4: value for variable 'cpulimit'
 # $5: pod name, which should be either etcd or etcd-events
 function prepare-etcd-manifest {
-  local host_name=$(hostname)
+  local host_name=${ETCD_HOSTNAME:-$(hostname -s)}
   local etcd_cluster=""
   local cluster_state="new"
   local etcd_protocol="http"
@@ -1423,9 +1449,13 @@ function start-kube-apiserver {
   fi
   if [[ -n "${PROJECT_ID:-}" && -n "${TOKEN_URL:-}" && -n "${TOKEN_BODY:-}" && -n "${NODE_NETWORK:-}" ]]; then
     local -r vm_external_ip=$(curl --retry 5 --retry-delay 3 --fail --silent -H 'Metadata-Flavor: Google' "http://metadata/computeMetadata/v1/instance/network-interfaces/0/access-configs/0/external-ip")
-    params+=" --advertise-address=${vm_external_ip}"
-    params+=" --ssh-user=${PROXY_SSH_USER}"
-    params+=" --ssh-keyfile=/etc/srv/sshproxy/.sshkeyfile"
+    if [[ -n "${PROXY_SSH_USER:-}" ]]; then
+      params+=" --advertise-address=${vm_external_ip}"      
+      params+=" --ssh-user=${PROXY_SSH_USER}"
+      params+=" --ssh-keyfile=/etc/srv/sshproxy/.sshkeyfile"
+    else
+      params+=" --kubelet-preferred-address-types=InternalIP,ExternalIP,Hostname",
+    fi
   elif [ -n "${MASTER_ADVERTISE_ADDRESS:-}" ]; then
     params="${params} --advertise-address=${MASTER_ADVERTISE_ADDRESS}"
   fi
@@ -1487,10 +1517,6 @@ function start-kube-apiserver {
 
   if [[ -n "${ENCRYPTION_PROVIDER_CONFIG:-}" ]]; then
     local encryption_provider_config_path="/etc/srv/kubernetes/encryption-provider-config.yml"
-    if [[ -n "${GOOGLE_CLOUD_KMS_CONFIG_FILE_NAME:-}" && -n "${GOOGLE_CLOUD_KMS_CONFIG:-}" ]]; then
-        echo "${GOOGLE_CLOUD_KMS_CONFIG}" | base64 --decode > "${GOOGLE_CLOUD_KMS_CONFIG_FILE_NAME}"
-    fi
-
     echo "${ENCRYPTION_PROVIDER_CONFIG}" | base64 --decode > "${encryption_provider_config_path}"
     params+=" --experimental-encryption-provider-config=${encryption_provider_config_path}"
   fi
@@ -1670,14 +1696,35 @@ function start-cluster-autoscaler {
   fi
 }
 
-# A helper function for copying addon manifests and set dir/files
-# permissions.
+# A helper function for setting up addon manifests.
 #
 # $1: addon category under /etc/kubernetes
 # $2: manifest source dir
+# $3: (optional) auxilary manifest source dir
 function setup-addon-manifests {
-  local -r src_dir="${KUBE_HOME}/kube-manifests/kubernetes/gci-trusty/$2"
+  local -r src_dir="${KUBE_HOME}/kube-manifests/kubernetes/gci-trusty"
   local -r dst_dir="/etc/kubernetes/$1/$2"
+
+  copy-manifests "${src_dir}/$2" "${dst_dir}"
+
+  # If the PodSecurityPolicy admission controller is enabled,
+  # set up the corresponding addon policies.
+  if [[ "${ENABLE_POD_SECURITY_POLICY:-}" == "true" ]]; then
+    local -r psp_dir="${src_dir}/${3:-$2}/podsecuritypolicies"
+    if [[ -d "${psp_dir}" ]]; then
+      copy-manifests "${psp_dir}" "${dst_dir}"
+    fi
+  fi
+}
+
+# A helper function for copying manifests and setting dir/files
+# permissions.
+#
+# $1: absolute source dir
+# $2: absolute destination dir
+function copy-manifests {
+  local -r src_dir="$1"
+  local -r dst_dir="$2"
   if [[ ! -d "${dst_dir}" ]]; then
     mkdir -p "${dst_dir}"
   fi
@@ -1739,10 +1786,27 @@ function start-kube-addons {
   local -r dst_dir="/etc/kubernetes/addons"
 
   # prep addition kube-up specific rbac objects
-  setup-addon-manifests "addons" "rbac"
+  setup-addon-manifests "addons" "rbac/kubelet-api-auth"
+  setup-addon-manifests "addons" "rbac/kubelet-cert-rotation"
+  if [[ "${REGISTER_MASTER_KUBELET:-false}" == "true" ]]; then
+    setup-addon-manifests "addons" "rbac/legacy-kubelet-user"
+  else
+    setup-addon-manifests "addons" "rbac/legacy-kubelet-user-disable"
+  fi
+
+  if [[ "${ENABLE_POD_SECURITY_POLICY:-}" == "true" ]]; then
+    setup-addon-manifests "addons" "podsecuritypolicies"
+  fi
 
   # Set up manifests of other addons.
   if [[ "${KUBE_PROXY_DAEMONSET:-}" == "true" ]]; then
+    if [ -n "${CUSTOM_KUBE_PROXY_YAML:-}" ]; then
+      # Replace with custom GKE kube proxy.
+      cat > "$src_dir/kube-proxy/kube-proxy-ds.yaml" <<EOF
+$(echo "$CUSTOM_KUBE_PROXY_YAML")
+EOF
+      update-prometheus-to-sd-parameters "$src_dir/kube-proxy/kube-proxy-ds.yaml"
+    fi
     prepare-kube-proxy-manifest-variables "$src_dir/kube-proxy/kube-proxy-ds.yaml"
     setup-addon-manifests "addons" "kube-proxy"
   fi
@@ -1787,10 +1851,20 @@ function start-kube-addons {
   if [[ "${ENABLE_METRICS_SERVER:-}" == "true" ]]; then
     setup-addon-manifests "addons" "metrics-server"
   fi
+  if [[ "${ENABLE_NVIDIA_GPU_DEVICE_PLUGIN:-}" == "true" ]]; then
+    setup-addon-manifests "addons" "device-plugins/nvidia-gpu"
+  fi
   if [[ "${ENABLE_CLUSTER_DNS:-}" == "true" ]]; then
     setup-addon-manifests "addons" "dns"
     local -r kubedns_file="${dst_dir}/dns/kube-dns.yaml"
     mv "${dst_dir}/dns/kube-dns.yaml.in" "${kubedns_file}"
+    if [ -n "${CUSTOM_KUBE_DNS_YAML:-}" ]; then
+      # Replace with custom GKE kube-dns deployment.
+      cat > "${kubedns_file}" <<EOF
+$(echo "$CUSTOM_KUBE_DNS_YAML")
+EOF
+      update-prometheus-to-sd-parameters ${kubedns_file}
+    fi
     # Replace the salt configurations with variable values.
     sed -i -e "s@{{ *pillar\['dns_domain'\] *}}@${DNS_DOMAIN}@g" "${kubedns_file}"
     sed -i -e "s@{{ *pillar\['dns_server'\] *}}@${DNS_SERVER_IP}@g" "${kubedns_file}"
@@ -1833,7 +1907,7 @@ function start-kube-addons {
   fi
   if [[ "${ENABLE_NODE_PROBLEM_DETECTOR:-}" == "standalone" ]]; then
     # Setup role binding for standalone node problem detector.
-    setup-addon-manifests "addons" "node-problem-detector/standalone"
+    setup-addon-manifests "addons" "node-problem-detector/standalone" "node-problem-detector"
   fi
   if echo "${ADMISSION_CONTROL:-}" | grep -q "LimitRanger"; then
     setup-addon-manifests "admission-controls" "limit-range"
@@ -1851,8 +1925,10 @@ function start-kube-addons {
   if [[ "${ENABLE_IP_MASQ_AGENT:-}" == "true" ]]; then
     setup-addon-manifests "addons" "ip-masq-agent"
   fi
-  if [[ "${ENABLE_METADATA_PROXY:-}" == "simple" ]]; then
+  if [[ "${ENABLE_METADATA_CONCEALMENT:-}" == "true" ]]; then
     setup-addon-manifests "addons" "metadata-proxy/gce"
+    local -r metadata_proxy_yaml="${dst_dir}/metadata-proxy/gce/metadata-proxy.yaml"
+    update-prometheus-to-sd-parameters ${metadata_proxy_yaml}
   fi
 
   # Place addon manager pod manifest.
@@ -1878,8 +1954,12 @@ function start-lb-controller {
     echo "Start GCE L7 pod"
     prepare-log-file /var/log/glbc.log
     setup-addon-manifests "addons" "cluster-loadbalancing/glbc"
-    cp "${KUBE_HOME}/kube-manifests/kubernetes/gci-trusty/glbc.manifest" \
-       /etc/kubernetes/manifests/
+
+    local -r glbc_manifest="${KUBE_HOME}/kube-manifests/kubernetes/gci-trusty/glbc.manifest"
+    if [[ ! -z "${GCE_GLBC_IMAGE:-}" ]]; then
+      sed -i "s@image:.*@image: ${GCE_GLBC_IMAGE}@" "${glbc_manifest}"
+    fi
+    cp "${glbc_manifest}" /etc/kubernetes/manifests/
   fi
 }
 
@@ -1994,7 +2074,9 @@ fi
 
 override-kubectl
 # Run the containerized mounter once to pre-cache the container image.
-assemble-docker-flags
+if [[ "${CONTAINER_RUNTIME:-docker}" == "docker" ]]; then
+  assemble-docker-flags
+fi
 start-kubelet
 
 if [[ "${KUBERNETES_MASTER:-}" == "true" ]]; then

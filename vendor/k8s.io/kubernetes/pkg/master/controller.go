@@ -29,7 +29,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/wait"
 	genericapiserver "k8s.io/apiserver/pkg/server"
-	"k8s.io/kubernetes/pkg/api"
+	api "k8s.io/kubernetes/pkg/apis/core"
 	coreclient "k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset/typed/core/internalversion"
 	"k8s.io/kubernetes/pkg/master/reconcilers"
 	"k8s.io/kubernetes/pkg/registry/core/rangeallocation"
@@ -112,6 +112,11 @@ func (c *Controller) PostStartHook(hookContext genericapiserver.PostStartHookCon
 	return nil
 }
 
+func (c *Controller) PreShutdownHook() error {
+	c.Stop()
+	return nil
+}
+
 // Start begins the core controller loops that must exist for bootstrapping
 // a cluster.
 func (c *Controller) Start() {
@@ -138,6 +143,14 @@ func (c *Controller) Start() {
 
 	c.runner = async.NewRunner(c.RunKubernetesNamespaces, c.RunKubernetesService, repairClusterIPs.RunUntil, repairNodePorts.RunUntil)
 	c.runner.Start()
+}
+
+func (c *Controller) Stop() {
+	if c.runner != nil {
+		c.runner.Stop()
+	}
+	endpointPorts := createEndpointPortSpec(c.PublicServicePort, "https", c.ExtraEndpointPorts)
+	c.EndpointReconciler.StopReconciling("kubernetes", c.PublicIP, endpointPorts)
 }
 
 // RunKubernetesNamespaces periodically makes sure that all internal namespaces exist

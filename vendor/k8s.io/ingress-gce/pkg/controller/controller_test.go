@@ -37,6 +37,7 @@ import (
 	"k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/firewalls"
 	"k8s.io/ingress-gce/pkg/loadbalancers"
+	"k8s.io/ingress-gce/pkg/tls"
 	"k8s.io/ingress-gce/pkg/utils"
 )
 
@@ -56,7 +57,7 @@ func defaultBackendName(clusterName string) string {
 func newLoadBalancerController(t *testing.T, cm *fakeClusterManager) *LoadBalancerController {
 	kubeClient := fake.NewSimpleClientset()
 	ctx := context.NewControllerContext(kubeClient, api_v1.NamespaceAll, 1*time.Second, true)
-	lb, err := NewLoadBalancerController(kubeClient, ctx, cm.ClusterManager)
+	lb, err := NewLoadBalancerController(kubeClient, ctx, cm.ClusterManager, true)
 	if err != nil {
 		t.Fatalf("%v", err)
 	}
@@ -160,7 +161,7 @@ func (p *nodePortManager) toNodePortSvcNames(inputMap map[string]utils.FakeIngre
 	for host, rules := range inputMap {
 		ruleMap := utils.FakeIngressRuleValueMap{}
 		for path, svc := range rules {
-			ruleMap[path] = p.namer.BeName(int64(p.portMap[svc]))
+			ruleMap[path] = p.namer.Backend(int64(p.portMap[svc]))
 		}
 		expectedMap[host] = ruleMap
 	}
@@ -232,7 +233,9 @@ func TestLbCreateDelete(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%v", err)
 		}
-		cm.fakeLbs.CheckURLMap(t, l7, pm.toNodePortSvcNames(m))
+		if err := cm.fakeLbs.CheckURLMap(l7, pm.toNodePortSvcNames(m)); err != nil {
+			t.Fatalf("%v", err)
+		}
 		ings = append(ings, newIng)
 	}
 	lbc.ingLister.Store.Delete(ings[0])
@@ -244,8 +247,8 @@ func TestLbCreateDelete(t *testing.T) {
 	unexpected := []int{pm.portMap["foo2svc"], pm.portMap["bar2svc"]}
 	expected := []int{pm.portMap["foo1svc"], pm.portMap["bar1svc"]}
 	firewallPorts := sets.NewString()
-	pm.namer.SetFirewallName(testFirewallName)
-	firewallName := pm.namer.FrName(pm.namer.FrSuffix())
+	pm.namer.SetFirewall(testFirewallName)
+	firewallName := pm.namer.FirewallRule()
 
 	if firewallRule, err := cm.firewallPool.(*firewalls.FirewallRules).GetFirewall(firewallName); err != nil {
 		t.Fatalf("%v", err)
@@ -317,7 +320,9 @@ func TestLbFaultyUpdate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("%v", err)
 	}
-	cm.fakeLbs.CheckURLMap(t, l7, pm.toNodePortSvcNames(inputMap))
+	if err := cm.fakeLbs.CheckURLMap(l7, pm.toNodePortSvcNames(inputMap)); err != nil {
+		t.Fatalf("%v", err)
+	}
 
 	// Change the urlmap directly through the lb pool, resync, and
 	// make sure the controller corrects it.
@@ -328,7 +333,9 @@ func TestLbFaultyUpdate(t *testing.T) {
 	})
 
 	lbc.sync(ingStoreKey)
-	cm.fakeLbs.CheckURLMap(t, l7, pm.toNodePortSvcNames(inputMap))
+	if err := cm.fakeLbs.CheckURLMap(l7, pm.toNodePortSvcNames(inputMap)); err != nil {
+		t.Fatalf("%v", err)
+	}
 }
 
 func TestLbDefaulting(t *testing.T) {
@@ -346,7 +353,9 @@ func TestLbDefaulting(t *testing.T) {
 		t.Fatalf("%v", err)
 	}
 	expectedMap := map[string]utils.FakeIngressRuleValueMap{loadbalancers.DefaultHost: {loadbalancers.DefaultPath: "foo1svc"}}
-	cm.fakeLbs.CheckURLMap(t, l7, pm.toNodePortSvcNames(expectedMap))
+	if err := cm.fakeLbs.CheckURLMap(l7, pm.toNodePortSvcNames(expectedMap)); err != nil {
+		t.Fatalf("%v", err)
+	}
 }
 
 func TestLbNoService(t *testing.T) {
@@ -390,7 +399,9 @@ func TestLbNoService(t *testing.T) {
 		utils.DefaultBackendKey: "foo1svc",
 	}
 	expectedMap := pm.toNodePortSvcNames(inputMap)
-	cm.fakeLbs.CheckURLMap(t, l7, expectedMap)
+	if err := cm.fakeLbs.CheckURLMap(l7, expectedMap); err != nil {
+		t.Fatalf("%v", err)
+	}
 }
 
 func TestLbChangeStaticIP(t *testing.T) {
@@ -408,8 +419,8 @@ func TestLbChangeStaticIP(t *testing.T) {
 
 	// Add some certs so we get 2 forwarding rules, the changed static IP
 	// should be assigned to both the HTTP and HTTPS forwarding rules.
-	lbc.tlsLoader = &fakeTLSSecretLoader{
-		fakeCerts: map[string]*loadbalancers.TLSCerts{
+	lbc.tlsLoader = &tls.FakeTLSSecretLoader{
+		FakeCerts: map[string]*loadbalancers.TLSCerts{
 			cert.SecretName: {Key: "foo", Cert: "bar"},
 		},
 	}

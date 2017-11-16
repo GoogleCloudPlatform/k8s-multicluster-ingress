@@ -24,7 +24,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apiserver/pkg/admission"
-	"k8s.io/kubernetes/pkg/api"
+	api "k8s.io/kubernetes/pkg/apis/core"
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/aws"
 )
 
@@ -78,7 +78,7 @@ func mockVolumeLabels(labels map[string]string) *mockVolumes {
 // TestAdmission
 func TestAdmission(t *testing.T) {
 	pvHandler := NewPersistentVolumeLabel()
-	handler := admission.NewChainHandler(pvHandler)
+	handler := admission.NewChainHandler(admission.NewNamedHandler("pv", pvHandler))
 	ignoredPV := api.PersistentVolume{
 		ObjectMeta: metav1.ObjectMeta{Name: "noncloud", Namespace: "myns"},
 		Spec: api.PersistentVolumeSpec{

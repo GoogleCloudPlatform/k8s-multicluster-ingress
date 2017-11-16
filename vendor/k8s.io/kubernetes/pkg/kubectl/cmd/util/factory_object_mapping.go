@@ -35,10 +35,10 @@ import (
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/dynamic"
 	restclient "k8s.io/client-go/rest"
-	"k8s.io/kubernetes/federation/apis/federation"
-	"k8s.io/kubernetes/pkg/api"
+	"k8s.io/kubernetes/pkg/api/legacyscheme"
 	"k8s.io/kubernetes/pkg/apis/apps"
 	"k8s.io/kubernetes/pkg/apis/batch"
+	api "k8s.io/kubernetes/pkg/apis/core"
 	"k8s.io/kubernetes/pkg/apis/extensions"
 	client "k8s.io/kubernetes/pkg/client/unversioned"
 	"k8s.io/kubernetes/pkg/controller"
@@ -74,13 +74,13 @@ func NewObjectMappingFactory(clientAccessFactory ClientAccessFactory) ObjectMapp
 //   return lazy implementations of mapper and typer that don't hit the wire until they are
 //   invoked.
 func (f *ring1Factory) Object() (meta.RESTMapper, runtime.ObjectTyper) {
-	mapper := api.Registry.RESTMapper()
+	mapper := legacyscheme.Registry.RESTMapper()
 	discoveryClient, err := f.clientAccessFactory.DiscoveryClient()
 	if err == nil {
 		mapper = meta.FirstHitRESTMapper{
 			MultiRESTMapper: meta.MultiRESTMapper{
-				discovery.NewDeferredDiscoveryRESTMapper(discoveryClient, api.Registry.InterfacesFor),
-				api.Registry.RESTMapper(), // hardcoded fall back
+				discovery.NewDeferredDiscoveryRESTMapper(discoveryClient, legacyscheme.Registry.InterfacesFor),
+				legacyscheme.Registry.RESTMapper(), // hardcoded fall back
 			},
 		}
 
@@ -90,7 +90,7 @@ func (f *ring1Factory) Object() (meta.RESTMapper, runtime.ObjectTyper) {
 		CheckErr(err)
 	}
 
-	return mapper, api.Scheme
+	return mapper, legacyscheme.Scheme
 }
 
 func (f *ring1Factory) UnstructuredObject() (meta.RESTMapper, runtime.ObjectTyper, error) {
@@ -142,9 +142,6 @@ func (f *ring1Factory) ClientForMapping(mapping *meta.RESTMapping) (resource.RES
 	}
 	gvk := mapping.GroupVersionKind
 	switch gvk.Group {
-	case federation.GroupName:
-		mappingVersion := mapping.GroupVersionKind.GroupVersion()
-		return f.clientAccessFactory.FederationClientForVersion(&mappingVersion)
 	case api.GroupName:
 		cfg.APIPath = "/api"
 	default:
@@ -175,15 +172,6 @@ func (f *ring1Factory) UnstructuredClientForMapping(mapping *meta.RESTMapping) (
 
 func (f *ring1Factory) Describer(mapping *meta.RESTMapping) (printers.Describer, error) {
 	mappingVersion := mapping.GroupVersionKind.GroupVersion()
-	if mapping.GroupVersionKind.Group == federation.GroupName {
-		fedClientSet, err := f.clientAccessFactory.FederationClientSetForVersion(&mappingVersion)
-		if err != nil {
-			return nil, err
-		}
-		if mapping.GroupVersionKind.Kind == "Cluster" {
-			return &printersinternal.ClusterDescriber{Interface: fedClientSet}, nil
-		}
-	}
 
 	clientset, err := f.clientAccessFactory.ClientSetForVersion(&mappingVersion)
 	if err != nil {
@@ -284,7 +272,7 @@ func (f *ring1Factory) LogsForObject(object, options runtime.Object, timeout tim
 		}
 
 	default:
-		gvks, _, err := api.Scheme.ObjectKinds(object)
+		gvks, _, err := legacyscheme.Scheme.ObjectKinds(object)
 		if err != nil {
 			return nil, err
 		}
@@ -326,26 +314,23 @@ func (f *ring1Factory) Reaper(mapping *meta.RESTMapping) (kubectl.Reaper, error)
 }
 
 func (f *ring1Factory) HistoryViewer(mapping *meta.RESTMapping) (kubectl.HistoryViewer, error) {
-	mappingVersion := mapping.GroupVersionKind.GroupVersion()
-	clientset, err := f.clientAccessFactory.ClientSetForVersion(&mappingVersion)
+	external, err := f.clientAccessFactory.KubernetesClientSet()
 	if err != nil {
 		return nil, err
 	}
-	return kubectl.HistoryViewerFor(mapping.GroupVersionKind.GroupKind(), clientset)
+	return kubectl.HistoryViewerFor(mapping.GroupVersionKind.GroupKind(), external)
 }
 
 func (f *ring1Factory) Rollbacker(mapping *meta.RESTMapping) (kubectl.Rollbacker, error) {
-	mappingVersion := mapping.GroupVersionKind.GroupVersion()
-	clientset, err := f.clientAccessFactory.ClientSetForVersion(&mappingVersion)
+	external, err := f.clientAccessFactory.KubernetesClientSet()
 	if err != nil {
 		return nil, err
 	}
-	return kubectl.RollbackerFor(mapping.GroupVersionKind.GroupKind(), clientset)
+	return kubectl.RollbackerFor(mapping.GroupVersionKind.GroupKind(), external)
 }
 
 func (f *ring1Factory) StatusViewer(mapping *meta.RESTMapping) (kubectl.StatusViewer, error) {
-	mappingVersion := mapping.GroupVersionKind.GroupVersion()
-	clientset, err := f.clientAccessFactory.ClientSetForVersion(&mappingVersion)
+	clientset, err := f.clientAccessFactory.KubernetesClientSet()
 	if err != nil {
 		return nil, err
 	}
@@ -415,7 +400,7 @@ func (f *ring1Factory) AttachablePodForObject(object runtime.Object, timeout tim
 		return t, nil
 
 	default:
-		gvks, _, err := api.Scheme.ObjectKinds(object)
+		gvks, _, err := legacyscheme.Scheme.ObjectKinds(object)
 		if err != nil {
 			return nil, err
 		}

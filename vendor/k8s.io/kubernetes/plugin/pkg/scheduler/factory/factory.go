@@ -19,11 +19,15 @@ limitations under the License.
 package factory
 
 import (
+	"encoding/json"
 	"fmt"
 	"reflect"
 	"time"
 
+	"github.com/golang/glog"
+
 	"k8s.io/api/core/v1"
+	"k8s.io/api/policy/v1beta1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -36,13 +40,15 @@ import (
 	appsinformers "k8s.io/client-go/informers/apps/v1beta1"
 	coreinformers "k8s.io/client-go/informers/core/v1"
 	extensionsinformers "k8s.io/client-go/informers/extensions/v1beta1"
+	policyinformers "k8s.io/client-go/informers/policy/v1beta1"
 	clientset "k8s.io/client-go/kubernetes"
 	appslisters "k8s.io/client-go/listers/apps/v1beta1"
 	corelisters "k8s.io/client-go/listers/core/v1"
 	extensionslisters "k8s.io/client-go/listers/extensions/v1beta1"
+	policylisters "k8s.io/client-go/listers/policy/v1beta1"
 	"k8s.io/client-go/tools/cache"
-	"k8s.io/kubernetes/pkg/api/helper"
 	podutil "k8s.io/kubernetes/pkg/api/v1/pod"
+	"k8s.io/kubernetes/pkg/apis/core/helper"
 	kubeletapis "k8s.io/kubernetes/pkg/kubelet/apis"
 	"k8s.io/kubernetes/plugin/pkg/scheduler"
 	"k8s.io/kubernetes/plugin/pkg/scheduler/algorithm"
@@ -52,9 +58,6 @@ import (
 	"k8s.io/kubernetes/plugin/pkg/scheduler/core"
 	"k8s.io/kubernetes/plugin/pkg/scheduler/schedulercache"
 	"k8s.io/kubernetes/plugin/pkg/scheduler/util"
-
-	"encoding/json"
-	"github.com/golang/glog"
 )
 
 const (
@@ -74,7 +77,7 @@ var (
 type configFactory struct {
 	client clientset.Interface
 	// queue for pods that need scheduling
-	podQueue *cache.FIFO
+	podQueue core.SchedulingQueue
 	// a means to list all known scheduled pods.
 	scheduledPodLister corelisters.PodLister
 	// a means to list all known scheduled pods and pods assumed to have been scheduled.
@@ -93,6 +96,8 @@ type configFactory struct {
 	replicaSetLister extensionslisters.ReplicaSetLister
 	// a means to list all statefulsets
 	statefulSetLister appslisters.StatefulSetLister
+	// a means to list all PodDisruptionBudgets
+	pdbLister policylisters.PodDisruptionBudgetLister
 
 	// Close this to stop all reflectors
 	StopEverything chan struct{}
@@ -108,7 +113,7 @@ type configFactory struct {
 	// RequiredDuringScheduling affinity is not symmetric, but there is an implicit PreferredDuringScheduling affinity rule
 	// corresponding to every RequiredDuringScheduling affinity rule.
 	// HardPodAffinitySymmetricWeight represents the weight of implicit PreferredDuringScheduling affinity rule, in the range 0-100.
-	hardPodAffinitySymmetricWeight int
+	hardPodAffinitySymmetricWeight int32
 
 	// Equivalence class cache
 	equivalencePodCache *core.EquivalenceCache
@@ -130,22 +135,25 @@ func NewConfigFactory(
 	replicaSetInformer extensionsinformers.ReplicaSetInformer,
 	statefulSetInformer appsinformers.StatefulSetInformer,
 	serviceInformer coreinformers.ServiceInformer,
-	hardPodAffinitySymmetricWeight int,
+	pdbInformer policyinformers.PodDisruptionBudgetInformer,
+	hardPodAffinitySymmetricWeight int32,
 	enableEquivalenceClassCache bool,
 ) scheduler.Configurator {
 	stopEverything := make(chan struct{})
 	schedulerCache := schedulercache.New(30*time.Second, stopEverything)
 
+	schedulingQueue := &core.FIFO{FIFO: cache.NewFIFO(cache.MetaNamespaceKeyFunc)}
 	c := &configFactory{
 		client:                         client,
 		podLister:                      schedulerCache,
-		podQueue:                       cache.NewFIFO(cache.MetaNamespaceKeyFunc),
+		podQueue:                       schedulingQueue,
 		pVLister:                       pvInformer.Lister(),
 		pVCLister:                      pvcInformer.Lister(),
 		serviceLister:                  serviceInformer.Lister(),
 		controllerLister:               replicationControllerInformer.Lister(),
 		replicaSetLister:               replicaSetInformer.Lister(),
 		statefulSetLister:              statefulSetInformer.Lister(),
+		pdbLister:                      pdbInformer.Lister(),
 		schedulerCache:                 schedulerCache,
 		StopEverything:                 stopEverything,
 		schedulerName:                  schedulerName,
@@ -192,6 +200,9 @@ func NewConfigFactory(
 					}
 				},
 				UpdateFunc: func(oldObj, newObj interface{}) {
+					if c.skipPodUpdate(newObj.(*v1.Pod)) {
+						return
+					}
 					if err := c.podQueue.Update(newObj); err != nil {
 						runtime.HandleError(fmt.Errorf("unable to update %T: %v", newObj, err))
 					}
@@ -216,6 +227,15 @@ func NewConfigFactory(
 		},
 	)
 	c.nodeLister = nodeInformer.Lister()
+
+	pdbInformer.Informer().AddEventHandler(
+		cache.ResourceEventHandlerFuncs{
+			AddFunc:    c.addPDBToCache,
+			UpdateFunc: c.updatePDBInCache,
+			DeleteFunc: c.deletePDBFromCache,
+		},
+	)
+	c.pdbLister = pdbInformer.Lister()
 
 	// On add and delete of PVs, it will affect equivalence cache items
 	// related to persistent volume
@@ -253,6 +273,53 @@ func NewConfigFactory(
 	// it only make sense when pod is scheduled or deleted
 
 	return c
+}
+
+// skipPodUpdate checks whether the specified pod update should be ignored.
+// This function will return true if
+//   - The pod has already been assumed, AND
+//   - The pod has only its ResourceVersion, Spec.NodeName and/or Annotations
+//     updated.
+func (c *configFactory) skipPodUpdate(pod *v1.Pod) bool {
+	// Non-assumed pods should never be skipped.
+	isAssumed, err := c.schedulerCache.IsAssumedPod(pod)
+	if err != nil {
+		runtime.HandleError(fmt.Errorf("failed to check whether pod %s/%s is assumed: %v", pod.Namespace, pod.Name, err))
+		return false
+	}
+	if !isAssumed {
+		return false
+	}
+
+	// Gets the assumed pod from the cache.
+	assumedPod, err := c.schedulerCache.GetPod(pod)
+	if err != nil {
+		runtime.HandleError(fmt.Errorf("failed to get assumed pod %s/%s from cache: %v", pod.Namespace, pod.Name, err))
+		return false
+	}
+
+	// Compares the assumed pod in the cache with the pod update. If they are
+	// equal (with certain fields excluded), this pod update will be skipped.
+	f := func(pod *v1.Pod) *v1.Pod {
+		p := pod.DeepCopy()
+		// ResourceVersion must be excluded because each object update will
+		// have a new resource version.
+		p.ResourceVersion = ""
+		// Spec.NodeName must be excluded because the pod assumed in the cache
+		// is expected to have a node assigned while the pod update may nor may
+		// not have this field set.
+		p.Spec.NodeName = ""
+		// Annotations must be excluded for the reasons described in
+		// https://github.com/kubernetes/kubernetes/issues/52914.
+		p.Annotations = nil
+		return p
+	}
+	assumedPodCopy, podCopy := f(assumedPod), f(pod)
+	if !reflect.DeepEqual(assumedPodCopy, podCopy) {
+		return false
+	}
+	glog.V(3).Infof("Skipping pod %s/%s update", pod.Namespace, pod.Name)
+	return true
 }
 
 func (c *configFactory) onPvAdd(obj interface{}) {
@@ -367,7 +434,7 @@ func (c *configFactory) GetNodeLister() corelisters.NodeLister {
 	return c.nodeLister
 }
 
-func (c *configFactory) GetHardPodAffinitySymmetricWeight() int {
+func (c *configFactory) GetHardPodAffinitySymmetricWeight() int32 {
 	return c.hardPodAffinitySymmetricWeight
 }
 
@@ -604,6 +671,56 @@ func (c *configFactory) deleteNodeFromCache(obj interface{}) {
 	}
 }
 
+func (c *configFactory) addPDBToCache(obj interface{}) {
+	pdb, ok := obj.(*v1beta1.PodDisruptionBudget)
+	if !ok {
+		glog.Errorf("cannot convert to *v1beta1.PodDisruptionBudget: %v", obj)
+		return
+	}
+
+	if err := c.schedulerCache.AddPDB(pdb); err != nil {
+		glog.Errorf("scheduler cache AddPDB failed: %v", err)
+	}
+}
+
+func (c *configFactory) updatePDBInCache(oldObj, newObj interface{}) {
+	oldPDB, ok := oldObj.(*v1beta1.PodDisruptionBudget)
+	if !ok {
+		glog.Errorf("cannot convert oldObj to *v1beta1.PodDisruptionBudget: %v", oldObj)
+		return
+	}
+	newPDB, ok := newObj.(*v1beta1.PodDisruptionBudget)
+	if !ok {
+		glog.Errorf("cannot convert newObj to *v1beta1.PodDisruptionBudget: %v", newObj)
+		return
+	}
+
+	if err := c.schedulerCache.UpdatePDB(oldPDB, newPDB); err != nil {
+		glog.Errorf("scheduler cache UpdatePDB failed: %v", err)
+	}
+}
+
+func (c *configFactory) deletePDBFromCache(obj interface{}) {
+	var pdb *v1beta1.PodDisruptionBudget
+	switch t := obj.(type) {
+	case *v1beta1.PodDisruptionBudget:
+		pdb = t
+	case cache.DeletedFinalStateUnknown:
+		var ok bool
+		pdb, ok = t.Obj.(*v1beta1.PodDisruptionBudget)
+		if !ok {
+			glog.Errorf("cannot convert to *v1beta1.PodDisruptionBudget: %v", t.Obj)
+			return
+		}
+	default:
+		glog.Errorf("cannot convert to *v1beta1.PodDisruptionBudget: %v", t)
+		return
+	}
+	if err := c.schedulerCache.RemovePDB(pdb); err != nil {
+		glog.Errorf("scheduler cache RemovePDB failed: %v", err)
+	}
+}
+
 // Create creates a scheduler with the default algorithm provider.
 func (f *configFactory) Create() (*scheduler.Config, error) {
 	return f.CreateFromProvider(DefaultProvider)
@@ -785,17 +902,14 @@ func (f *configFactory) getPluginArgs() (*PluginFactoryArgs, error) {
 }
 
 func (f *configFactory) getNextPod() *v1.Pod {
-	for {
-		pod := cache.Pop(f.podQueue).(*v1.Pod)
-		if f.ResponsibleForPod(pod) {
-			glog.V(4).Infof("About to try and schedule pod %v", pod.Name)
-			return pod
-		}
+	if obj, err := f.podQueue.Pop(); err == nil {
+		pod := obj.(*v1.Pod)
+		glog.V(4).Infof("About to try and schedule pod %v", pod.Name)
+		return pod
+	} else {
+		glog.Errorf("Error while retrieving next pod from scheduling queue: %v", err)
+		return nil
 	}
-}
-
-func (f *configFactory) ResponsibleForPod(pod *v1.Pod) bool {
-	return f.schedulerName == pod.Spec.SchedulerName
 }
 
 // unassignedNonTerminatedPod selects pods that are unassigned and non-terminal.
@@ -892,15 +1006,18 @@ func (i *podInformer) Lister() corelisters.PodLister {
 }
 
 // NewPodInformer creates a shared index informer that returns only non-terminal pods.
-func NewPodInformer(client clientset.Interface, resyncPeriod time.Duration) coreinformers.PodInformer {
-	selector := fields.ParseSelectorOrDie("status.phase!=" + string(v1.PodSucceeded) + ",status.phase!=" + string(v1.PodFailed))
+func NewPodInformer(client clientset.Interface, resyncPeriod time.Duration, schedulerName string) coreinformers.PodInformer {
+	selector := fields.ParseSelectorOrDie(
+		"spec.schedulerName=" + schedulerName +
+			",status.phase!=" + string(v1.PodSucceeded) +
+			",status.phase!=" + string(v1.PodFailed))
 	lw := cache.NewListWatchFromClient(client.CoreV1().RESTClient(), string(v1.ResourcePods), metav1.NamespaceAll, selector)
 	return &podInformer{
 		informer: cache.NewSharedIndexInformer(lw, &v1.Pod{}, resyncPeriod, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}),
 	}
 }
 
-func (factory *configFactory) MakeDefaultErrorFunc(backoff *util.PodBackoff, podQueue *cache.FIFO) func(pod *v1.Pod, err error) {
+func (factory *configFactory) MakeDefaultErrorFunc(backoff *util.PodBackoff, podQueue core.SchedulingQueue) func(pod *v1.Pod, err error) {
 	return func(pod *v1.Pod, err error) {
 		if err == core.ErrNoNodesAvailable {
 			glog.V(4).Infof("Unable to schedule %v %v: no nodes are registered to the cluster; waiting", pod.Namespace, pod.Name)
@@ -1017,6 +1134,6 @@ func (p *podPreemptor) UpdatePodAnnotations(pod *v1.Pod, annotations map[string]
 	if err != nil {
 		return err
 	}
-	_, error := p.Client.CoreV1().Pods(podCopy.Namespace).Patch(podCopy.Name, types.MergePatchType, patchData)
+	_, error := p.Client.CoreV1().Pods(podCopy.Namespace).Patch(podCopy.Name, types.MergePatchType, patchData, "status")
 	return error
 }

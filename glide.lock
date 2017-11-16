@@ -1,5 +1,5 @@
 hash: 7845ab3f3640d4a97f6291b96c52cfb67ba5dd895263c08108f4c6f09335d62f
-updated: 2017-10-25T23:10:58.198078773-07:00
+updated: 2017-11-15T15:56:11.467086867-08:00
 imports:
 - name: cloud.google.com/go
   version: 3b1ae45394a234c385be014e9a488f2bb6eef821
@@ -36,7 +36,7 @@ imports:
 - name: github.com/go-openapi/swag
   version: f3f9494671f93fcff853e3c6e9e948b3eb71e590
 - name: github.com/gogo/protobuf
-  version: c0656edd0d9eab7c66d1eb0c568f9039345796f7
+  version: 616a82ed12d78d24d4839363e8f3c5d3f20627cf
   subpackages:
   - proto
   - sortkeys
@@ -79,7 +79,7 @@ imports:
 - name: github.com/howeyc/gopass
   version: bf9dde6d0d2c004a008c27aaee91170c786f6db8
 - name: github.com/imdario/mergo
-  version: 6633656539c1639d9d78127b7d47c622b5d7b6dc
+  version: 7fe0c75c13abdee74b09fcacef5ea1c6bba6a874
 - name: github.com/inconshreveable/mousetrap
   version: 76626ae9c91c4f2a10f34cad8ce83ea42c93bb75
 - name: github.com/json-iterator/go
@@ -124,25 +124,36 @@ imports:
 - name: github.com/PuerkitoBio/urlesc
   version: 5bd2802263f21d8788851d5305584c82a5c75d7e
 - name: github.com/spf13/cobra
-  version: 715f41bd7a70b5111f898b71ab484da52ee6266d
+  version: 2da4a54c5ceefcee7ca5dd0eea1e18a3b6366489
 - name: github.com/spf13/pflag
-  version: e57e3eeb33f795204c1ca35f56c44f83227c6e66
+  version: 4c012f6dcd9546820e378d0bdda4d8fc772cdfea
 - name: golang.org/x/crypto
   version: 81e90905daefcd6fd217b62423c0908922eadb30
   subpackages:
+  - bcrypt
+  - blowfish
+  - curve25519
+  - ed25519
+  - ed25519/internal/edwards25519
   - nacl/secretbox
+  - pkcs12
+  - pkcs12/internal/rc2
   - poly1305
   - salsa20/salsa
+  - ssh
   - ssh/terminal
 - name: golang.org/x/net
   version: 1c05540f6879653db88113bc4a2b70aec4bd491f
   subpackages:
   - context
   - context/ctxhttp
+  - html
+  - html/atom
   - http2
   - http2/hpack
   - idna
   - lex/httplex
+  - websocket
 - name: golang.org/x/oauth2
   version: a6bd8cefa1811bd24b86f8902872e4e8225f74c4
   subpackages:
@@ -172,7 +183,6 @@ imports:
 - name: google.golang.org/api
   version: 654f863362977d69086620b5f72f13e911da2410
   subpackages:
-  - cloudkms/v1
   - compute/v0.alpha
   - compute/v0.beta
   - compute/v1
@@ -181,7 +191,7 @@ imports:
   - googleapi
   - googleapi/internal/uritemplates
 - name: google.golang.org/appengine
-  version: a2e0dc829727a4f957a7428b1f322805cfc1f362
+  version: 9d8544a6b2c7df9cff240fcf92d7b2f59bc13416
   subpackages:
   - internal
   - internal/app_identity
@@ -205,7 +215,7 @@ imports:
 - name: gopkg.in/yaml.v2
   version: 53feefa2559fb8dfa8d81baad31be332c97d6c77
 - name: k8s.io/api
-  version: 409c3b2393cd3359f275bd8b883b4d9c5aec41f6
+  version: 218912509d74a117d05a718bb926d0948e531c20
   subpackages:
   - admissionregistration/v1alpha1
   - apps/v1
@@ -233,11 +243,11 @@ imports:
   - storage/v1
   - storage/v1beta1
 - name: k8s.io/apiextensions-apiserver
-  version: 83f1a7e2b8384c17fb102b6616e08825ad12992d
+  version: 51a1910459f074162eb4e25233e461fe91e99405
   subpackages:
   - pkg/features
 - name: k8s.io/apimachinery
-  version: e9a29eff7d472df0f7da9ead5ab59b74e74a07ec
+  version: 18a564baac720819100827c16fdebcadb05b2d0d
   subpackages:
   - pkg/api/equality
   - pkg/api/errors
@@ -288,21 +298,15 @@ imports:
   - third_party/forked/golang/json
   - third_party/forked/golang/reflect
 - name: k8s.io/apiserver
-  version: d299c880c4e33854f8c45bdd7ab599fb54cbe575
+  version: 7001bc4df8883d4a0ec84cd4b2117655a0009b6c
   subpackages:
   - pkg/authentication/authenticator
   - pkg/authentication/serviceaccount
   - pkg/authentication/user
   - pkg/features
-  - pkg/server/options/encryptionconfig
-  - pkg/storage/value
-  - pkg/storage/value/encrypt/aes
-  - pkg/storage/value/encrypt/envelope
-  - pkg/storage/value/encrypt/identity
-  - pkg/storage/value/encrypt/secretbox
   - pkg/util/feature
 - name: k8s.io/client-go
-  version: 076e344c86e52f088b78615f815b245f6d613537
+  version: 72e1c2a1ef30b3f8da039e92d4a6a1f079f374e8
   subpackages:
   - discovery
   - discovery/fake
@@ -360,9 +364,11 @@ imports:
   - kubernetes/typed/storage/v1beta1
   - kubernetes/typed/storage/v1beta1/fake
   - pkg/version
+  - plugin/pkg/client/auth/gcp
   - rest
   - rest/watch
   - testing
+  - third_party/forked/golang/template
   - tools/auth
   - tools/cache
   - tools/clientcmd
@@ -379,32 +385,37 @@ imports:
   - util/flowcontrol
   - util/homedir
   - util/integer
+  - util/jsonpath
   - util/retry
 - name: k8s.io/ingress-gce
-  version: 6cad689da446bfc6367df62ceb340b606e91753e
+  version: 6dcd1bf359213b975b621de07e4f9000a82724d6
   subpackages:
+  - pkg/annotations
   - pkg/backends
+  - pkg/firewalls
   - pkg/healthchecks
   - pkg/instances
   - pkg/loadbalancers
   - pkg/storage
   - pkg/utils
 - name: k8s.io/kube-openapi
-  version: 868f2f29720b192240e18284659231b440f9cda5
+  version: 61b46af70dfed79c6d24530cd23b41440a7f22a5
   subpackages:
   - pkg/common
 - name: k8s.io/kubernetes
-  version: 7d59b2d3384379a4a7e2f6ba69fde11b9d74bfef
+  version: 5f43fc8c8d82e059ed764b1b3faee580e555358f
   subpackages:
-  - pkg/api
-  - pkg/api/helper
-  - pkg/api/install
+  - pkg/api/legacyscheme
   - pkg/api/service
-  - pkg/api/v1
-  - pkg/api/v1/helper
   - pkg/api/v1/pod
   - pkg/api/v1/service
-  - pkg/api/validation
+  - pkg/apis/autoscaling
+  - pkg/apis/core
+  - pkg/apis/core/helper
+  - pkg/apis/core/install
+  - pkg/apis/core/v1
+  - pkg/apis/core/v1/helper
+  - pkg/apis/core/validation
   - pkg/apis/extensions
   - pkg/apis/networking
   - pkg/capabilities
@@ -427,6 +438,7 @@ imports:
   - pkg/util/pointer
   - pkg/util/taints
   - pkg/util/version
+  - pkg/version
   - pkg/volume
   - pkg/volume/util
 - name: k8s.io/utils

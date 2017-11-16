@@ -36,18 +36,19 @@ import (
 	"k8s.io/kubernetes/cmd/kubeadm/app/preflight"
 	kubeadmutil "k8s.io/kubernetes/cmd/kubeadm/app/util"
 	kubeconfigutil "k8s.io/kubernetes/cmd/kubeadm/app/util/kubeconfig"
-	"k8s.io/kubernetes/pkg/api"
+	"k8s.io/kubernetes/pkg/api/legacyscheme"
 	nodeutil "k8s.io/kubernetes/pkg/util/node"
+	utilsexec "k8s.io/utils/exec"
 )
 
 var (
 	joinDoneMsgf = dedent.Dedent(`
-		Node join complete:
-		* Certificate signing request sent to master and response
-		  received.
-		* Kubelet informed of new secure connection details.
+		This node has joined the cluster:
+		* Certificate signing request was sent to master and a response
+		  was received.
+		* The Kubelet was informed of the new secure connection details.
 
-		Run 'kubectl get nodes' on the master to see this machine join.
+		Run 'kubectl get nodes' on the master to see this node join the cluster.
 		`)
 
 	joinLongDescription = dedent.Dedent(`
@@ -58,13 +59,14 @@ var (
 
 		There are 2 main schemes for discovery. The first is to use a shared
 		token along with the IP address of the API server. The second is to
-		provide a file (a subset of the standard kubeconfig file). This file
+		provide a file - a subset of the standard kubeconfig file. This file
 		can be a local file or downloaded via an HTTPS URL. The forms are
 		kubeadm join --discovery-token abcdef.1234567890abcdef 1.2.3.4:6443,
 		kubeadm join --discovery-file path/to/file.conf, or kubeadm join
 		--discovery-file https://url/file.conf. Only one form can be used. If
-		the discovery information is loaded from a URL, HTTPS must be used and
-		the host installed CA bundle is used to verify the connection.
+		the discovery information is loaded from a URL, HTTPS must be used.
+		Also, in that case the host installed CA bundle is used to verify
+		the connection.
 
 		If you use a shared token for discovery, you should also pass the
 		--discovery-token-ca-cert-hash flag to validate the public key of the
@@ -84,7 +86,7 @@ var (
 		The TLS bootstrap mechanism is also driven via a shared token. This is
 		used to temporarily authenticate with the Kubernetes Master to submit a
 		certificate signing request (CSR) for a locally created key pair. By
-		default kubeadm will set up the Kubernetes Master to automatically
+		default, kubeadm will set up the Kubernetes Master to automatically
 		approve these signing requests. This token is passed in with the
 		--tls-bootstrap-token abcdef.1234567890abcdef flag.
 
@@ -96,10 +98,11 @@ var (
 // NewCmdJoin returns "kubeadm join" command.
 func NewCmdJoin(out io.Writer) *cobra.Command {
 	cfg := &kubeadmapiext.NodeConfiguration{}
-	api.Scheme.Default(cfg)
+	legacyscheme.Scheme.Default(cfg)
 
 	var skipPreFlight bool
 	var cfgPath string
+	var criSocket string
 
 	cmd := &cobra.Command{
 		Use:   "join [flags]",
@@ -108,11 +111,11 @@ func NewCmdJoin(out io.Writer) *cobra.Command {
 		Run: func(cmd *cobra.Command, args []string) {
 			cfg.DiscoveryTokenAPIServers = args
 
-			api.Scheme.Default(cfg)
+			legacyscheme.Scheme.Default(cfg)
 			internalcfg := &kubeadmapi.NodeConfiguration{}
-			api.Scheme.Convert(cfg, internalcfg, nil)
+			legacyscheme.Scheme.Convert(cfg, internalcfg, nil)
 
-			j, err := NewJoin(cfgPath, args, internalcfg, skipPreFlight)
+			j, err := NewJoin(cfgPath, args, internalcfg, skipPreFlight, criSocket)
 			kubeadmutil.CheckErr(err)
 			kubeadmutil.CheckErr(j.Validate(cmd))
 			kubeadmutil.CheckErr(j.Run(out))
@@ -120,7 +123,7 @@ func NewCmdJoin(out io.Writer) *cobra.Command {
 	}
 
 	AddJoinConfigFlags(cmd.PersistentFlags(), cfg)
-	AddJoinOtherFlags(cmd.PersistentFlags(), &cfgPath, &skipPreFlight)
+	AddJoinOtherFlags(cmd.PersistentFlags(), &cfgPath, &skipPreFlight, &criSocket)
 
 	return cmd
 }
@@ -151,14 +154,18 @@ func AddJoinConfigFlags(flagSet *flag.FlagSet, cfg *kubeadmapiext.NodeConfigurat
 }
 
 // AddJoinOtherFlags adds join flags that are not bound to a configuration file to the given flagset
-func AddJoinOtherFlags(flagSet *flag.FlagSet, cfgPath *string, skipPreFlight *bool) {
+func AddJoinOtherFlags(flagSet *flag.FlagSet, cfgPath *string, skipPreFlight *bool, criSocket *string) {
 	flagSet.StringVar(
 		cfgPath, "config", *cfgPath,
 		"Path to kubeadm config file.")
 
 	flagSet.BoolVar(
 		skipPreFlight, "skip-preflight-checks", false,
-		"Skip preflight checks normally run before modifying the system.",
+		"Skip preflight checks which normally run before modifying the system.",
+	)
+	flagSet.StringVar(
+		criSocket, "cri-socket", "/var/run/dockershim.sock",
+		`Specify the CRI socket to connect to.`,
 	)
 }
 
@@ -168,8 +175,8 @@ type Join struct {
 }
 
 // NewJoin instantiates Join struct with given arguments
-func NewJoin(cfgPath string, args []string, cfg *kubeadmapi.NodeConfiguration, skipPreFlight bool) (*Join, error) {
-	fmt.Println("[kubeadm] WARNING: kubeadm is in beta, please do not use it for production clusters.")
+func NewJoin(cfgPath string, args []string, cfg *kubeadmapi.NodeConfiguration, skipPreFlight bool, criSocket string) (*Join, error) {
+	fmt.Println("[kubeadm] WARNING: kubeadm is in beta. Please do not use it for production clusters!")
 
 	if cfg.NodeName == "" {
 		cfg.NodeName = nodeutil.GetHostname("")
@@ -180,7 +187,7 @@ func NewJoin(cfgPath string, args []string, cfg *kubeadmapi.NodeConfiguration, s
 		if err != nil {
 			return nil, fmt.Errorf("unable to read config from %q [%v]", cfgPath, err)
 		}
-		if err := runtime.DecodeInto(api.Codecs.UniversalDecoder(), b, cfg); err != nil {
+		if err := runtime.DecodeInto(legacyscheme.Codecs.UniversalDecoder(), b, cfg); err != nil {
 			return nil, fmt.Errorf("unable to decode config from %q [%v]", cfgPath, err)
 		}
 	}
@@ -189,7 +196,7 @@ func NewJoin(cfgPath string, args []string, cfg *kubeadmapi.NodeConfiguration, s
 		fmt.Println("[preflight] Running pre-flight checks.")
 
 		// Then continue with the others...
-		if err := preflight.RunJoinNodeChecks(cfg); err != nil {
+		if err := preflight.RunJoinNodeChecks(utilsexec.New(), cfg, criSocket); err != nil {
 			return nil, err
 		}
 

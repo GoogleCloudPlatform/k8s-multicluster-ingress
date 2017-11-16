@@ -40,12 +40,13 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	utilfeature "k8s.io/apiserver/pkg/util/feature"
 	"k8s.io/client-go/tools/record"
-	"k8s.io/kubernetes/pkg/api"
-	"k8s.io/kubernetes/pkg/api/helper"
 	apiservice "k8s.io/kubernetes/pkg/api/service"
+	api "k8s.io/kubernetes/pkg/apis/core"
+	"k8s.io/kubernetes/pkg/apis/core/helper"
 	"k8s.io/kubernetes/pkg/features"
 	"k8s.io/kubernetes/pkg/proxy"
 	"k8s.io/kubernetes/pkg/proxy/healthcheck"
+	"k8s.io/kubernetes/pkg/proxy/metrics"
 	utilproxy "k8s.io/kubernetes/pkg/proxy/util"
 	"k8s.io/kubernetes/pkg/util/async"
 	utiliptables "k8s.io/kubernetes/pkg/util/iptables"
@@ -197,11 +198,6 @@ func NewProxier(ipt utiliptables.Interface, ipvs utilipvs.Interface,
 	healthzServer healthcheck.HealthzUpdater,
 	scheduler string,
 ) (*Proxier, error) {
-	// check valid user input
-	if minSyncPeriod > syncPeriod {
-		return nil, fmt.Errorf("min-sync (%v) must be < sync(%v)", minSyncPeriod, syncPeriod)
-	}
-
 	// Set the route_localnet sysctl we need for
 	if err := sysctl.SetSysctl(sysctlRouteLocalnet, 1); err != nil {
 		return nil, fmt.Errorf("can't set sysctl %s: %v", sysctlRouteLocalnet, err)
@@ -225,9 +221,6 @@ func NewProxier(ipt utiliptables.Interface, ipvs utilipvs.Interface,
 	}
 
 	// Generate the masquerade mark to use for SNAT rules.
-	if masqueradeBit < 0 || masqueradeBit > 31 {
-		return nil, fmt.Errorf("invalid iptables-masquerade-bit %v not in [0, 31]", masqueradeBit)
-	}
 	masqueradeValue := 1 << uint(masqueradeBit)
 	masqueradeMark := fmt.Sprintf("%#08x/%#08x", masqueradeValue, masqueradeValue)
 
@@ -648,10 +641,19 @@ func (em proxyEndpointsMap) unmerge(other proxyEndpointsMap) {
 }
 
 // CanUseIPVSProxier returns true if we can use the ipvs Proxier.
-// This is determined by checking if all the required kernel modules are loaded. It may
+// This is determined by checking if all the required kernel modules can be loaded. It may
 // return an error if it fails to get the kernel modules information without error, in which
 // case it will also return false.
 func CanUseIPVSProxier() (bool, error) {
+	// Try to load IPVS required kernel modules using modprobe
+	for _, kmod := range ipvsModules {
+		err := utilexec.New().Command("modprobe", "--", kmod).Run()
+		if err != nil {
+			glog.Warningf("Failed to load kernel module %v with modprobe. "+
+				"You can ignore this message when kube-proxy is running inside container without mounting /lib/modules", kmod)
+		}
+	}
+
 	// Find out loaded kernel modules
 	out, err := utilexec.New().Command("cut", "-f1", "-d", " ", "/proc/modules").CombinedOutput()
 	if err != nil {
@@ -663,9 +665,9 @@ func CanUseIPVSProxier() (bool, error) {
 	loadModules := sets.NewString()
 	wantModules.Insert(ipvsModules...)
 	loadModules.Insert(mods...)
-	modules := wantModules.Difference(loadModules).List()
+	modules := wantModules.Difference(loadModules).UnsortedList()
 	if len(modules) != 0 {
-		return false, fmt.Errorf("Failed to load kernel modules: %v", modules)
+		return false, fmt.Errorf("IPVS proxier will not be used because the following required kernel modules are not loaded: %v", modules)
 	}
 	return true, nil
 }
@@ -738,7 +740,7 @@ func cleanupIptablesLeftovers(ipt utiliptables.Interface) (encounteredError bool
 }
 
 // CleanupLeftovers clean up all ipvs and iptables rules created by ipvs Proxier.
-func CleanupLeftovers(execer utilexec.Interface, ipvs utilipvs.Interface, ipt utiliptables.Interface) (encounteredError bool) {
+func CleanupLeftovers(ipvs utilipvs.Interface, ipt utiliptables.Interface) (encounteredError bool) {
 	// Return immediately when ipvs interface is nil - Probably initialization failed in somewhere.
 	if ipvs == nil {
 		return true
@@ -751,7 +753,8 @@ func CleanupLeftovers(execer utilexec.Interface, ipvs utilipvs.Interface, ipt ut
 		encounteredError = true
 	}
 	// Delete dummy interface created by ipvs Proxier.
-	err = deleteDummyDevice(execer, DefaultDummyDevice)
+	nl := NewNetLinkHandle()
+	err = nl.DeleteDummyDevice(DefaultDummyDevice)
 	if err != nil {
 		encounteredError = true
 	}
@@ -854,12 +857,6 @@ func (proxier *Proxier) OnEndpointsSynced() {
 	proxier.syncProxyRules()
 }
 
-type syncReason string
-
-const syncReasonServices syncReason = "ServicesUpdate"
-const syncReasonEndpoints syncReason = "EndpointsUpdate"
-const syncReasonForce syncReason = "Force"
-
 // This is where all of the ipvs calls happen.
 // assumes proxier.mu is held
 func (proxier *Proxier) syncProxyRules() {
@@ -868,6 +865,7 @@ func (proxier *Proxier) syncProxyRules() {
 
 	start := time.Now()
 	defer func() {
+		metrics.SyncProxyRulesLatency.Observe(metrics.SinceInMicroseconds(start))
 		glog.V(4).Infof("syncProxyRules took %v", time.Since(start))
 	}()
 	// don't sync rules till we've received services and endpoints
@@ -945,7 +943,7 @@ func (proxier *Proxier) syncProxyRules() {
 	// End install iptables
 
 	// make sure dummy interface exists in the system where ipvs Proxier will bind service address on it
-	_, err = ensureDummyDevice(proxier.exec, DefaultDummyDevice)
+	_, err = proxier.netlinkHandle.EnsureDummyDevice(DefaultDummyDevice)
 	if err != nil {
 		glog.Errorf("Failed to create dummy interface: %s, error: %v", DefaultDummyDevice, err)
 		return
@@ -1003,7 +1001,7 @@ func (proxier *Proxier) syncProxyRules() {
 			"-A", string(kubeServicesChain),
 			"-m", "comment", "--comment", fmt.Sprintf(`"%s cluster IP"`, svcNameString),
 			"-m", protocol, "-p", protocol,
-			"-d", fmt.Sprintf("%s/32", svcInfo.clusterIP.String()),
+			"-d", utilproxy.ToCIDR(svcInfo.clusterIP),
 			"--dport", strconv.Itoa(svcInfo.port),
 		)
 		if proxier.masqueradeAll {
@@ -1094,7 +1092,7 @@ func (proxier *Proxier) syncProxyRules() {
 						"-A", string(kubeServicesChain),
 						"-m", "comment", "--comment", fmt.Sprintf(`"%s loadbalancer IP"`, svcNameString),
 						"-m", string(svcInfo.protocol), "-p", string(svcInfo.protocol),
-						"-d", fmt.Sprintf("%s/32", ingress.IP),
+						"-d", utilproxy.ToCIDR(net.ParseIP(ingress.IP)),
 						"--dport", fmt.Sprintf("%d", svcInfo.port),
 					)
 
@@ -1111,7 +1109,7 @@ func (proxier *Proxier) syncProxyRules() {
 					// loadbalancer's backend hosts. In this case, request will not hit the loadbalancer but loop back directly.
 					// Need to add the following rule to allow request on host.
 					if allowFromNode {
-						writeLine(proxier.natRules, append(args, "-s", fmt.Sprintf("%s/32", ingress.IP), "-j", "ACCEPT")...)
+						writeLine(proxier.natRules, append(args, "-s", utilproxy.ToCIDR(net.ParseIP(ingress.IP)), "-j", "ACCEPT")...)
 					}
 
 					// If the packet was able to reach the end of firewall chain, then it did not get DNATed.
@@ -1158,7 +1156,7 @@ func (proxier *Proxier) syncProxyRules() {
 					continue
 				}
 				if lp.Protocol == "udp" {
-					isIPv6 := svcInfo.clusterIP.To4() != nil
+					isIPv6 := utilproxy.IsIPv6(svcInfo.clusterIP)
 					utilproxy.ClearUDPConntrackForPort(proxier.exec, lp.Port, isIPv6)
 				}
 				replacementPortsMap[lp] = socket
@@ -1248,7 +1246,7 @@ func (proxier *Proxier) syncProxyRules() {
 
 	// Finish housekeeping.
 	// TODO: these could be made more consistent.
-	for _, svcIP := range staleServices.List() {
+	for _, svcIP := range staleServices.UnsortedList() {
 		if err := utilproxy.ClearUDPConntrackForIP(proxier.exec, svcIP); err != nil {
 			glog.Errorf("Failed to delete stale service IP %s connections, error: %v", svcIP, err)
 		}
@@ -1333,7 +1331,7 @@ func (proxier *Proxier) syncEndpoint(svcPortName proxy.ServicePortName, onlyNode
 
 	if !curEndpoints.Equal(newEndpoints) {
 		// Create new endpoints
-		for _, ep := range newEndpoints.Difference(curEndpoints).List() {
+		for _, ep := range newEndpoints.Difference(curEndpoints).UnsortedList() {
 			ip, port, err := net.SplitHostPort(ep)
 			if err != nil {
 				glog.Errorf("Failed to parse endpoint: %v, error: %v", ep, err)
@@ -1357,7 +1355,7 @@ func (proxier *Proxier) syncEndpoint(svcPortName proxy.ServicePortName, onlyNode
 			}
 		}
 		// Delete old endpoints
-		for _, ep := range curEndpoints.Difference(newEndpoints).List() {
+		for _, ep := range curEndpoints.Difference(newEndpoints).UnsortedList() {
 			ip, port, err := net.SplitHostPort(ep)
 			if err != nil {
 				glog.Errorf("Failed to parse endpoint: %v, error: %v", ep, err)
@@ -1460,14 +1458,18 @@ func writeLine(buf *bytes.Buffer, words ...string) {
 
 func getLocalIPs(endpointsMap proxyEndpointsMap) map[types.NamespacedName]sets.String {
 	localIPs := make(map[types.NamespacedName]sets.String)
-	for svcPort := range endpointsMap {
-		for _, ep := range endpointsMap[svcPort] {
+	for svcPortName := range endpointsMap {
+		for _, ep := range endpointsMap[svcPortName] {
 			if ep.isLocal {
-				nsn := svcPort.NamespacedName
-				if localIPs[nsn] == nil {
-					localIPs[nsn] = sets.NewString()
+				// If the endpoint has a bad format, utilproxy.IPPart() will log an
+				// error and ep.IPPart() will return a null string.
+				if ip := ep.IPPart(); ip != "" {
+					nsn := svcPortName.NamespacedName
+					if localIPs[nsn] == nil {
+						localIPs[nsn] = sets.NewString()
+					}
+					localIPs[nsn].Insert(ip)
 				}
-				localIPs[nsn].Insert(ep.IPPart()) // just the IP part
 			}
 		}
 	}
@@ -1518,32 +1520,6 @@ func openLocalPort(lp *utilproxy.LocalPort) (utilproxy.Closeable, error) {
 	}
 	glog.V(2).Infof("Opened local port %s", lp.String())
 	return socket, nil
-}
-
-const cmdIP = "ip"
-
-func ensureDummyDevice(execer utilexec.Interface, dummyDev string) (exist bool, err error) {
-	args := []string{"link", "add", dummyDev, "type", "dummy"}
-	out, err := execer.Command(cmdIP, args...).CombinedOutput()
-	if err != nil {
-		// "exit status code 2" will be returned if the device already exists
-		if ee, ok := err.(utilexec.ExitError); ok {
-			if ee.Exited() && ee.ExitStatus() == 2 {
-				return true, nil
-			}
-		}
-		return false, fmt.Errorf("error creating dummy interface %q: %v: %s", dummyDev, err, out)
-	}
-	return false, nil
-}
-
-func deleteDummyDevice(execer utilexec.Interface, dummyDev string) error {
-	args := []string{"link", "del", dummyDev}
-	out, err := execer.Command(cmdIP, args...).CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("error deleting dummy interface %q: %v: %s", dummyDev, err, out)
-	}
-	return nil
 }
 
 // ipvs Proxier fall back on iptables when it needs to do SNAT for engress packets
