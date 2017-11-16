@@ -24,7 +24,7 @@ information on using pull requests.
 
 ## Dependency management
 
-This project uses (glide)[https://github.com/Masterminds/glide] to manage
+This project uses [glide](https://github.com/Masterminds/glide) to manage
 project dependencies. All dependencies are checked into the `vendor/` directory.
 
 `vendor/` directory should only be updated by running
