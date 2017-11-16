@@ -32,7 +32,7 @@ health checks will start failing and hence GCLB will automatically stop sending
 traffic to that cluster/pods. Users do not need to run any kubemci command unless
 they want to permanently remove the multicluster ingress from that cluster.
 
-#### When the ingress spec changes
+### When the ingress spec changes
 
 When the ingress spec changes, users need to run `kubemci create` again with the
 updated spec to update GCLB.
@@ -43,7 +43,7 @@ ingress spec changes and runs the `kubemci create` command.
 kubemci can also be integrated with existing CI/CD pipelines to run kubemci
 whenever ingress spec is updated.
 
-#### Deleting the multicluster ingress
+### Deleting the multicluster ingress
 
 Users can run `kubemci delete` to delete an existing multicluster ingress.
 
