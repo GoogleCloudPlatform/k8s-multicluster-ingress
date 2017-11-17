@@ -24,10 +24,12 @@ import (
 	"time"
 
 	"k8s.io/api/core/v1"
+	"k8s.io/api/policy/v1beta1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
-	v1helper "k8s.io/kubernetes/pkg/api/v1/helper"
+	"k8s.io/apimachinery/pkg/util/intstr"
+	v1helper "k8s.io/kubernetes/pkg/apis/core/v1/helper"
 	priorityutil "k8s.io/kubernetes/plugin/pkg/scheduler/algorithm/priorities/util"
 	schedutil "k8s.io/kubernetes/plugin/pkg/scheduler/util"
 )
@@ -47,12 +49,12 @@ func deepEqualWithoutGeneration(t *testing.T, testcase int, actual, expected *No
 func TestAssumePodScheduled(t *testing.T) {
 	nodeName := "node"
 	testPods := []*v1.Pod{
-		makeBasePod(t, nodeName, "test", "100m", "500", "", []v1.ContainerPort{{HostPort: 80}}),
-		makeBasePod(t, nodeName, "test-1", "100m", "500", "", []v1.ContainerPort{{HostPort: 80}}),
-		makeBasePod(t, nodeName, "test-2", "200m", "1Ki", "", []v1.ContainerPort{{HostPort: 8080}}),
-		makeBasePod(t, nodeName, "test-nonzero", "", "", "", []v1.ContainerPort{{HostPort: 80}}),
-		makeBasePod(t, nodeName, "test", "100m", "500", "oir-foo:3", []v1.ContainerPort{{HostPort: 80}}),
-		makeBasePod(t, nodeName, "test-2", "200m", "1Ki", "oir-foo:5", []v1.ContainerPort{{HostPort: 8080}}),
+		makeBasePod(t, nodeName, "test", "100m", "500", "", []v1.ContainerPort{{HostIP: "127.0.0.1", HostPort: 80, Protocol: "TCP"}}),
+		makeBasePod(t, nodeName, "test-1", "100m", "500", "", []v1.ContainerPort{{HostIP: "127.0.0.1", HostPort: 80, Protocol: "TCP"}}),
+		makeBasePod(t, nodeName, "test-2", "200m", "1Ki", "", []v1.ContainerPort{{HostIP: "127.0.0.1", HostPort: 8080, Protocol: "TCP"}}),
+		makeBasePod(t, nodeName, "test-nonzero", "", "", "", []v1.ContainerPort{{HostIP: "127.0.0.1", HostPort: 80, Protocol: "TCP"}}),
+		makeBasePod(t, nodeName, "test", "100m", "500", "oir-foo:3", []v1.ContainerPort{{HostIP: "127.0.0.1", HostPort: 80, Protocol: "TCP"}}),
+		makeBasePod(t, nodeName, "test-2", "200m", "1Ki", "oir-foo:5", []v1.ContainerPort{{HostIP: "127.0.0.1", HostPort: 8080, Protocol: "TCP"}}),
 		makeBasePod(t, nodeName, "test", "100m", "500", "random-invalid-oir-key:100", []v1.ContainerPort{{}}),
 	}
 
@@ -73,7 +75,7 @@ func TestAssumePodScheduled(t *testing.T) {
 			},
 			allocatableResource: &Resource{},
 			pods:                []*v1.Pod{testPods[0]},
-			usedPorts:           map[int]bool{80: true},
+			usedPorts:           map[string]bool{"TCP/127.0.0.1/80": true},
 		},
 	}, {
 		pods: []*v1.Pod{testPods[1], testPods[2]},
@@ -88,7 +90,7 @@ func TestAssumePodScheduled(t *testing.T) {
 			},
 			allocatableResource: &Resource{},
 			pods:                []*v1.Pod{testPods[1], testPods[2]},
-			usedPorts:           map[int]bool{80: true, 8080: true},
+			usedPorts:           map[string]bool{"TCP/127.0.0.1/80": true, "TCP/127.0.0.1/8080": true},
 		},
 	}, { // test non-zero request
 		pods: []*v1.Pod{testPods[3]},
@@ -103,7 +105,7 @@ func TestAssumePodScheduled(t *testing.T) {
 			},
 			allocatableResource: &Resource{},
 			pods:                []*v1.Pod{testPods[3]},
-			usedPorts:           map[int]bool{80: true},
+			usedPorts:           map[string]bool{"TCP/127.0.0.1/80": true},
 		},
 	}, {
 		pods: []*v1.Pod{testPods[4]},
@@ -119,7 +121,7 @@ func TestAssumePodScheduled(t *testing.T) {
 			},
 			allocatableResource: &Resource{},
 			pods:                []*v1.Pod{testPods[4]},
-			usedPorts:           map[int]bool{80: true},
+			usedPorts:           map[string]bool{"TCP/127.0.0.1/80": true},
 		},
 	}, {
 		pods: []*v1.Pod{testPods[4], testPods[5]},
@@ -135,7 +137,7 @@ func TestAssumePodScheduled(t *testing.T) {
 			},
 			allocatableResource: &Resource{},
 			pods:                []*v1.Pod{testPods[4], testPods[5]},
-			usedPorts:           map[int]bool{80: true, 8080: true},
+			usedPorts:           map[string]bool{"TCP/127.0.0.1/80": true, "TCP/127.0.0.1/8080": true},
 		},
 	}, {
 		pods: []*v1.Pod{testPods[6]},
@@ -150,7 +152,7 @@ func TestAssumePodScheduled(t *testing.T) {
 			},
 			allocatableResource: &Resource{},
 			pods:                []*v1.Pod{testPods[6]},
-			usedPorts:           map[int]bool{},
+			usedPorts:           map[string]bool{},
 		},
 	},
 	}
@@ -193,8 +195,8 @@ func assumeAndFinishBinding(cache *schedulerCache, pod *v1.Pod, assumedTime time
 func TestExpirePod(t *testing.T) {
 	nodeName := "node"
 	testPods := []*v1.Pod{
-		makeBasePod(t, nodeName, "test-1", "100m", "500", "", []v1.ContainerPort{{HostPort: 80}}),
-		makeBasePod(t, nodeName, "test-2", "200m", "1Ki", "", []v1.ContainerPort{{HostPort: 8080}}),
+		makeBasePod(t, nodeName, "test-1", "100m", "500", "", []v1.ContainerPort{{HostIP: "127.0.0.1", HostPort: 80, Protocol: "TCP"}}),
+		makeBasePod(t, nodeName, "test-2", "200m", "1Ki", "", []v1.ContainerPort{{HostIP: "127.0.0.1", HostPort: 8080, Protocol: "TCP"}}),
 	}
 	now := time.Now()
 	ttl := 10 * time.Second
@@ -226,7 +228,7 @@ func TestExpirePod(t *testing.T) {
 			},
 			allocatableResource: &Resource{},
 			pods:                []*v1.Pod{testPods[1]},
-			usedPorts:           map[int]bool{80: false, 8080: true},
+			usedPorts:           map[string]bool{"TCP/127.0.0.1/8080": true},
 		},
 	}}
 
@@ -253,8 +255,8 @@ func TestAddPodWillConfirm(t *testing.T) {
 	ttl := 10 * time.Second
 
 	testPods := []*v1.Pod{
-		makeBasePod(t, nodeName, "test-1", "100m", "500", "", []v1.ContainerPort{{HostPort: 80}}),
-		makeBasePod(t, nodeName, "test-2", "200m", "1Ki", "", []v1.ContainerPort{{HostPort: 8080}}),
+		makeBasePod(t, nodeName, "test-1", "100m", "500", "", []v1.ContainerPort{{HostIP: "127.0.0.1", HostPort: 80, Protocol: "TCP"}}),
+		makeBasePod(t, nodeName, "test-2", "200m", "1Ki", "", []v1.ContainerPort{{HostIP: "127.0.0.1", HostPort: 8080, Protocol: "TCP"}}),
 	}
 	tests := []struct {
 		podsToAssume []*v1.Pod
@@ -275,7 +277,7 @@ func TestAddPodWillConfirm(t *testing.T) {
 			},
 			allocatableResource: &Resource{},
 			pods:                []*v1.Pod{testPods[0]},
-			usedPorts:           map[int]bool{80: true, 8080: false},
+			usedPorts:           map[string]bool{"TCP/127.0.0.1/80": true},
 		},
 	}}
 
@@ -298,11 +300,73 @@ func TestAddPodWillConfirm(t *testing.T) {
 	}
 }
 
+// TestAddPodWillReplaceAssumed tests that a pod being Add()ed will replace any assumed pod.
+func TestAddPodWillReplaceAssumed(t *testing.T) {
+	now := time.Now()
+	ttl := 10 * time.Second
+
+	assumedPod := makeBasePod(t, "assumed-node-1", "test-1", "100m", "500", "", []v1.ContainerPort{{HostPort: 80}})
+	addedPod := makeBasePod(t, "actual-node", "test-1", "100m", "500", "", []v1.ContainerPort{{HostPort: 80}})
+	updatedPod := makeBasePod(t, "actual-node", "test-1", "200m", "500", "", []v1.ContainerPort{{HostPort: 90}})
+
+	tests := []struct {
+		podsToAssume []*v1.Pod
+		podsToAdd    []*v1.Pod
+		podsToUpdate [][]*v1.Pod
+
+		wNodeInfo map[string]*NodeInfo
+	}{{
+		podsToAssume: []*v1.Pod{assumedPod.DeepCopy()},
+		podsToAdd:    []*v1.Pod{addedPod.DeepCopy()},
+		podsToUpdate: [][]*v1.Pod{{addedPod.DeepCopy(), updatedPod.DeepCopy()}},
+		wNodeInfo: map[string]*NodeInfo{
+			"assumed-node": nil,
+			"actual-node": {
+				requestedResource: &Resource{
+					MilliCPU: 200,
+					Memory:   500,
+				},
+				nonzeroRequest: &Resource{
+					MilliCPU: 200,
+					Memory:   500,
+				},
+				allocatableResource: &Resource{},
+				pods:                []*v1.Pod{updatedPod.DeepCopy()},
+				usedPorts:           map[string]bool{"TCP/0.0.0.0/90": true},
+			},
+		},
+	}}
+
+	for i, tt := range tests {
+		cache := newSchedulerCache(ttl, time.Second, nil)
+		for _, podToAssume := range tt.podsToAssume {
+			if err := assumeAndFinishBinding(cache, podToAssume, now); err != nil {
+				t.Fatalf("assumePod failed: %v", err)
+			}
+		}
+		for _, podToAdd := range tt.podsToAdd {
+			if err := cache.AddPod(podToAdd); err != nil {
+				t.Fatalf("AddPod failed: %v", err)
+			}
+		}
+		for _, podToUpdate := range tt.podsToUpdate {
+			if err := cache.UpdatePod(podToUpdate[0], podToUpdate[1]); err != nil {
+				t.Fatalf("UpdatePod failed: %v", err)
+			}
+		}
+		for nodeName, expected := range tt.wNodeInfo {
+			t.Log(nodeName)
+			n := cache.nodes[nodeName]
+			deepEqualWithoutGeneration(t, i, n, expected)
+		}
+	}
+}
+
 // TestAddPodAfterExpiration tests that a pod being Add()ed will be added back if expired.
 func TestAddPodAfterExpiration(t *testing.T) {
 	nodeName := "node"
 	ttl := 10 * time.Second
-	basePod := makeBasePod(t, nodeName, "test", "100m", "500", "", []v1.ContainerPort{{HostPort: 80}})
+	basePod := makeBasePod(t, nodeName, "test", "100m", "500", "", []v1.ContainerPort{{HostIP: "127.0.0.1", HostPort: 80, Protocol: "TCP"}})
 	tests := []struct {
 		pod *v1.Pod
 
@@ -320,7 +384,7 @@ func TestAddPodAfterExpiration(t *testing.T) {
 			},
 			allocatableResource: &Resource{},
 			pods:                []*v1.Pod{basePod},
-			usedPorts:           map[int]bool{80: true},
+			usedPorts:           map[string]bool{"TCP/127.0.0.1/80": true},
 		},
 	}}
 
@@ -350,8 +414,8 @@ func TestUpdatePod(t *testing.T) {
 	nodeName := "node"
 	ttl := 10 * time.Second
 	testPods := []*v1.Pod{
-		makeBasePod(t, nodeName, "test", "100m", "500", "", []v1.ContainerPort{{HostPort: 80}}),
-		makeBasePod(t, nodeName, "test", "200m", "1Ki", "", []v1.ContainerPort{{HostPort: 8080}}),
+		makeBasePod(t, nodeName, "test", "100m", "500", "", []v1.ContainerPort{{HostIP: "127.0.0.1", HostPort: 80, Protocol: "TCP"}}),
+		makeBasePod(t, nodeName, "test", "200m", "1Ki", "", []v1.ContainerPort{{HostIP: "127.0.0.1", HostPort: 8080, Protocol: "TCP"}}),
 	}
 	tests := []struct {
 		podsToAssume []*v1.Pod
@@ -373,7 +437,7 @@ func TestUpdatePod(t *testing.T) {
 			},
 			allocatableResource: &Resource{},
 			pods:                []*v1.Pod{testPods[1]},
-			usedPorts:           map[int]bool{8080: true},
+			usedPorts:           map[string]bool{"TCP/127.0.0.1/8080": true},
 		}, {
 			requestedResource: &Resource{
 				MilliCPU: 100,
@@ -385,7 +449,7 @@ func TestUpdatePod(t *testing.T) {
 			},
 			allocatableResource: &Resource{},
 			pods:                []*v1.Pod{testPods[0]},
-			usedPorts:           map[int]bool{80: true},
+			usedPorts:           map[string]bool{"TCP/127.0.0.1/80": true},
 		}},
 	}}
 
@@ -416,8 +480,8 @@ func TestExpireAddUpdatePod(t *testing.T) {
 	nodeName := "node"
 	ttl := 10 * time.Second
 	testPods := []*v1.Pod{
-		makeBasePod(t, nodeName, "test", "100m", "500", "", []v1.ContainerPort{{HostPort: 80}}),
-		makeBasePod(t, nodeName, "test", "200m", "1Ki", "", []v1.ContainerPort{{HostPort: 8080}}),
+		makeBasePod(t, nodeName, "test", "100m", "500", "", []v1.ContainerPort{{HostIP: "127.0.0.1", HostPort: 80, Protocol: "TCP"}}),
+		makeBasePod(t, nodeName, "test", "200m", "1Ki", "", []v1.ContainerPort{{HostIP: "127.0.0.1", HostPort: 8080, Protocol: "TCP"}}),
 	}
 	tests := []struct {
 		podsToAssume []*v1.Pod
@@ -440,7 +504,7 @@ func TestExpireAddUpdatePod(t *testing.T) {
 			},
 			allocatableResource: &Resource{},
 			pods:                []*v1.Pod{testPods[1]},
-			usedPorts:           map[int]bool{8080: true},
+			usedPorts:           map[string]bool{"TCP/127.0.0.1/8080": true},
 		}, {
 			requestedResource: &Resource{
 				MilliCPU: 100,
@@ -452,7 +516,7 @@ func TestExpireAddUpdatePod(t *testing.T) {
 			},
 			allocatableResource: &Resource{},
 			pods:                []*v1.Pod{testPods[0]},
-			usedPorts:           map[int]bool{80: true},
+			usedPorts:           map[string]bool{"TCP/127.0.0.1/80": true},
 		}},
 	}}
 
@@ -489,7 +553,7 @@ func TestExpireAddUpdatePod(t *testing.T) {
 // TestRemovePod tests after added pod is removed, its information should also be subtracted.
 func TestRemovePod(t *testing.T) {
 	nodeName := "node"
-	basePod := makeBasePod(t, nodeName, "test", "100m", "500", "", []v1.ContainerPort{{HostPort: 80}})
+	basePod := makeBasePod(t, nodeName, "test", "100m", "500", "", []v1.ContainerPort{{HostIP: "127.0.0.1", HostPort: 80, Protocol: "TCP"}})
 	tests := []struct {
 		pod       *v1.Pod
 		wNodeInfo *NodeInfo
@@ -506,7 +570,7 @@ func TestRemovePod(t *testing.T) {
 			},
 			allocatableResource: &Resource{},
 			pods:                []*v1.Pod{basePod},
-			usedPorts:           map[int]bool{80: true},
+			usedPorts:           map[string]bool{"TCP/127.0.0.1/80": true},
 		},
 	}}
 
@@ -531,7 +595,7 @@ func TestRemovePod(t *testing.T) {
 
 func TestForgetPod(t *testing.T) {
 	nodeName := "node"
-	basePod := makeBasePod(t, nodeName, "test", "100m", "500", "", []v1.ContainerPort{{HostPort: 80}})
+	basePod := makeBasePod(t, nodeName, "test", "100m", "500", "", []v1.ContainerPort{{HostIP: "127.0.0.1", HostPort: 80, Protocol: "TCP"}})
 	tests := []struct {
 		pods []*v1.Pod
 	}{{
@@ -546,10 +610,34 @@ func TestForgetPod(t *testing.T) {
 			if err := assumeAndFinishBinding(cache, pod, now); err != nil {
 				t.Fatalf("assumePod failed: %v", err)
 			}
+			isAssumed, err := cache.IsAssumedPod(pod)
+			if err != nil {
+				t.Fatalf("IsAssumedPod failed: %v.", err)
+			}
+			if !isAssumed {
+				t.Fatalf("Pod is expected to be assumed.")
+			}
+			assumedPod, err := cache.GetPod(pod)
+			if err != nil {
+				t.Fatalf("GetPod failed: %v.", err)
+			}
+			if assumedPod.Namespace != pod.Namespace {
+				t.Errorf("assumedPod.Namespace != pod.Namespace (%s != %s)", assumedPod.Namespace, pod.Namespace)
+			}
+			if assumedPod.Name != pod.Name {
+				t.Errorf("assumedPod.Name != pod.Name (%s != %s)", assumedPod.Name, pod.Name)
+			}
 		}
 		for _, pod := range tt.pods {
 			if err := cache.ForgetPod(pod); err != nil {
 				t.Fatalf("ForgetPod failed: %v", err)
+			}
+			isAssumed, err := cache.IsAssumedPod(pod)
+			if err != nil {
+				t.Fatalf("IsAssumedPod failed: %v.", err)
+			}
+			if isAssumed {
+				t.Fatalf("Pod is expected to be unassumed.")
 			}
 		}
 		cache.cleanupAssumedPods(now.Add(2 * ttl))
@@ -875,4 +963,108 @@ func setupCacheWithAssumedPods(b *testing.B, podNum int, assumedTime time.Time) 
 		}
 	}
 	return cache
+}
+
+func makePDB(name, namespace string, labels map[string]string, minAvailable int) *v1beta1.PodDisruptionBudget {
+	intstrMin := intstr.FromInt(minAvailable)
+	pdb := &v1beta1.PodDisruptionBudget{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: namespace,
+			Name:      name,
+			Labels:    labels,
+		},
+		Spec: v1beta1.PodDisruptionBudgetSpec{
+			MinAvailable: &intstrMin,
+			Selector:     &metav1.LabelSelector{MatchLabels: labels},
+		},
+	}
+
+	return pdb
+}
+
+// TestPDBOperations tests that a PDB will be add/updated/deleted correctly.
+func TestPDBOperations(t *testing.T) {
+	ttl := 10 * time.Second
+	testPDBs := []*v1beta1.PodDisruptionBudget{
+		makePDB("pdb0", "ns1", map[string]string{"tkey1": "tval1"}, 3),
+		makePDB("pdb1", "ns1", map[string]string{"tkey1": "tval1", "tkey2": "tval2"}, 1),
+		makePDB("pdb2", "ns3", map[string]string{"tkey3": "tval3", "tkey2": "tval2"}, 10),
+	}
+	updatedPDBs := []*v1beta1.PodDisruptionBudget{
+		makePDB("pdb0", "ns1", map[string]string{"tkey4": "tval4"}, 8),
+		makePDB("pdb1", "ns1", map[string]string{"tkey1": "tval1"}, 1),
+		makePDB("pdb2", "ns3", map[string]string{"tkey3": "tval3", "tkey1": "tval1", "tkey2": "tval2"}, 10),
+	}
+	tests := []struct {
+		pdbsToAdd    []*v1beta1.PodDisruptionBudget
+		pdbsToUpdate []*v1beta1.PodDisruptionBudget
+		pdbsToDelete []*v1beta1.PodDisruptionBudget
+		expectedPDBs []*v1beta1.PodDisruptionBudget // Expected PDBs after all operations
+	}{
+		{
+			pdbsToAdd:    []*v1beta1.PodDisruptionBudget{testPDBs[0]},
+			pdbsToUpdate: []*v1beta1.PodDisruptionBudget{testPDBs[0], testPDBs[1], testPDBs[0]},
+			expectedPDBs: []*v1beta1.PodDisruptionBudget{testPDBs[0], testPDBs[1]}, // both will be in the cache as they have different names
+		},
+		{
+			pdbsToAdd:    []*v1beta1.PodDisruptionBudget{testPDBs[0]},
+			pdbsToUpdate: []*v1beta1.PodDisruptionBudget{testPDBs[0], updatedPDBs[0]},
+			expectedPDBs: []*v1beta1.PodDisruptionBudget{updatedPDBs[0]},
+		},
+		{
+			pdbsToAdd:    []*v1beta1.PodDisruptionBudget{testPDBs[0], testPDBs[2]},
+			pdbsToUpdate: []*v1beta1.PodDisruptionBudget{testPDBs[0], updatedPDBs[0]},
+			pdbsToDelete: []*v1beta1.PodDisruptionBudget{testPDBs[0]},
+			expectedPDBs: []*v1beta1.PodDisruptionBudget{testPDBs[2]},
+		},
+	}
+
+	for _, test := range tests {
+		cache := newSchedulerCache(ttl, time.Second, nil)
+		for _, pdbToAdd := range test.pdbsToAdd {
+			if err := cache.AddPDB(pdbToAdd); err != nil {
+				t.Fatalf("AddPDB failed: %v", err)
+			}
+		}
+
+		for i := range test.pdbsToUpdate {
+			if i == 0 {
+				continue
+			}
+			if err := cache.UpdatePDB(test.pdbsToUpdate[i-1], test.pdbsToUpdate[i]); err != nil {
+				t.Fatalf("UpdatePDB failed: %v", err)
+			}
+		}
+
+		for _, pdb := range test.pdbsToDelete {
+			if err := cache.RemovePDB(pdb); err != nil {
+				t.Fatalf("RemovePDB failed: %v", err)
+			}
+		}
+
+		cachedPDBs, err := cache.ListPDBs(labels.Everything())
+		if err != nil {
+			t.Fatalf("ListPDBs failed: %v", err)
+		}
+		if len(cachedPDBs) != len(test.expectedPDBs) {
+			t.Errorf("Expected %d PDBs, got %d", len(test.expectedPDBs), len(cachedPDBs))
+		}
+		for _, pdb := range test.expectedPDBs {
+			found := false
+			// find it among the cached ones
+			for _, cpdb := range cachedPDBs {
+				if pdb.Name == cpdb.Name {
+					found = true
+					if !reflect.DeepEqual(pdb, cpdb) {
+						t.Errorf("%v is not equal to %v", pdb, cpdb)
+					}
+					break
+				}
+			}
+			if !found {
+				t.Errorf("PDB with name '%v' was not found in the cache.", pdb.Name)
+			}
+
+		}
+	}
 }

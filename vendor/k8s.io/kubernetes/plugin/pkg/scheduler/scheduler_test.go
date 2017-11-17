@@ -31,7 +31,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	clientcache "k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
-	"k8s.io/kubernetes/pkg/api"
+	"k8s.io/kubernetes/pkg/api/legacyscheme"
 	"k8s.io/kubernetes/plugin/pkg/scheduler/algorithm"
 	"k8s.io/kubernetes/plugin/pkg/scheduler/algorithm/predicates"
 	"k8s.io/kubernetes/plugin/pkg/scheduler/core"
@@ -186,7 +186,7 @@ func TestScheduler(t *testing.T) {
 				NextPod: func() *v1.Pod {
 					return item.sendPod
 				},
-				Recorder: eventBroadcaster.NewRecorder(api.Scheme, v1.EventSource{Component: "scheduler"}),
+				Recorder: eventBroadcaster.NewRecorder(legacyscheme.Scheme, v1.EventSource{Component: "scheduler"}),
 			},
 		}
 
@@ -256,7 +256,7 @@ func TestSchedulerNoPhantomPodAfterExpire(t *testing.T) {
 	case <-waitPodExpireChan:
 	case <-time.After(wait.ForeverTestTimeout):
 		close(timeout)
-		t.Fatalf("timeout after %v", wait.ForeverTestTimeout)
+		t.Fatalf("timeout timeout in waiting pod expire after %v", wait.ForeverTestTimeout)
 	}
 
 	// We use conflicted pod ports to incur fit predicate failure if first pod not removed.
@@ -273,7 +273,7 @@ func TestSchedulerNoPhantomPodAfterExpire(t *testing.T) {
 			t.Errorf("binding want=%v, get=%v", expectBinding, b)
 		}
 	case <-time.After(wait.ForeverTestTimeout):
-		t.Fatalf("timeout after %v", wait.ForeverTestTimeout)
+		t.Fatalf("timeout in binding after %v", wait.ForeverTestTimeout)
 	}
 }
 
@@ -307,7 +307,7 @@ func TestSchedulerNoPhantomPodAfterDelete(t *testing.T) {
 			t.Errorf("err want=%v, get=%v", expectErr, err)
 		}
 	case <-time.After(wait.ForeverTestTimeout):
-		t.Fatalf("timeout after %v", wait.ForeverTestTimeout)
+		t.Fatalf("timeout in fitting after %v", wait.ForeverTestTimeout)
 	}
 
 	// We mimic the workflow of cache behavior when a pod is removed by user.
@@ -334,7 +334,7 @@ func TestSchedulerNoPhantomPodAfterDelete(t *testing.T) {
 			t.Errorf("binding want=%v, get=%v", expectBinding, b)
 		}
 	case <-time.After(wait.ForeverTestTimeout):
-		t.Fatalf("timeout after %v", wait.ForeverTestTimeout)
+		t.Fatalf("timeout in binding after %v", wait.ForeverTestTimeout)
 	}
 }
 

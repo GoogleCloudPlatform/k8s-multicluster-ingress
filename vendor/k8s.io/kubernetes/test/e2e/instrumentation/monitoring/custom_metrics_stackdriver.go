@@ -104,6 +104,9 @@ func testAdapter(f *framework.Framework, kubeClient clientset.Interface, customM
 	}
 	defer CleanupAdapter()
 
+	_, err = kubeClient.Rbac().ClusterRoleBindings().Create(HPAPermissions)
+	defer kubeClient.Rbac().ClusterRoleBindings().Delete("custom-metrics-reader", &metav1.DeleteOptions{})
+
 	// Run application that exports the metric
 	err = createSDExporterPods(f, kubeClient)
 	if err != nil {
@@ -121,10 +124,21 @@ func testAdapter(f *framework.Framework, kubeClient clientset.Interface, customM
 	if err != nil {
 		framework.Failf("Failed to retrieve a list of supported metrics: %s", err)
 	}
+	gotCustomMetric, gotUnusedMetric := false, false
 	for _, resource := range resources.APIResources {
-		if resource.Name != "pods/"+CustomMetricName && resource.Name != "pods/"+UnusedMetricName {
+		if resource.Name == "pods/"+CustomMetricName {
+			gotCustomMetric = true
+		} else if resource.Name == "pods/"+UnusedMetricName {
+			gotUnusedMetric = true
+		} else {
 			framework.Failf("Unexpected metric %s. Only metric %s should be supported", resource.Name, CustomMetricName)
 		}
+	}
+	if !gotCustomMetric {
+		framework.Failf("Metric '%s' expected but not received", CustomMetricName)
+	}
+	if !gotUnusedMetric {
+		framework.Failf("Metric '%s' expected but not received", UnusedMetricName)
 	}
 	value, err := customMetricsClient.NamespacedMetrics(f.Namespace.Name).GetForObject(schema.GroupKind{Group: "", Kind: "Pod"}, stackdriverExporterPod1, CustomMetricName)
 	if err != nil {
@@ -141,33 +155,30 @@ func testAdapter(f *framework.Framework, kubeClient clientset.Interface, customM
 	if err != nil {
 		framework.Failf("Failed query: %s", err)
 	}
-	if len(values.Items) != 2 {
-		framework.Failf("Expected results for exactly 2 pods, but %v results received", len(values.Items))
+	if len(values.Items) != 1 {
+		framework.Failf("Expected results for exactly 1 pod, but %v results received", len(values.Items))
 	}
-	for _, value := range values.Items {
-		if (value.DescribedObject.Name == stackdriverExporterPod1 && value.Value.Value() != CustomMetricValue) ||
-			(value.DescribedObject.Name == stackdriverExporterPod2 && value.Value.Value() != UnusedMetricValue) {
-			framework.Failf("Unexpected metric value for metric %s and pod %s: %v", CustomMetricName, value.DescribedObject.Name, value.Value.Value())
-		}
+	if values.Items[0].DescribedObject.Name != stackdriverExporterPod1 || values.Items[0].Value.Value() != CustomMetricValue {
+		framework.Failf("Unexpected metric value for metric %s and pod %s: %v", CustomMetricName, values.Items[0].DescribedObject.Name, values.Items[0].Value.Value())
 	}
 }
 
 func cleanupSDExporterPod(f *framework.Framework, cs clientset.Interface) {
-	err := cs.Core().Pods(f.Namespace.Name).Delete(stackdriverExporterPod1, &metav1.DeleteOptions{})
+	err := cs.CoreV1().Pods(f.Namespace.Name).Delete(stackdriverExporterPod1, &metav1.DeleteOptions{})
 	if err != nil {
 		framework.Logf("Failed to delete %s pod: %v", stackdriverExporterPod1, err)
 	}
-	err = cs.Core().Pods(f.Namespace.Name).Delete(stackdriverExporterPod2, &metav1.DeleteOptions{})
+	err = cs.CoreV1().Pods(f.Namespace.Name).Delete(stackdriverExporterPod2, &metav1.DeleteOptions{})
 	if err != nil {
 		framework.Logf("Failed to delete %s pod: %v", stackdriverExporterPod2, err)
 	}
 }
 
 func createSDExporterPods(f *framework.Framework, cs clientset.Interface) error {
-	_, err := cs.Core().Pods(f.Namespace.Name).Create(StackdriverExporterPod(stackdriverExporterPod1, f.Namespace.Name, stackdriverExporterLabel, CustomMetricName, CustomMetricValue))
+	_, err := cs.CoreV1().Pods(f.Namespace.Name).Create(StackdriverExporterPod(stackdriverExporterPod1, f.Namespace.Name, stackdriverExporterLabel, CustomMetricName, CustomMetricValue))
 	if err != nil {
 		return err
 	}
-	_, err = cs.Core().Pods(f.Namespace.Name).Create(StackdriverExporterPod(stackdriverExporterPod2, f.Namespace.Name, stackdriverExporterLabel, UnusedMetricName, UnusedMetricValue))
+	_, err = cs.CoreV1().Pods(f.Namespace.Name).Create(StackdriverExporterPod(stackdriverExporterPod2, f.Namespace.Name, stackdriverExporterLabel, UnusedMetricName, UnusedMetricValue))
 	return err
 }

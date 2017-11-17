@@ -41,12 +41,12 @@ import (
 	"k8s.io/apimachinery/pkg/util/diff"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/sets"
-	"k8s.io/kubernetes/federation/apis/federation"
-	"k8s.io/kubernetes/pkg/api"
+	"k8s.io/kubernetes/pkg/api/legacyscheme"
 	"k8s.io/kubernetes/pkg/api/testapi"
 	"k8s.io/kubernetes/pkg/apis/apps"
 	"k8s.io/kubernetes/pkg/apis/autoscaling"
 	"k8s.io/kubernetes/pkg/apis/batch"
+	api "k8s.io/kubernetes/pkg/apis/core"
 	"k8s.io/kubernetes/pkg/apis/extensions"
 	"k8s.io/kubernetes/pkg/apis/policy"
 	"k8s.io/kubernetes/pkg/apis/storage"
@@ -55,8 +55,8 @@ import (
 )
 
 func init() {
-	api.Scheme.AddKnownTypes(testapi.Default.InternalGroupVersion(), &kubectltesting.TestStruct{})
-	api.Scheme.AddKnownTypes(api.Registry.GroupOrDie(api.GroupName).GroupVersion, &kubectltesting.TestStruct{})
+	legacyscheme.Scheme.AddKnownTypes(testapi.Default.InternalGroupVersion(), &kubectltesting.TestStruct{})
+	legacyscheme.Scheme.AddKnownTypes(legacyscheme.Registry.GroupOrDie(api.GroupName).GroupVersion, &kubectltesting.TestStruct{})
 }
 
 var testData = kubectltesting.TestStruct{
@@ -78,8 +78,8 @@ func TestVersionedPrinter(t *testing.T) {
 			}
 			return nil
 		}),
-		api.Scheme,
-		api.Registry.GroupOrDie(api.GroupName).GroupVersion,
+		legacyscheme.Scheme,
+		legacyscheme.Registry.GroupOrDie(api.GroupName).GroupVersion,
 	)
 	if err := p.PrintObj(original, nil); err != nil {
 		t.Errorf("unexpected error: %v", err)
@@ -96,7 +96,7 @@ func TestPrintDefault(t *testing.T) {
 	}
 
 	for _, test := range printerTests {
-		printer, err := printers.GetStandardPrinter(&printers.OutputOptions{AllowMissingKeys: false}, false, nil, nil, api.Codecs.LegacyCodec(api.Registry.EnabledVersions()...), []runtime.Decoder{api.Codecs.UniversalDecoder(), unstructured.UnstructuredJSONScheme}, printers.PrintOptions{})
+		printer, err := printers.GetStandardPrinter(&printers.OutputOptions{AllowMissingKeys: false}, false, nil, nil, legacyscheme.Codecs.LegacyCodec(legacyscheme.Registry.EnabledVersions()...), []runtime.Decoder{legacyscheme.Codecs.UniversalDecoder(), unstructured.UnstructuredJSONScheme}, printers.PrintOptions{})
 		if err != nil {
 			t.Errorf("in %s, unexpected error: %#v", test.Name, err)
 		}
@@ -247,7 +247,7 @@ func TestPrinter(t *testing.T) {
 		},
 	}
 	emptyListTest := &api.PodList{}
-	testapi, err := api.Scheme.ConvertToVersion(podTest, api.Registry.GroupOrDie(api.GroupName).GroupVersion)
+	testapi, err := legacyscheme.Scheme.ConvertToVersion(podTest, legacyscheme.Registry.GroupOrDie(api.GroupName).GroupVersion)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -271,12 +271,12 @@ func TestPrinter(t *testing.T) {
 	}
 	for _, test := range printerTests {
 		buf := bytes.NewBuffer([]byte{})
-		printer, err := printers.GetStandardPrinter(test.OutputOpts, false, api.Registry.RESTMapper(api.Registry.EnabledVersions()...), api.Scheme, api.Codecs.LegacyCodec(api.Registry.EnabledVersions()...), []runtime.Decoder{api.Codecs.UniversalDecoder(), unstructured.UnstructuredJSONScheme}, printers.PrintOptions{})
+		printer, err := printers.GetStandardPrinter(test.OutputOpts, false, legacyscheme.Registry.RESTMapper(legacyscheme.Registry.EnabledVersions()...), legacyscheme.Scheme, legacyscheme.Codecs.LegacyCodec(legacyscheme.Registry.EnabledVersions()...), []runtime.Decoder{legacyscheme.Codecs.UniversalDecoder(), unstructured.UnstructuredJSONScheme}, printers.PrintOptions{})
 		if err != nil {
 			t.Errorf("in %s, unexpected error: %#v", test.Name, err)
 		}
 		if printer.IsGeneric() && len(test.OutputVersions) > 0 {
-			printer = printers.NewVersionedPrinter(printer, api.Scheme, test.OutputVersions...)
+			printer = printers.NewVersionedPrinter(printer, legacyscheme.Scheme, test.OutputVersions...)
 		}
 		if err := printer.PrintObj(test.Input, buf); err != nil {
 			t.Errorf("in %s, unexpected error: %#v", test.Name, err)
@@ -301,7 +301,7 @@ func TestBadPrinter(t *testing.T) {
 		{"unknown format", &printers.OutputOptions{FmtType: "anUnknownFormat", FmtArg: "", AllowMissingKeys: false}, fmt.Errorf("output format \"anUnknownFormat\" not recognized")},
 	}
 	for _, test := range badPrinterTests {
-		_, err := printers.GetStandardPrinter(test.OutputOpts, false, api.Registry.RESTMapper(api.Registry.EnabledVersions()...), api.Scheme, api.Codecs.LegacyCodec(api.Registry.EnabledVersions()...), []runtime.Decoder{api.Codecs.UniversalDecoder(), unstructured.UnstructuredJSONScheme}, printers.PrintOptions{})
+		_, err := printers.GetStandardPrinter(test.OutputOpts, false, legacyscheme.Registry.RESTMapper(legacyscheme.Registry.EnabledVersions()...), legacyscheme.Scheme, legacyscheme.Codecs.LegacyCodec(legacyscheme.Registry.EnabledVersions()...), []runtime.Decoder{legacyscheme.Codecs.UniversalDecoder(), unstructured.UnstructuredJSONScheme}, printers.PrintOptions{})
 		if err == nil || err.Error() != test.Error.Error() {
 			t.Errorf("in %s, expect %s, got %s", test.Name, test.Error, err)
 		}
@@ -495,7 +495,7 @@ func TestNamePrinter(t *testing.T) {
 			"pods/foo\npods/bar\n"},
 	}
 	outputOpts := &printers.OutputOptions{FmtType: "name", AllowMissingKeys: false}
-	printer, _ := printers.GetStandardPrinter(outputOpts, false, api.Registry.RESTMapper(api.Registry.EnabledVersions()...), api.Scheme, api.Codecs.LegacyCodec(api.Registry.EnabledVersions()...), []runtime.Decoder{api.Codecs.UniversalDecoder(), unstructured.UnstructuredJSONScheme}, printers.PrintOptions{})
+	printer, _ := printers.GetStandardPrinter(outputOpts, false, legacyscheme.Registry.RESTMapper(legacyscheme.Registry.EnabledVersions()...), legacyscheme.Scheme, legacyscheme.Codecs.LegacyCodec(legacyscheme.Registry.EnabledVersions()...), []runtime.Decoder{legacyscheme.Codecs.UniversalDecoder(), unstructured.UnstructuredJSONScheme}, printers.PrintOptions{})
 	for name, item := range tests {
 		buff := &bytes.Buffer{}
 		err := printer.PrintObj(item.obj, buff)
@@ -610,7 +610,7 @@ func TestTemplateStrings(t *testing.T) {
 		t.Fatalf("tmpl fail: %v", err)
 	}
 
-	printer := printers.NewVersionedPrinter(p, api.Scheme, api.Registry.GroupOrDie(api.GroupName).GroupVersion)
+	printer := printers.NewVersionedPrinter(p, legacyscheme.Scheme, legacyscheme.Registry.GroupOrDie(api.GroupName).GroupVersion)
 
 	for name, item := range table {
 		buffer := &bytes.Buffer{}
@@ -643,19 +643,19 @@ func TestPrinters(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	templatePrinter = printers.NewVersionedPrinter(templatePrinter, api.Scheme, v1.SchemeGroupVersion)
+	templatePrinter = printers.NewVersionedPrinter(templatePrinter, legacyscheme.Scheme, v1.SchemeGroupVersion)
 
 	templatePrinter2, err = printers.NewTemplatePrinter([]byte("{{len .items}}"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	templatePrinter2 = printers.NewVersionedPrinter(templatePrinter2, api.Scheme, v1.SchemeGroupVersion)
+	templatePrinter2 = printers.NewVersionedPrinter(templatePrinter2, legacyscheme.Scheme, v1.SchemeGroupVersion)
 
 	jsonpathPrinter, err = printers.NewJSONPathPrinter("{.metadata.name}")
 	if err != nil {
 		t.Fatal(err)
 	}
-	jsonpathPrinter = printers.NewVersionedPrinter(jsonpathPrinter, api.Scheme, v1.SchemeGroupVersion)
+	jsonpathPrinter = printers.NewVersionedPrinter(jsonpathPrinter, legacyscheme.Scheme, v1.SchemeGroupVersion)
 
 	allPrinters := map[string]printers.ResourcePrinter{
 		"humanReadable": printers.NewHumanReadablePrinter(nil, nil, printers.PrintOptions{
@@ -668,9 +668,9 @@ func TestPrinters(t *testing.T) {
 		"template2":            templatePrinter2,
 		"jsonpath":             jsonpathPrinter,
 		"name": &printers.NamePrinter{
-			Typer:    api.Scheme,
-			Decoders: []runtime.Decoder{api.Codecs.UniversalDecoder(), unstructured.UnstructuredJSONScheme},
-			Mapper:   api.Registry.RESTMapper(api.Registry.EnabledVersions()...),
+			Typer:    legacyscheme.Scheme,
+			Decoders: []runtime.Decoder{legacyscheme.Codecs.UniversalDecoder(), unstructured.UnstructuredJSONScheme},
+			Mapper:   legacyscheme.Registry.RESTMapper(legacyscheme.Registry.EnabledVersions()...),
 		},
 	}
 	AddHandlers((allPrinters["humanReadable"]).(*printers.HumanReadablePrinter))
@@ -1660,6 +1660,65 @@ func TestPrintPod(t *testing.T) {
 
 	for i, test := range tests {
 		rows, err := printPod(&test.pod, printers.PrintOptions{ShowAll: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for i := range rows {
+			rows[i].Object.Object = nil
+		}
+		if !reflect.DeepEqual(test.expect, rows) {
+			t.Errorf("%d mismatch: %s", i, diff.ObjectReflectDiff(test.expect, rows))
+		}
+	}
+}
+
+func TestPrintPodwide(t *testing.T) {
+	tests := []struct {
+		pod    api.Pod
+		expect []metav1alpha1.TableRow
+	}{
+		{
+			// Test when the NodeName and PodIP are not none
+			api.Pod{
+				ObjectMeta: metav1.ObjectMeta{Name: "test1"},
+				Spec: api.PodSpec{
+					Containers: make([]api.Container, 2),
+					NodeName:   "test1",
+				},
+				Status: api.PodStatus{
+					Phase: "podPhase",
+					PodIP: "1.1.1.1",
+					ContainerStatuses: []api.ContainerStatus{
+						{Ready: true, RestartCount: 3, State: api.ContainerState{Running: &api.ContainerStateRunning{}}},
+						{RestartCount: 3},
+					},
+				},
+			},
+			[]metav1alpha1.TableRow{{Cells: []interface{}{"test1", "1/2", "podPhase", 6, "<unknown>", "1.1.1.1", "test1"}}},
+		},
+		{
+			// Test when the NodeName and PodIP are none
+			api.Pod{
+				ObjectMeta: metav1.ObjectMeta{Name: "test2"},
+				Spec: api.PodSpec{
+					Containers: make([]api.Container, 2),
+					NodeName:   "",
+				},
+				Status: api.PodStatus{
+					Phase: "podPhase",
+					PodIP: "",
+					ContainerStatuses: []api.ContainerStatus{
+						{Ready: true, RestartCount: 3, State: api.ContainerState{Running: &api.ContainerStateRunning{}}},
+						{State: api.ContainerState{Waiting: &api.ContainerStateWaiting{Reason: "ContainerWaitingReason"}}, RestartCount: 3},
+					},
+				},
+			},
+			[]metav1alpha1.TableRow{{Cells: []interface{}{"test2", "1/2", "ContainerWaitingReason", 6, "<unknown>", "<none>", "<none>"}}},
+		},
+	}
+
+	for i, test := range tests {
+		rows, err := printPod(&test.pod, printers.PrintOptions{Wide: true})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -2747,7 +2806,7 @@ func TestAllowMissingKeys(t *testing.T) {
 	}
 	for _, test := range tests {
 		buf := bytes.NewBuffer([]byte{})
-		printer, err := printers.GetStandardPrinter(test.OutputOpts, false, api.Registry.RESTMapper(api.Registry.EnabledVersions()...), api.Scheme, api.Codecs.LegacyCodec(api.Registry.EnabledVersions()...), []runtime.Decoder{api.Codecs.UniversalDecoder(), unstructured.UnstructuredJSONScheme}, printers.PrintOptions{})
+		printer, err := printers.GetStandardPrinter(test.OutputOpts, false, legacyscheme.Registry.RESTMapper(legacyscheme.Registry.EnabledVersions()...), legacyscheme.Scheme, legacyscheme.Codecs.LegacyCodec(legacyscheme.Registry.EnabledVersions()...), []runtime.Decoder{legacyscheme.Codecs.UniversalDecoder(), unstructured.UnstructuredJSONScheme}, printers.PrintOptions{})
 		if err != nil {
 			t.Errorf("in %s, unexpected error: %#v", test.Name, err)
 		}
@@ -3131,126 +3190,5 @@ func TestPrintStorageClass(t *testing.T) {
 			t.Fatalf("Expected: %s, got: %s", test.expect, buf.String())
 		}
 		buf.Reset()
-	}
-}
-
-func TestPrintCluster(t *testing.T) {
-	tests := []struct {
-		cluster    federation.Cluster
-		expect     []metav1alpha1.TableRow
-		showLabels bool
-	}{
-		{
-			federation.Cluster{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:              "cluster1",
-					CreationTimestamp: metav1.Time{Time: time.Now().Add(1.9e9)},
-				},
-			},
-			[]metav1alpha1.TableRow{{Cells: []interface{}{"cluster1", "Unknown", "0s"}}},
-			false,
-		},
-		{
-			federation.Cluster{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:              "cluster2",
-					CreationTimestamp: metav1.Time{Time: time.Now().Add(1.9e9)},
-					Labels:            map[string]string{"label1": "", "label2": "cluster"},
-				},
-				Status: federation.ClusterStatus{
-					Conditions: []federation.ClusterCondition{
-						{
-							Status: api.ConditionTrue,
-							Type:   federation.ClusterReady,
-						},
-						{
-							Status: api.ConditionFalse,
-							Type:   federation.ClusterOffline,
-						},
-					},
-				},
-			},
-			[]metav1alpha1.TableRow{{Cells: []interface{}{"cluster2", "Ready,NotOffline", "0s", "label1=,label2=cluster"}}},
-			true,
-		},
-	}
-
-	for i, test := range tests {
-		rows, err := printCluster(&test.cluster, printers.PrintOptions{ShowLabels: test.showLabels})
-		if err != nil {
-			t.Fatal(err)
-		}
-		for i := range rows {
-			rows[i].Object.Object = nil
-		}
-		if !reflect.DeepEqual(test.expect, rows) {
-			t.Errorf("%d mismatch: %s", i, diff.ObjectReflectDiff(test.expect, rows))
-		}
-	}
-}
-
-func TestPrintClusterList(t *testing.T) {
-	tests := []struct {
-		clusters   federation.ClusterList
-		expect     []metav1alpha1.TableRow
-		showLabels bool
-	}{
-		// Test podList's pod: name, num of containers, restarts, container ready status
-		{
-			federation.ClusterList{
-				Items: []federation.Cluster{
-					{
-						ObjectMeta: metav1.ObjectMeta{
-							Name:              "cluster1",
-							CreationTimestamp: metav1.Time{Time: time.Now().Add(1.9e9)},
-						},
-						Status: federation.ClusterStatus{
-							Conditions: []federation.ClusterCondition{
-								{
-									Status: api.ConditionTrue,
-									Type:   federation.ClusterReady,
-								},
-							},
-						},
-					},
-					{
-						ObjectMeta: metav1.ObjectMeta{
-							Name:              "cluster2",
-							CreationTimestamp: metav1.Time{Time: time.Now().Add(1.9e9)},
-							Labels:            map[string]string{"label1": "", "label2": "cluster2"},
-						},
-						Status: federation.ClusterStatus{
-							Conditions: []federation.ClusterCondition{
-								{
-									Status: api.ConditionTrue,
-									Type:   federation.ClusterReady,
-								},
-								{
-									Status: api.ConditionFalse,
-									Type:   federation.ClusterOffline,
-								},
-							},
-						},
-					},
-				},
-			},
-			[]metav1alpha1.TableRow{{Cells: []interface{}{"cluster1", "Ready", "0s", "<none>"}},
-				{Cells: []interface{}{"cluster2", "Ready,NotOffline", "0s", "label1=,label2=cluster2"}}},
-			true,
-		},
-	}
-
-	for _, test := range tests {
-		rows, err := printClusterList(&test.clusters, printers.PrintOptions{ShowLabels: test.showLabels})
-
-		if err != nil {
-			t.Fatal(err)
-		}
-		for i := range rows {
-			rows[i].Object.Object = nil
-		}
-		if !reflect.DeepEqual(test.expect, rows) {
-			t.Errorf("mismatch: %s", diff.ObjectReflectDiff(test.expect, rows))
-		}
 	}
 }

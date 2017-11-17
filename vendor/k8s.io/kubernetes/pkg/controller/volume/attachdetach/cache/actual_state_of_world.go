@@ -173,7 +173,7 @@ type actualStateOfWorld struct {
 	sync.RWMutex
 }
 
-// The volume object represents a volume the the attach/detach controller
+// The volume object represents a volume the attach/detach controller
 // believes to be successfully attached to a node it is managing.
 type attachedVolume struct {
 	// volumeName contains the unique identifier for this volume.
@@ -475,7 +475,6 @@ func (asw *actualStateOfWorld) updateNodeStatusUpdateNeeded(nodeName types.NodeN
 		// should not happen
 		errMsg := fmt.Sprintf("Failed to set statusUpdateNeeded to needed %t because nodeName=%q  does not exist",
 			needed, nodeName)
-		glog.Errorf(errMsg)
 		return fmt.Errorf(errMsg)
 	}
 

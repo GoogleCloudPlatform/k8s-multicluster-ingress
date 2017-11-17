@@ -18,13 +18,15 @@ package predicates
 
 import (
 	"fmt"
+	"os"
 	"reflect"
+	"strconv"
 	"testing"
 
 	"k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	v1helper "k8s.io/kubernetes/pkg/api/v1/helper"
+	v1helper "k8s.io/kubernetes/pkg/apis/core/v1/helper"
 	kubeletapis "k8s.io/kubernetes/pkg/kubelet/apis"
 	"k8s.io/kubernetes/plugin/pkg/scheduler/algorithm"
 	"k8s.io/kubernetes/plugin/pkg/scheduler/schedulercache"
@@ -552,10 +554,17 @@ func TestPodFitsHost(t *testing.T) {
 	}
 }
 
-func newPod(host string, hostPorts ...int) *v1.Pod {
+func newPod(host string, hostPortInfos ...string) *v1.Pod {
 	networkPorts := []v1.ContainerPort{}
-	for _, port := range hostPorts {
-		networkPorts = append(networkPorts, v1.ContainerPort{HostPort: int32(port)})
+	for _, portInfo := range hostPortInfos {
+		hostPortInfo := decode(portInfo)
+		hostPort, _ := strconv.Atoi(hostPortInfo.hostPort)
+
+		networkPorts = append(networkPorts, v1.ContainerPort{
+			HostIP:   hostPortInfo.hostIP,
+			HostPort: int32(hostPort),
+			Protocol: v1.Protocol(hostPortInfo.protocol),
+		})
 	}
 	return &v1.Pod{
 		Spec: v1.PodSpec{
@@ -583,32 +592,88 @@ func TestPodFitsHostPorts(t *testing.T) {
 			test:     "nothing running",
 		},
 		{
-			pod: newPod("m1", 8080),
+			pod: newPod("m1", "UDP/127.0.0.1/8080"),
 			nodeInfo: schedulercache.NewNodeInfo(
-				newPod("m1", 9090)),
+				newPod("m1", "UDP/127.0.0.1/9090")),
 			fits: true,
 			test: "other port",
 		},
 		{
-			pod: newPod("m1", 8080),
+			pod: newPod("m1", "UDP/127.0.0.1/8080"),
 			nodeInfo: schedulercache.NewNodeInfo(
-				newPod("m1", 8080)),
+				newPod("m1", "UDP/127.0.0.1/8080")),
 			fits: false,
-			test: "same port",
+			test: "same udp port",
 		},
 		{
-			pod: newPod("m1", 8000, 8080),
+			pod: newPod("m1", "TCP/127.0.0.1/8080"),
 			nodeInfo: schedulercache.NewNodeInfo(
-				newPod("m1", 8080)),
+				newPod("m1", "TCP/127.0.0.1/8080")),
 			fits: false,
-			test: "second port",
+			test: "same tcp port",
 		},
 		{
-			pod: newPod("m1", 8000, 8080),
+			pod: newPod("m1", "TCP/127.0.0.1/8080"),
 			nodeInfo: schedulercache.NewNodeInfo(
-				newPod("m1", 8001, 8080)),
+				newPod("m1", "TCP/127.0.0.2/8080")),
+			fits: true,
+			test: "different host ip",
+		},
+		{
+			pod: newPod("m1", "UDP/127.0.0.1/8080"),
+			nodeInfo: schedulercache.NewNodeInfo(
+				newPod("m1", "TCP/127.0.0.1/8080")),
+			fits: true,
+			test: "different protocol",
+		},
+		{
+			pod: newPod("m1", "UDP/127.0.0.1/8000", "UDP/127.0.0.1/8080"),
+			nodeInfo: schedulercache.NewNodeInfo(
+				newPod("m1", "UDP/127.0.0.1/8080")),
 			fits: false,
-			test: "second port",
+			test: "second udp port conflict",
+		},
+		{
+			pod: newPod("m1", "TCP/127.0.0.1/8001", "UDP/127.0.0.1/8080"),
+			nodeInfo: schedulercache.NewNodeInfo(
+				newPod("m1", "TCP/127.0.0.1/8001", "UDP/127.0.0.1/8081")),
+			fits: false,
+			test: "first tcp port conflict",
+		},
+		{
+			pod: newPod("m1", "TCP/0.0.0.0/8001"),
+			nodeInfo: schedulercache.NewNodeInfo(
+				newPod("m1", "TCP/127.0.0.1/8001")),
+			fits: false,
+			test: "first tcp port conflict due to 0.0.0.0 hostIP",
+		},
+		{
+			pod: newPod("m1", "TCP/10.0.10.10/8001", "TCP/0.0.0.0/8001"),
+			nodeInfo: schedulercache.NewNodeInfo(
+				newPod("m1", "TCP/127.0.0.1/8001")),
+			fits: false,
+			test: "TCP hostPort conflict due to 0.0.0.0 hostIP",
+		},
+		{
+			pod: newPod("m1", "TCP/127.0.0.1/8001"),
+			nodeInfo: schedulercache.NewNodeInfo(
+				newPod("m1", "TCP/0.0.0.0/8001")),
+			fits: false,
+			test: "second tcp port conflict to 0.0.0.0 hostIP",
+		},
+		{
+			pod: newPod("m1", "UDP/127.0.0.1/8001"),
+			nodeInfo: schedulercache.NewNodeInfo(
+				newPod("m1", "TCP/0.0.0.0/8001")),
+			fits: true,
+			test: "second different protocol",
+		},
+		{
+			pod: newPod("m1", "UDP/127.0.0.1/8001"),
+			nodeInfo: schedulercache.NewNodeInfo(
+				newPod("m1", "TCP/0.0.0.0/8001", "UDP/0.0.0.0/8001")),
+			fits: false,
+			test: "UDP hostPort conflict due to 0.0.0.0 hostIP",
 		},
 	}
 	expectedFailureReasons := []algorithm.PredicateFailureReason{ErrPodNotFitsHostPorts}
@@ -629,29 +694,28 @@ func TestPodFitsHostPorts(t *testing.T) {
 
 func TestGetUsedPorts(t *testing.T) {
 	tests := []struct {
-		pods []*v1.Pod
-
-		ports map[int]bool
+		pods  []*v1.Pod
+		ports map[string]bool
 	}{
 		{
 			[]*v1.Pod{
-				newPod("m1", 9090),
+				newPod("m1", "UDP/127.0.0.1/9090"),
 			},
-			map[int]bool{9090: true},
+			map[string]bool{"UDP/127.0.0.1/9090": true},
 		},
 		{
 			[]*v1.Pod{
-				newPod("m1", 9090),
-				newPod("m1", 9091),
+				newPod("m1", "UDP/127.0.0.1/9090"),
+				newPod("m1", "UDP/127.0.0.1/9091"),
 			},
-			map[int]bool{9090: true, 9091: true},
+			map[string]bool{"UDP/127.0.0.1/9090": true, "UDP/127.0.0.1/9091": true},
 		},
 		{
 			[]*v1.Pod{
-				newPod("m1", 9090),
-				newPod("m2", 9091),
+				newPod("m1", "TCP/0.0.0.0/9090"),
+				newPod("m2", "UDP/127.0.0.1/9091"),
 			},
-			map[int]bool{9090: true, 9091: true},
+			map[string]bool{"TCP/0.0.0.0/9090": true, "UDP/127.0.0.1/9091": true},
 		},
 	}
 
@@ -663,7 +727,7 @@ func TestGetUsedPorts(t *testing.T) {
 	}
 }
 
-func TestDiskConflicts(t *testing.T) {
+func TestGCEDiskConflicts(t *testing.T) {
 	volState := v1.PodSpec{
 		Volumes: []v1.Volume{
 			{
@@ -1989,24 +2053,11 @@ func TestEBSVolumeCountConflicts(t *testing.T) {
 		},
 	}
 
-	filter := VolumeFilter{
-		FilterVolume: func(vol *v1.Volume) (string, bool) {
-			if vol.AWSElasticBlockStore != nil {
-				return vol.AWSElasticBlockStore.VolumeID, true
-			}
-			return "", false
-		},
-		FilterPersistentVolume: func(pv *v1.PersistentVolume) (string, bool) {
-			if pv.Spec.AWSElasticBlockStore != nil {
-				return pv.Spec.AWSElasticBlockStore.VolumeID, true
-			}
-			return "", false
-		},
-	}
 	expectedFailureReasons := []algorithm.PredicateFailureReason{ErrMaxVolumeCountExceeded}
 
 	for _, test := range tests {
-		pred := NewMaxPDVolumeCountPredicate(filter, test.maxVols, pvInfo, pvcInfo)
+		os.Setenv(KubeMaxPDVols, strconv.Itoa(test.maxVols))
+		pred := NewMaxPDVolumeCountPredicate(EBSVolumeFilterType, pvInfo, pvcInfo)
 		fits, reasons, err := pred(test.newPod, PredicateMetadata(test.newPod, nil), schedulercache.NewNodeInfo(test.existingPods...))
 		if err != nil {
 			t.Errorf("%s: unexpected error: %v", test.test, err)
@@ -3891,5 +3942,45 @@ func TestVolumeZonePredicateMultiZone(t *testing.T) {
 			t.Errorf("%s: expected %v got %v", test.Name, test.Fits, fits)
 		}
 
+	}
+}
+
+func TestGetMaxVols(t *testing.T) {
+	previousValue := os.Getenv(KubeMaxPDVols)
+	defaultValue := 39
+
+	tests := []struct {
+		rawMaxVols string
+		expected   int
+		test       string
+	}{
+		{
+			rawMaxVols: "invalid",
+			expected:   defaultValue,
+			test:       "Unable to parse maximum PD volumes value, using default value",
+		},
+		{
+			rawMaxVols: "-2",
+			expected:   defaultValue,
+			test:       "Maximum PD volumes must be a positive value, using default value",
+		},
+		{
+			rawMaxVols: "40",
+			expected:   40,
+			test:       "Parse maximum PD volumes value from env",
+		},
+	}
+
+	for _, test := range tests {
+		os.Setenv(KubeMaxPDVols, test.rawMaxVols)
+		result := getMaxVols(defaultValue)
+		if result != test.expected {
+			t.Errorf("%s: expected %v got %v", test.test, test.expected, result)
+		}
+	}
+
+	os.Unsetenv(KubeMaxPDVols)
+	if previousValue != "" {
+		os.Setenv(KubeMaxPDVols, previousValue)
 	}
 }

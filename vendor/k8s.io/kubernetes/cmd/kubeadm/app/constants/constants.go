@@ -24,7 +24,6 @@ import (
 	"time"
 
 	"k8s.io/api/core/v1"
-	"k8s.io/kubernetes/pkg/controller/service"
 	"k8s.io/kubernetes/pkg/util/version"
 )
 
@@ -74,7 +73,7 @@ const (
 	FrontProxyCACertAndKeyBaseName = "front-proxy-ca"
 	// FrontProxyCACertName defines front proxy CA certificate name
 	FrontProxyCACertName = "front-proxy-ca.crt"
-	// FrontProxyCAKeyName defaines front proxy CA key name
+	// FrontProxyCAKeyName defines front proxy CA key name
 	FrontProxyCAKeyName = "front-proxy-ca.key"
 
 	// FrontProxyClientCertAndKeyBaseName defines front proxy certificate and key base name
@@ -132,7 +131,8 @@ const (
 	DefaultTokenDuration = 24 * time.Hour
 
 	// LabelNodeRoleMaster specifies that a node is a master
-	LabelNodeRoleMaster = service.LabelNodeRoleMaster
+	// This is a duplicate definition of the constant in pkg/controller/service/service_controller.go
+	LabelNodeRoleMaster = "node-role.kubernetes.io/master"
 
 	// MasterConfigurationConfigMap specifies in what ConfigMap in the kube-system namespace the `kubeadm init` configuration should be stored
 	MasterConfigurationConfigMap = "kubeadm-config"
@@ -171,6 +171,11 @@ const (
 
 	// DefaultCIImageRepository points to image registry where CI uploads images from ci-cross build job
 	DefaultCIImageRepository = "gcr.io/kubernetes-ci-images"
+
+	// CoreDNS defines a variable used internally when referring to the CoreDNS addon for a cluster
+	CoreDNS = "CoreDNS"
+	// KubeDNS defines a variable used internally when referring to the kube-dns addon for a cluster
+	KubeDNS = "kube-dns"
 )
 
 var (
@@ -200,10 +205,6 @@ var (
 
 	// MinimumControlPlaneVersion specifies the minimum control plane version kubeadm can deploy
 	MinimumControlPlaneVersion = version.MustParseSemantic("v1.8.0")
-
-	// MinimumCSRAutoApprovalClusterRolesVersion defines whether kubeadm can rely on the built-in CSR approval ClusterRole or not (note, the binding is always created by kubeadm!)
-	// TODO: Remove this when the v1.9 cycle starts and we bump the minimum supported version to v1.8.0
-	MinimumCSRAutoApprovalClusterRolesVersion = version.MustParseSemantic("v1.8.0-alpha.3")
 
 	// MinimumKubeletVersion specifies the minimum version of kubelet which kubeadm supports
 	MinimumKubeletVersion = version.MustParseSemantic("v1.8.0")

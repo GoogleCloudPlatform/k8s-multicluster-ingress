@@ -33,7 +33,7 @@ import (
 	"k8s.io/kubernetes/cmd/kubeadm/app/util/apiclient"
 	configutil "k8s.io/kubernetes/cmd/kubeadm/app/util/config"
 	dryrunutil "k8s.io/kubernetes/cmd/kubeadm/app/util/dryrun"
-	"k8s.io/kubernetes/pkg/api"
+	"k8s.io/kubernetes/pkg/api/legacyscheme"
 	"k8s.io/kubernetes/pkg/util/version"
 )
 
@@ -66,7 +66,7 @@ func NewCmdApply(parentFlags *cmdUpgradeFlags) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "apply [version]",
-		Short: "Upgrade your Kubernetes cluster to the specified version",
+		Short: "Upgrade your Kubernetes cluster to the specified version.",
 		Run: func(cmd *cobra.Command, args []string) {
 			// Ensure the user is root
 			err := runPreflightChecks(flags.parent.skipPreFlight)
@@ -90,7 +90,7 @@ func NewCmdApply(parentFlags *cmdUpgradeFlags) *cobra.Command {
 	// Specify the valid flags specific for apply
 	cmd.Flags().BoolVarP(&flags.nonInteractiveMode, "yes", "y", flags.nonInteractiveMode, "Perform the upgrade and do not prompt for confirmation (non-interactive mode).")
 	cmd.Flags().BoolVarP(&flags.force, "force", "f", flags.force, "Force upgrading although some requirements might not be met. This also implies non-interactive mode.")
-	cmd.Flags().BoolVar(&flags.dryRun, "dry-run", flags.dryRun, "Do not change any state, just output what actions would be applied.")
+	cmd.Flags().BoolVar(&flags.dryRun, "dry-run", flags.dryRun, "Do not change any state, just output what actions would be performed.")
 	cmd.Flags().DurationVar(&flags.imagePullTimeout, "image-pull-timeout", flags.imagePullTimeout, "The maximum amount of time to wait for the control plane pods to be downloaded.")
 
 	return cmd
@@ -105,7 +105,7 @@ func NewCmdApply(parentFlags *cmdUpgradeFlags) *cobra.Command {
 // - Makes sure the control plane images are available locally on the master(s)
 // - Upgrades the control plane components
 // - Applies the other resources that'd be created with kubeadm init as well, like
-//   - Creating the RBAC rules for the Bootstrap Tokens and the cluster-info ConfigMap
+//   - Creating the RBAC rules for the bootstrap tokens and the cluster-info ConfigMap
 //   - Applying new kube-dns and kube-proxy manifests
 //   - Uploads the newly used configuration to the cluster ConfigMap
 func RunApply(flags *applyFlags) error {
@@ -121,7 +121,7 @@ func RunApply(flags *applyFlags) error {
 
 	// Grab the external, versioned configuration and convert it to the internal type for usage here later
 	internalcfg := &kubeadmapi.MasterConfiguration{}
-	api.Scheme.Convert(upgradeVars.cfg, internalcfg, nil)
+	legacyscheme.Scheme.Convert(upgradeVars.cfg, internalcfg, nil)
 
 	// Validate requested and validate actual version
 	if err := configutil.NormalizeKubernetesVersion(internalcfg); err != nil {
@@ -158,8 +158,8 @@ func RunApply(flags *applyFlags) error {
 		return fmt.Errorf("[upgrade/apply] FATAL: %v", err)
 	}
 
-	// Upgrade RBAC rules and addons. Optionally, if needed, perform some extra task for a specific version
-	if err := upgrade.PerformPostUpgradeTasks(upgradeVars.client, internalcfg, flags.newK8sVersion); err != nil {
+	// Upgrade RBAC rules and addons.
+	if err := upgrade.PerformPostUpgradeTasks(upgradeVars.client, internalcfg); err != nil {
 		return fmt.Errorf("[upgrade/postupgrade] FATAL post-upgrade error: %v", err)
 	}
 
@@ -241,10 +241,7 @@ func PerformStaticPodUpgrade(client clientset.Interface, waiter apiclient.Waiter
 		return err
 	}
 
-	if err := upgrade.StaticPodControlPlane(waiter, pathManager, internalcfg); err != nil {
-		return err
-	}
-	return nil
+	return upgrade.StaticPodControlPlane(waiter, pathManager, internalcfg)
 }
 
 // DryRunStaticPodUpgrade fakes an upgrade of the control plane
@@ -268,8 +265,5 @@ func DryRunStaticPodUpgrade(internalcfg *kubeadmapi.MasterConfiguration) error {
 		files = append(files, dryrunutil.NewFileToPrint(realPath, outputPath))
 	}
 
-	if err := dryrunutil.PrintDryRunFiles(files, os.Stdout); err != nil {
-		return err
-	}
-	return nil
+	return dryrunutil.PrintDryRunFiles(files, os.Stdout)
 }

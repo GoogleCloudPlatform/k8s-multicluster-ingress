@@ -48,8 +48,10 @@ import (
 	"k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/controller"
 	"k8s.io/ingress-gce/pkg/loadbalancers"
+	neg "k8s.io/ingress-gce/pkg/networkendpointgroup"
 	"k8s.io/ingress-gce/pkg/storage"
 	"k8s.io/ingress-gce/pkg/utils"
+
 	"k8s.io/kubernetes/pkg/cloudprovider"
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce"
 )
@@ -288,19 +290,25 @@ func main() {
 		// Create fake cluster manager
 		clusterManager = controller.NewFakeClusterManager(*clusterName, controller.DefaultFirewallName).ClusterManager
 	}
-
-	ctx := context.NewControllerContext(kubeClient, *watchNamespace, *resyncPeriod, false)
-
+	enableNEG := cloud.AlphaFeatureGate.Enabled(gce.AlphaFeatureNetworkEndpointGroup)
+	ctx := context.NewControllerContext(kubeClient, *watchNamespace, *resyncPeriod, enableNEG)
 	// Start loadbalancer controller
-	lbc, err := controller.NewLoadBalancerController(kubeClient, ctx, clusterManager)
+	lbc, err := controller.NewLoadBalancerController(kubeClient, ctx, clusterManager, enableNEG)
 	if err != nil {
 		glog.Fatalf("%v", err)
 	}
 
-	if clusterManager.ClusterNamer.GetClusterName() != "" {
-		glog.V(3).Infof("Cluster name %+v", clusterManager.ClusterNamer.GetClusterName())
+	if clusterManager.ClusterNamer.UID() != "" {
+		glog.V(3).Infof("Cluster name %+v", clusterManager.ClusterNamer.UID())
 	}
 	clusterManager.Init(&controller.GCETranslator{LoadBalancerController: lbc})
+
+	// Start NEG controller
+	if enableNEG {
+		negController, _ := neg.NewController(kubeClient, cloud, ctx, lbc.Translator, namer, *resyncPeriod)
+		go negController.Run(ctx.StopCh)
+	}
+
 	go registerHandlers(lbc)
 	go handleSigterm(lbc, *deleteAllOnQuit)
 
@@ -345,14 +353,14 @@ func newNamer(kubeClient kubernetes.Interface, clusterName string, fwName string
 
 				switch key {
 				case storage.UidDataKey:
-					if uid := namer.GetClusterName(); uid != val {
+					if uid := namer.UID(); uid != val {
 						glog.Infof("Cluster uid changed from %v -> %v", uid, val)
-						namer.SetClusterName(val)
+						namer.SetUID(val)
 					}
 				case storage.ProviderDataKey:
-					if fw_name := namer.GetFirewallName(); fw_name != val {
+					if fw_name := namer.Firewall(); fw_name != val {
 						glog.Infof("Cluster firewall name changed from %v -> %v", fw_name, val)
-						namer.SetFirewallName(val)
+						namer.SetFirewall(val)
 					}
 				}
 			}

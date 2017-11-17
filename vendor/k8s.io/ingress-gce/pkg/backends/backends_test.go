@@ -19,16 +19,20 @@ package backends
 import (
 	"fmt"
 	"net/http"
+	"strings"
 	"testing"
 
+	computealpha "google.golang.org/api/compute/v0.alpha"
 	compute "google.golang.org/api/compute/v1"
 	"google.golang.org/api/googleapi"
 	api_v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/sets"
 
 	"k8s.io/ingress-gce/pkg/healthchecks"
 	"k8s.io/ingress-gce/pkg/instances"
+	"k8s.io/ingress-gce/pkg/networkendpointgroup"
 	"k8s.io/ingress-gce/pkg/storage"
 	"k8s.io/ingress-gce/pkg/utils"
 )
@@ -52,11 +56,12 @@ var existingProbe = &api_v1.Probe{
 
 func newTestJig(f BackendServices, fakeIGs instances.InstanceGroups, syncWithCloud bool) (*Backends, healthchecks.HealthCheckProvider) {
 	namer := &utils.Namer{}
-	nodePool := instances.NewNodePool(fakeIGs)
+	negGetter := networkendpointgroup.NewFakeNetworkEndpointGroupCloud("test-subnetwork", "test-network")
+	nodePool := instances.NewNodePool(fakeIGs, namer)
 	nodePool.Init(&instances.FakeZoneLister{Zones: []string{defaultZone}})
 	healthCheckProvider := healthchecks.NewFakeHealthCheckProvider()
 	healthChecks := healthchecks.NewHealthChecker(healthCheckProvider, "/", namer)
-	bp := NewBackendPool(f, healthChecks, nodePool, namer, []int64{}, syncWithCloud)
+	bp := NewBackendPool(f, negGetter, healthChecks, nodePool, namer, []int64{}, syncWithCloud)
 	probes := map[ServicePort]*api_v1.Probe{{Port: 443, Protocol: utils.ProtocolHTTPS}: existingProbe}
 	bp.Init(NewFakeProbeProvider(probes))
 
@@ -84,7 +89,7 @@ func TestBackendPoolAdd(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Did not find expect error when adding a nodeport: %v, err: %v", nodePort, err)
 			}
-			beName := namer.BeName(nodePort.Port)
+			beName := namer.Backend(nodePort.Port)
 
 			// Check that the new backend has the right port
 			be, err := f.GetGlobalBackendService(beName)
@@ -96,7 +101,7 @@ func TestBackendPoolAdd(t *testing.T) {
 			}
 
 			// Check that the instance group has the new port.
-			ig, err := fakeIGs.GetInstanceGroup(namer.IGName(), defaultZone)
+			ig, err := fakeIGs.GetInstanceGroup(namer.InstanceGroup(), defaultZone)
 			var found bool
 			for _, port := range ig.NamedPorts {
 				if port.Port == nodePort.Port {
@@ -108,7 +113,7 @@ func TestBackendPoolAdd(t *testing.T) {
 			}
 
 			// Check the created healthcheck is the correct protocol
-			hc, err := pool.healthChecker.Get(nodePort.Port)
+			hc, err := pool.healthChecker.Get(nodePort.Port, false)
 			if err != nil {
 				t.Fatalf("Unexpected err when querying fake healthchecker: %v", err)
 			}
@@ -134,7 +139,7 @@ func TestHealthCheckMigration(t *testing.T) {
 
 	// Create a legacy health check and insert it into the HC provider.
 	legacyHC := &compute.HttpHealthCheck{
-		Name:               namer.BeName(p.Port),
+		Name:               namer.Backend(p.Port),
 		RequestPath:        "/my-healthz-path",
 		Host:               "k8s.io",
 		Description:        "My custom HC",
@@ -147,7 +152,7 @@ func TestHealthCheckMigration(t *testing.T) {
 	pool.Ensure([]ServicePort{p}, nil)
 
 	// Assert the proper health check was created
-	hc, _ := pool.healthChecker.Get(p.Port)
+	hc, _ := pool.healthChecker.Get(p.Port, false)
 	if hc == nil || hc.Protocol() != p.Protocol {
 		t.Fatalf("Expected %s health check, received %v: ", p.Protocol, hc)
 	}
@@ -170,7 +175,7 @@ func TestBackendPoolUpdate(t *testing.T) {
 
 	p := ServicePort{Port: 3000, Protocol: utils.ProtocolHTTP}
 	pool.Ensure([]ServicePort{p}, nil)
-	beName := namer.BeName(p.Port)
+	beName := namer.Backend(p.Port)
 
 	be, err := f.GetGlobalBackendService(beName)
 	if err != nil {
@@ -182,7 +187,7 @@ func TestBackendPoolUpdate(t *testing.T) {
 	}
 
 	// Assert the proper health check was created
-	hc, _ := pool.healthChecker.Get(p.Port)
+	hc, _ := pool.healthChecker.Get(p.Port, false)
 	if hc == nil || hc.Protocol() != p.Protocol {
 		t.Fatalf("Expected %s health check, received %v: ", p.Protocol, hc)
 	}
@@ -202,7 +207,7 @@ func TestBackendPoolUpdate(t *testing.T) {
 	}
 
 	// Assert the proper health check was created
-	hc, _ = pool.healthChecker.Get(p.Port)
+	hc, _ = pool.healthChecker.Get(p.Port, false)
 	if hc == nil || hc.Protocol() != p.Protocol {
 		t.Fatalf("Expected %s health check, received %v: ", p.Protocol, hc)
 	}
@@ -216,7 +221,7 @@ func TestBackendPoolChaosMonkey(t *testing.T) {
 
 	nodePort := ServicePort{Port: 8080, Protocol: utils.ProtocolHTTP}
 	pool.Ensure([]ServicePort{nodePort}, nil)
-	beName := namer.BeName(nodePort.Port)
+	beName := namer.Backend(nodePort.Port)
 
 	be, _ := f.GetGlobalBackendService(beName)
 
@@ -238,9 +243,9 @@ func TestBackendPoolChaosMonkey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to find a backend with name %v: %v", beName, err)
 	}
-	gotGroup, err := fakeIGs.GetInstanceGroup(namer.IGName(), defaultZone)
+	gotGroup, err := fakeIGs.GetInstanceGroup(namer.InstanceGroup(), defaultZone)
 	if err != nil {
-		t.Fatalf("Failed to find instance group %v", namer.IGName())
+		t.Fatalf("Failed to find instance group %v", namer.InstanceGroup())
 	}
 	backendLinks := sets.NewString()
 	for _, be := range gotBackend.Backends {
@@ -261,8 +266,8 @@ func TestBackendPoolSync(t *testing.T) {
 	f := NewFakeBackendServices(noOpErrFunc)
 	fakeIGs := instances.NewFakeInstanceGroups(sets.NewString())
 	pool, _ := newTestJig(f, fakeIGs, true)
-	pool.Ensure([]ServicePort{ServicePort{Port: 81}}, nil)
-	pool.Ensure([]ServicePort{ServicePort{Port: 90}}, nil)
+	pool.Ensure([]ServicePort{{Port: 81}}, nil)
+	pool.Ensure([]ServicePort{{Port: 90}}, nil)
 	if err := pool.Ensure(svcNodePorts, nil); err != nil {
 		t.Errorf("Expected backend pool to add node ports, err: %v", err)
 	}
@@ -302,7 +307,7 @@ func TestBackendPoolSync(t *testing.T) {
 
 	namer := &utils.Namer{}
 	// This backend should get deleted again since it is managed by this cluster.
-	f.CreateGlobalBackendService(&compute.BackendService{Name: namer.BeName(deletedPorts[0].Port)})
+	f.CreateGlobalBackendService(&compute.BackendService{Name: namer.Backend(deletedPorts[0].Port)})
 
 	// TODO: Avoid casting.
 	// Repopulate the pool with a cloud list, which now includes the 82 port
@@ -318,7 +323,7 @@ func TestBackendPoolSync(t *testing.T) {
 		currSet.Insert(b.Name)
 	}
 	// Port 81 still exists because it's an in-use service NodePort.
-	knownBe := namer.BeName(81)
+	knownBe := namer.Backend(81)
 	if !currSet.Has(knownBe) {
 		t.Fatalf("Expected %v to exist in backend pool", knownBe)
 	}
@@ -332,16 +337,17 @@ func TestBackendPoolDeleteLegacyHealthChecks(t *testing.T) {
 	namer := &utils.Namer{}
 	f := NewFakeBackendServices(noOpErrFunc)
 	fakeIGs := instances.NewFakeInstanceGroups(sets.NewString())
-	nodePool := instances.NewNodePool(fakeIGs)
+	negGetter := networkendpointgroup.NewFakeNetworkEndpointGroupCloud("test-subnetwork", "test-network")
+	nodePool := instances.NewNodePool(fakeIGs, namer)
 	nodePool.Init(&instances.FakeZoneLister{Zones: []string{defaultZone}})
 	hcp := healthchecks.NewFakeHealthCheckProvider()
 	healthChecks := healthchecks.NewHealthChecker(hcp, "/", namer)
-	bp := NewBackendPool(f, healthChecks, nodePool, namer, []int64{}, false)
+	bp := NewBackendPool(f, negGetter, healthChecks, nodePool, namer, []int64{}, false)
 	probes := map[ServicePort]*api_v1.Probe{}
 	bp.Init(NewFakeProbeProvider(probes))
 
 	// Create a legacy HTTP health check
-	beName := namer.BeName(80)
+	beName := namer.Backend(80)
 	if err := hcp.CreateHttpHealthCheck(&compute.HttpHealthCheck{
 		Name: beName,
 		Port: 80,
@@ -362,7 +368,7 @@ func TestBackendPoolDeleteLegacyHealthChecks(t *testing.T) {
 	})
 
 	// Have pool sync the above backend service
-	bp.Ensure([]ServicePort{ServicePort{Port: 80, Protocol: utils.ProtocolHTTPS}}, nil)
+	bp.Ensure([]ServicePort{{Port: 80, Protocol: utils.ProtocolHTTPS}}, nil)
 
 	// Verify the legacy health check has been deleted
 	_, err = hcp.GetHttpHealthCheck(beName)
@@ -389,9 +395,9 @@ func TestBackendPoolShutdown(t *testing.T) {
 	namer := utils.Namer{}
 
 	// Add a backend-service and verify that it doesn't exist after Shutdown()
-	pool.Ensure([]ServicePort{ServicePort{Port: 80}}, nil)
+	pool.Ensure([]ServicePort{{Port: 80}}, nil)
 	pool.Shutdown()
-	if _, err := f.GetGlobalBackendService(namer.BeName(80)); err == nil {
+	if _, err := f.GetGlobalBackendService(namer.Backend(80)); err == nil {
 		t.Fatalf("%v", err)
 	}
 }
@@ -403,9 +409,9 @@ func TestBackendInstanceGroupClobbering(t *testing.T) {
 	namer := utils.Namer{}
 
 	// This will add the instance group k8s-ig to the instance pool
-	pool.Ensure([]ServicePort{ServicePort{Port: 80}}, nil)
+	pool.Ensure([]ServicePort{{Port: 80}}, nil)
 
-	be, err := f.GetGlobalBackendService(namer.BeName(80))
+	be, err := f.GetGlobalBackendService(namer.Backend(80))
 	if err != nil {
 		t.Fatalf("%v", err)
 	}
@@ -421,8 +427,8 @@ func TestBackendInstanceGroupClobbering(t *testing.T) {
 	}
 
 	// Make sure repeated adds don't clobber the inserted instance group
-	pool.Ensure([]ServicePort{ServicePort{Port: 80}}, nil)
-	be, err = f.GetGlobalBackendService(namer.BeName(80))
+	pool.Ensure([]ServicePort{{Port: 80}}, nil)
+	be, err = f.GetGlobalBackendService(namer.Backend(80))
 	if err != nil {
 		t.Fatalf("%v", err)
 	}
@@ -464,7 +470,7 @@ func TestBackendCreateBalancingMode(t *testing.T) {
 		}
 
 		pool.Ensure([]ServicePort{nodePort}, nil)
-		be, err := f.GetGlobalBackendService(namer.BeName(nodePort.Port))
+		be, err := f.GetGlobalBackendService(namer.Backend(nodePort.Port))
 		if err != nil {
 			t.Fatalf("%v", err)
 		}
@@ -502,4 +508,93 @@ func TestApplyProbeSettingsToHC(t *testing.T) {
 	if hc.RequestPath != "/"+p {
 		t.Errorf("Failed to apply probe's requestpath")
 	}
+}
+
+func TestLinkBackendServiceToNEG(t *testing.T) {
+	clusterId := "clusterid"
+	zones := []string{"zone1", "zone2"}
+	namespace := "ns"
+	name := "name"
+	port := "port"
+	namer := utils.NewNamer(clusterId, "")
+	f := NewFakeBackendServices(noOpErrFunc)
+	fakeIGs := instances.NewFakeInstanceGroups(sets.NewString())
+	fakeNEG := networkendpointgroup.NewFakeNetworkEndpointGroupCloud("test-subnetwork", "test-network")
+	nodePool := instances.NewNodePool(fakeIGs, namer)
+	nodePool.Init(&instances.FakeZoneLister{Zones: []string{defaultZone}})
+	hcp := healthchecks.NewFakeHealthCheckProvider()
+	healthChecks := healthchecks.NewHealthChecker(hcp, "/", namer)
+	bp := NewBackendPool(f, fakeNEG, healthChecks, nodePool, namer, []int64{}, false)
+
+	svcPort := ServicePort{
+		Port:     30001,
+		Protocol: utils.ProtocolHTTP,
+		SvcName: types.NamespacedName{
+			Namespace: namespace,
+			Name:      name,
+		},
+		SvcPort:       intstr.FromInt(80),
+		SvcTargetPort: port,
+		NEGEnabled:    true,
+	}
+	if err := bp.Ensure([]ServicePort{svcPort}, nil); err != nil {
+		t.Fatalf("Failed to ensure backend service: %v", err)
+	}
+
+	for _, zone := range zones {
+		err := fakeNEG.CreateNetworkEndpointGroup(&computealpha.NetworkEndpointGroup{Name: namer.NEG(namespace, name, port)}, zone)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	}
+
+	if err := bp.Link(svcPort, zones); err != nil {
+		t.Fatalf("Failed to link backend service to NEG: %v", err)
+	}
+
+	bs, err := f.GetGlobalBackendService(namer.Backend(svcPort.Port))
+	if err != nil {
+		t.Fatalf("Failed to retrieve backend service: %v", err)
+	}
+	if len(bs.Backends) != len(zones) {
+		t.Errorf("Expect %v backends, but got %v.", len(zones), len(bs.Backends))
+	}
+
+	for _, be := range bs.Backends {
+		neg := "NetworkEndpointGroup"
+		if !strings.Contains(be.Group, neg) {
+			t.Errorf("Expect backend to be a NEG, but got %q", be.Group)
+		}
+	}
+}
+
+func TestRetrieveObjectName(t *testing.T) {
+	testCases := []struct {
+		url    string
+		expect string
+	}{
+		{
+			"",
+			"",
+		},
+		{
+			"a/b/c/d/",
+			"",
+		},
+		{
+			"a/b/c/d",
+			"d",
+		},
+		{
+			"compute",
+			"compute",
+		},
+	}
+
+	for _, tc := range testCases {
+		if retrieveObjectName(tc.url) != tc.expect {
+			t.Errorf("expect %q, but got %q", tc.expect, retrieveObjectName(tc.url))
+		}
+	}
+
 }

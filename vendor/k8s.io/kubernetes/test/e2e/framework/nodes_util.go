@@ -29,7 +29,6 @@ import (
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/util/wait"
 	clientset "k8s.io/client-go/kubernetes"
-	imageutils "k8s.io/kubernetes/test/utils/image"
 )
 
 func EtcdUpgrade(target_storage, target_version string) error {
@@ -234,7 +233,7 @@ func CheckNodesReady(c clientset.Interface, nt time.Duration, expect int) ([]str
 		// A rolling-update (GCE/GKE implementation of restart) can complete before the apiserver
 		// knows about all of the nodes. Thus, we retry the list nodes call
 		// until we get the expected number of nodes.
-		nodeList, errLast = c.Core().Nodes().List(metav1.ListOptions{
+		nodeList, errLast = c.CoreV1().Nodes().List(metav1.ListOptions{
 			FieldSelector: fields.Set{"spec.unschedulable": "false"}.AsSelector().String()})
 		if errLast != nil {
 			return false, nil
@@ -327,7 +326,7 @@ func gceUpgradeScript() string {
 func waitForSSHTunnels() {
 	Logf("Waiting for SSH tunnels to establish")
 	RunKubectl("run", "ssh-tunnel-test",
-		"--image="+imageutils.GetBusyBoxImage(),
+		"--image=busybox",
 		"--restart=Never",
 		"--command", "--",
 		"echo", "Hello")

@@ -151,7 +151,7 @@ var _ = SIGDescribe("PersistentVolumes[Disruptive][Flaky]", func() {
 			framework.ExpectNoError(framework.WaitOnPVandPVC(c, ns, pv2, pvc2))
 
 			By("Attaching both PVC's to a single pod")
-			clientPod, err = framework.CreatePod(c, ns, []*v1.PersistentVolumeClaim{pvc1, pvc2}, true, "")
+			clientPod, err = framework.CreatePod(c, ns, nil, []*v1.PersistentVolumeClaim{pvc1, pvc2}, true, "")
 			Expect(err).NotTo(HaveOccurred())
 		})
 
@@ -281,7 +281,7 @@ func testVolumeUnmountsFromDeletedPod(c clientset.Interface, f *framework.Framew
 		}
 	}()
 	By(fmt.Sprintf("Deleting Pod %q", clientPod.Name))
-	err = c.Core().Pods(clientPod.Namespace).Delete(clientPod.Name, &metav1.DeleteOptions{})
+	err = c.CoreV1().Pods(clientPod.Namespace).Delete(clientPod.Name, &metav1.DeleteOptions{})
 	Expect(err).NotTo(HaveOccurred())
 	By("Starting the kubelet and waiting for pod to delete.")
 	kubeletCommand(kStart, c, clientPod)
@@ -309,7 +309,7 @@ func initTestCase(f *framework.Framework, c clientset.Interface, pvConfig framew
 		}
 	}()
 	Expect(err).NotTo(HaveOccurred())
-	pod := framework.MakePod(ns, []*v1.PersistentVolumeClaim{pvc}, true, "")
+	pod := framework.MakePod(ns, nil, []*v1.PersistentVolumeClaim{pvc}, true, "")
 	pod.Spec.NodeName = nodeName
 	framework.Logf("Creating NFS client pod.")
 	pod, err = c.CoreV1().Pods(ns).Create(pod)
