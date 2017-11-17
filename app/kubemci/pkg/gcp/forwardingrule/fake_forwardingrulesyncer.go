@@ -40,7 +40,7 @@ func NewFakeForwardingRuleSyncer() ForwardingRuleSyncerInterface {
 // Ensure this implements ForwardingRuleSyncerInterface.
 var _ ForwardingRuleSyncerInterface = &FakeForwardingRuleSyncer{}
 
-func (f *FakeForwardingRuleSyncer) EnsureHttpForwardingRule(lbName, ipAddress, targetProxyLink string, clusters []string) error {
+func (f *FakeForwardingRuleSyncer) EnsureHttpForwardingRule(lbName, ipAddress, targetProxyLink string, clusters []string, forceUpdate bool) error {
 	f.EnsuredForwardingRules = append(f.EnsuredForwardingRules, FakeForwardingRule{
 		LBName:    lbName,
 		IPAddress: ipAddress,

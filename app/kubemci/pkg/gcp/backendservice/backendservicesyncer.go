@@ -18,6 +18,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"sort"
 
 	compute "google.golang.org/api/compute/v1"
 
@@ -229,6 +230,8 @@ func (b *BackendServiceSyncer) desiredBackendService(lbName string, port ingress
 }
 
 func desiredBackends(igLinks []string) []*compute.Backend {
+	// Sort the slice so we get determistic results.
+	sort.Strings(igLinks)
 	var backends []*compute.Backend
 	for _, ig := range igLinks {
 		backends = append(backends, &compute.Backend{
