@@ -84,23 +84,18 @@ func TestDeleteIngress(t *testing.T) {
 	fakeClient.AddReactor("delete", "ingresses", func(action core.Action) (handled bool, ret runtime.Object, err error) {
 		return true, nil, nil
 	})
-
-	runFn := func() ([]string, map[string]kubeclient.Interface, error) {
-		var ing v1beta1.Ingress
-		if err := unmarshallAndApplyDefaults("../../../testdata/ingress.yaml", "", &ing); err != nil {
-			return nil, nil, err
-		}
-		return nil, nil, deleteIngress("kubeconfig", []string{}, &ing)
+	clients := map[string]kubeclient.Interface{
+		"cluster1": &fakeClient,
+		"cluster2": &fakeClient,
 	}
-	expectedCommands := []ExpectedCommand{
-		{
-			Args:   []string{"kubectl", "--kubeconfig=kubeconfig", "config", "get-contexts", "-o=name"},
-			Output: "context-1\ncontext-2",
-			Err:    nil,
-		},
+	var ing v1beta1.Ingress
+	if err := unmarshallAndApplyDefaults("../../../testdata/ingress.yaml", "", &ing); err != nil {
+		t.Fatalf("%s", err)
 	}
-	if _, _, err := run(&fakeClient, expectedCommands, runFn); err != nil {
-		t.Errorf("%s", err)
+	// Verify that on calling deleteIngressInClusters, fakeClient sees 2 actions to delete the ingress.
+	err := deleteIngressInClusters(&ing, clients)
+	if err != nil {
+		t.Fatalf("%s", err)
 	}
 
 	actions := fakeClient.Actions()
@@ -113,5 +108,5 @@ func TestDeleteIngress(t *testing.T) {
 	if !actions[1].Matches("delete", "ingresses") {
 		t.Errorf("Expected ingress deletion.")
 	}
-	// TODO(nikhiljindal): Test a failure case.
+	// TODO(nikhiljindal): Also add tests for error cases including one for does not exist.
 }
