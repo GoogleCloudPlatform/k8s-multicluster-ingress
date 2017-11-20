@@ -17,9 +17,14 @@ package forwardingrule
 import (
 	"fmt"
 	"net/http"
+	"reflect"
+	"sort"
+
+	compute "google.golang.org/api/compute/v1"
+	"google.golang.org/api/googleapi"
 
 	"github.com/golang/glog"
-	"google.golang.org/api/compute/v1"
+	"k8s.io/apimachinery/pkg/util/diff"
 	ingresslb "k8s.io/ingress-gce/pkg/loadbalancers"
 	"k8s.io/ingress-gce/pkg/utils"
 
@@ -53,10 +58,11 @@ var _ ForwardingRuleSyncerInterface = &ForwardingRuleSyncer{}
 // EnsureHttpForwardingRule ensures that the required http forwarding rule exists.
 // Does nothing if it exists already, else creates a new one.
 // Stores the given list of clusters in the description field of forwarding rule to use it to generate status later.
-func (s *ForwardingRuleSyncer) EnsureHttpForwardingRule(lbName, ipAddress, targetProxyLink string, clusters []string) error {
+func (s *ForwardingRuleSyncer) EnsureHttpForwardingRule(lbName, ipAddress, targetProxyLink string, clusters []string, forceUpdate bool) error {
 	fmt.Println("Ensuring http forwarding rule")
 	desiredFR, err := s.desiredForwardingRule(lbName, ipAddress, targetProxyLink, clusters)
 	if err != nil {
+		fmt.Println("Error getting desired forwarding rule:", err)
 		return err
 	}
 	name := desiredFR.Name
@@ -71,10 +77,15 @@ func (s *ForwardingRuleSyncer) EnsureHttpForwardingRule(lbName, ipAddress, targe
 			fmt.Println("Desired forwarding rule exists already")
 			return nil
 		}
-		// TODO: Require explicit permission from user before doing this.
-		return s.updateForwardingRule(existingFR, desiredFR)
+		if forceUpdate {
+			fmt.Println("Updating existing Forwarding Rule, %v, to match desired state.", name)
+			return s.updateForwardingRule(existingFR, desiredFR)
+		} else {
+			fmt.Println("Will not overwrite this differing Forwarding Rule without the --force flag")
+			return fmt.Errorf("Will not overwrite Forwarding Rule without --force")
+		}
 	}
-	glog.V(5).Infof("Got error %s while trying to get existing forwarding rule %s. Will try to create new one", err, name)
+	glog.V(2).Infof("Got error %s while trying to get existing forwarding rule %s. Will try to create new one", err, name)
 	// TODO: Handle non NotFound errors. We should create only if the error is NotFound.
 	// Create the forwarding rule.
 	return s.createForwardingRule(desiredFR)
@@ -147,12 +158,25 @@ func (s *ForwardingRuleSyncer) createForwardingRule(desiredFR *compute.Forwardin
 }
 
 func forwardingRuleMatches(desiredFR, existingFR *compute.ForwardingRule) bool {
-	// TODO: Add proper logic to figure out if the 2 forwarding rules match.
-	// Need to add the --force flag for user to consent overritting before this method can be updated to return false.
-	return true
+	existingFR.CreationTimestamp = ""
+	existingFR.Id = 0
+	existingFR.Kind = ""
+	existingFR.SelfLink = ""
+	existingFR.ServerResponse = googleapi.ServerResponse{}
+
+	equal := reflect.DeepEqual(existingFR, desiredFR)
+	if !equal {
+		glog.V(5).Infof("Rules differ:\n%v", diff.ObjectDiff(desiredFR, existingFR))
+	} else {
+		glog.V(2).Infof("rules match.")
+	}
+
+	return equal
 }
 
 func (s *ForwardingRuleSyncer) desiredForwardingRule(lbName, ipAddress, targetProxyLink string, clusters []string) (*compute.ForwardingRule, error) {
+	// Sort the clusters so we get a deterministic order.
+	sort.Strings(clusters)
 	status := status.LoadBalancerStatus{
 		Description:      fmt.Sprintf("Http forwarding rule for kubernetes multicluster loadbalancer %s", lbName),
 		LoadBalancerName: lbName,
@@ -165,11 +189,12 @@ func (s *ForwardingRuleSyncer) desiredForwardingRule(lbName, ipAddress, targetPr
 	}
 	// Compute the desired forwarding rule.
 	return &compute.ForwardingRule{
-		Name:        s.namer.HttpForwardingRuleName(),
-		Description: desc,
-		IPAddress:   ipAddress,
-		Target:      targetProxyLink,
-		PortRange:   httpDefaultPortRange,
-		IPProtocol:  "TCP",
+		Name:                s.namer.HttpForwardingRuleName(),
+		Description:         desc,
+		IPAddress:           ipAddress,
+		Target:              targetProxyLink,
+		PortRange:           httpDefaultPortRange,
+		IPProtocol:          "TCP",
+		LoadBalancingScheme: "EXTERNAL",
 	}, nil
 }

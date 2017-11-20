@@ -147,7 +147,7 @@ func (l *LoadBalancerSyncer) CreateLoadBalancer(ing *v1beta1.Ingress, forceUpdat
 			// Aggregate errors and return all at the end.
 			err = multierror.Append(err, tpErr)
 		}
-		frErr := l.frs.EnsureHttpForwardingRule(l.lbName, ipAddr, tpLink, clusters)
+		frErr := l.frs.EnsureHttpForwardingRule(l.lbName, ipAddr, tpLink, clusters, forceUpdate)
 		if frErr != nil {
 			// Aggregate errors and return all at the end.
 			err = multierror.Append(err, frErr)
