@@ -15,6 +15,9 @@
 
 PKG=github.com/GoogleCloudPlatform/k8s-multicluster-ingress
 
+# So that make test is not confused with the test directory.
+.PHONY: test
+
 fmt:
 	@echo "+ $@"
 	@go list -f '{{if len .TestGoFiles}}"gofmt -s -d {{.Dir}}"{{end}}' $(shell go list ${PKG}/... | grep -v vendor) | xargs -L 1 sh -c
