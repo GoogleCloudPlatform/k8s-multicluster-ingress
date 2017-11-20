@@ -113,7 +113,7 @@ func (l *LoadBalancerSyncer) CreateLoadBalancer(ing *v1beta1.Ingress, forceUpdat
 		return err
 	}
 	// Create health checks to be used by the backend service.
-	healthChecks, hcErr := l.hcs.EnsureHealthCheck(l.lbName, ports, forceUpdate)
+	healthChecks, hcErr := l.hcs.EnsureHealthCheck(l.lbName, ports, l.clients, forceUpdate)
 	if hcErr != nil {
 		// Keep aggregating errors and return all at the end, rather than giving up on the first error.
 		err = multierror.Append(err, hcErr)
