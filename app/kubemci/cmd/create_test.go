@@ -16,6 +16,7 @@ package cmd
 
 import (
 	"reflect"
+	"sort"
 	"testing"
 
 	"k8s.io/api/extensions/v1beta1"
@@ -109,6 +110,7 @@ func TestCreateIngressInClusters(t *testing.T) {
 		t.Errorf("Expected ingress creation.")
 	}
 	expectedClusters := []string{"cluster1", "cluster2"}
+	sort.Strings(clusters)
 	if !reflect.DeepEqual(clusters, expectedClusters) {
 		t.Errorf("unexpected list of clusters, expected: %v, got: %v", expectedClusters, clusters)
 	}
