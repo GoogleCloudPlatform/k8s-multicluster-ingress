@@ -84,7 +84,9 @@ func NewCmdCreate(out, err io.Writer) *cobra.Command {
 				return
 			}
 			if err := runCreate(&options, args); err != nil {
-				fmt.Println("Error in creating load balancer:", err)
+				fmt.Println("Error: Error in creating load balancer:", err)
+			} else {
+				fmt.Println("\nSuccess.")
 			}
 		},
 	}

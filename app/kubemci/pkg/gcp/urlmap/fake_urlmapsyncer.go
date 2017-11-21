@@ -43,7 +43,7 @@ func NewFakeURLMapSyncer() URLMapSyncerInterface {
 // Ensure this implements URLMapSyncerInterface.
 var _ URLMapSyncerInterface = &FakeURLMapSyncer{}
 
-func (f *FakeURLMapSyncer) EnsureURLMap(lbName string, ing *v1beta1.Ingress, beMap backendservice.BackendServicesMap) (string, error) {
+func (f *FakeURLMapSyncer) EnsureURLMap(lbName string, ing *v1beta1.Ingress, beMap backendservice.BackendServicesMap, forceUpdate bool) (string, error) {
 
 	f.EnsuredURLMaps = append(f.EnsuredURLMaps, FakeURLMap{
 		LBName:  lbName,

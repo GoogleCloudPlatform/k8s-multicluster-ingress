@@ -23,9 +23,10 @@ import (
 // URLMapSyncerInterface is an interface to manage GCP url maps.
 type URLMapSyncerInterface interface {
 	// EnsureURLMap ensures that the required url map exists for the given ingress.
-	// Uses beMap to extract the backend services to link to in the url map.
+	// Uses beMap to extract the backend services to link to in the url map. Will
+	// only change an existing URL map if forceUpdate=True.
 	// Returns the self link for the ensured url map.
-	EnsureURLMap(lbName string, ing *v1beta1.Ingress, beMap backendservice.BackendServicesMap) (string, error)
+	EnsureURLMap(lbName string, ing *v1beta1.Ingress, beMap backendservice.BackendServicesMap, forceUpdate bool) (string, error)
 	// DeleteURLMap deletes the url map that EnsureURLMap would have created.
 	DeleteURLMap() error
 }
