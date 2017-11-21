@@ -132,7 +132,7 @@ func (s *ForwardingRuleSyncer) updateForwardingRule(existingFR, desiredFR *compu
 		existingFR.IPProtocol != desiredFR.IPProtocol || existingFR.Description != desiredFR.Description {
 		fmt.Println("Deleting the existing forwarding rule", name, "and will create a new one")
 		if err := utils.IgnoreHTTPNotFound(s.frp.DeleteGlobalForwardingRule(name)); err != nil {
-			fmt.Println("Error deleting global forwarding rule.")
+			fmt.Println("Error deleting global forwarding rule:", err)
 			return fmt.Errorf("error in deleting existing forwarding rule %s: %s", name, err)
 		}
 		return s.createForwardingRule(desiredFR)
@@ -140,7 +140,7 @@ func (s *ForwardingRuleSyncer) updateForwardingRule(existingFR, desiredFR *compu
 	// Update target proxy link in forwarding rule.
 	err := s.frp.SetProxyForGlobalForwardingRule(name, desiredFR.Target)
 	if err != nil {
-		fmt.Println("Error setting proxy for forwarding rule. Target:", desiredFR.Target)
+		fmt.Println("Error setting proxy for forwarding rule. Target:", desiredFR.Target, "Error:", err)
 		return err
 	}
 	fmt.Println("Forwarding rule", name, "updated successfully")

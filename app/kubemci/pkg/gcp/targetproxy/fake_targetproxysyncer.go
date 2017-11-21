@@ -36,7 +36,7 @@ func NewFakeTargetProxySyncer() TargetProxySyncerInterface {
 // Ensure this implements TargetProxySyncerInterface.
 var _ TargetProxySyncerInterface = &FakeTargetProxySyncer{}
 
-func (f *FakeTargetProxySyncer) EnsureHttpTargetProxy(lbName, umLink string) (string, error) {
+func (f *FakeTargetProxySyncer) EnsureHttpTargetProxy(lbName, umLink string, forceUpdate bool) (string, error) {
 	f.EnsuredTargetProxies = append(f.EnsuredTargetProxies, FakeTargetProxy{
 		LBName: lbName,
 		UmLink: umLink,
