@@ -15,6 +15,7 @@
 package firewallrule
 
 import (
+	"encoding/json"
 	"reflect"
 	"strconv"
 	"testing"
@@ -29,44 +30,87 @@ import (
 
 func TestEnsureFirewallRule(t *testing.T) {
 	lbName := "lb-name"
-	port := int64(32211)
-	kubeSvcName := "svc-name"
-	igLink := "https://www.googleapis.com/compute/v1/projects/abc/zones/def/instanceGroups/ig1"
-	networkTag := "fake-network-tag"
-	// Should create the firewall rule as expected.
-	fwp := ingressfw.NewFakeFirewallsProvider(false /* xpn */, false /* read only */)
-	ntg := networktags.NewFakeNetworkTagsGetter([]string{networkTag})
 	namer := utilsnamer.NewNamer("mci1", lbName)
 	fwName := namer.FirewallRuleName()
-	fws := NewFirewallRuleSyncer(namer, fwp, ntg)
+	fwp := ingressfw.NewFakeFirewallsProvider(false /*onXPN*/, false /*fwReadOnly*/)
 	// GET should return NotFound.
 	if _, err := fwp.GetFirewall(fwName); err == nil {
 		t.Fatalf("expected NotFound error, actual: nil")
 	}
-	err := fws.EnsureFirewallRule(lbName, []ingressbe.ServicePort{
+
+	testCases := []struct {
+		desc string
+		// In's
+		port        int64
+		forceUpdate bool
+		// Out's
+		ensureErr    bool
+		expectedPort int
+	}{
 		{
-			Port:     port,
-			Protocol: "HTTP",
-			SvcName:  types.NamespacedName{Name: kubeSvcName},
+			desc:         "initial write (force=false)",
+			port:         12345,
+			forceUpdate:  false,
+			ensureErr:    false,
+			expectedPort: 12345,
 		},
-	}, map[string][]string{"cluster1": {igLink}})
-	if err != nil {
-		t.Fatalf("expected no error in ensuring firewall rule, actual: %v", err)
+		{
+			desc:         "write same (force=false)",
+			port:         12345,
+			forceUpdate:  false,
+			ensureErr:    false,
+			expectedPort: 12345,
+		},
+		{
+			desc:         "write different (force=false)",
+			port:         11222,
+			forceUpdate:  false,
+			ensureErr:    true,
+			expectedPort: 12345,
+		},
+		{
+			desc:         "write different (force=true)",
+			port:         22333,
+			forceUpdate:  true,
+			ensureErr:    false,
+			expectedPort: 22333,
+		},
 	}
-	// Verify that the created firewall rule is as expected.
-	fw, err := fwp.GetFirewall(fwName)
-	if err != nil {
-		t.Fatalf("expected nil error, actual: %v", err)
-	}
-	if !reflect.DeepEqual(fw.SourceRanges, l7SrcRanges) {
-		t.Errorf("unexpected source ranges, expected: %s, got: %s", l7SrcRanges, fw.SourceRanges)
-	}
-	expectedPort := strconv.Itoa(int(port))
-	if len(fw.Allowed) != 1 || len(fw.Allowed[0].Ports) != 1 || fw.Allowed[0].Ports[0] != expectedPort {
-		t.Errorf("unexpected allowed, expected only one port item with port %s, got: %v", expectedPort, fw.Allowed)
-	}
-	if len(fw.TargetTags) != 1 || fw.TargetTags[0] != networkTag {
-		t.Errorf("unexpected target tags in firewall rule, expected only on item for %s, got: %v", networkTag, fw.TargetTags)
+	for _, c := range testCases {
+		t.Logf("===============testing case: %s=================", c.desc)
+
+		kubeSvcName := "svc-name"
+		igLink := "https://www.googleapis.com/compute/v1/projects/abc/zones/def/instanceGroups/ig1"
+		networkTag := "fake-network-tag"
+		// Should create the firewall rule as expected.
+		ntg := networktags.NewFakeNetworkTagsGetter([]string{networkTag})
+		fws := NewFirewallRuleSyncer(namer, fwp, ntg)
+		err := fws.EnsureFirewallRule(lbName, []ingressbe.ServicePort{
+			{
+				Port:     c.port,
+				Protocol: "HTTP",
+				SvcName:  types.NamespacedName{Name: kubeSvcName},
+			},
+		}, map[string][]string{"cluster1": {igLink}}, c.forceUpdate)
+		if (err != nil) != c.ensureErr {
+			t.Errorf("while ensuring firewall rule, expected error? %v actual: %v", c.ensureErr, err)
+		}
+		// Verify that the created firewall rule is as expected.
+		fw, err := fwp.GetFirewall(fwName)
+		if err != nil {
+			t.Errorf("expected nil error, actual: %v", err)
+		}
+		if !reflect.DeepEqual(fw.SourceRanges, l7SrcRanges) {
+			t.Errorf("unexpected source ranges, expected: %s, got: %s", l7SrcRanges, fw.SourceRanges)
+		}
+		expectedPort := strconv.Itoa(int(c.expectedPort))
+		if len(fw.Allowed) != 1 || len(fw.Allowed[0].Ports) != 1 || fw.Allowed[0].Ports[0] != expectedPort {
+			allowed, _ := json.Marshal(fw.Allowed)
+			t.Errorf("unexpected allowed, expected only one port item with port %s, got: %s", expectedPort, allowed)
+		}
+		if len(fw.TargetTags) != 1 || fw.TargetTags[0] != networkTag {
+			t.Errorf("unexpected target tags in firewall rule, expected only on item for %s, got: %v", networkTag, fw.TargetTags)
+		}
 	}
 	// TODO(nikhiljindal): Test update existing firewall rule.
 }
@@ -93,7 +137,7 @@ func TestDeleteFirewallRule(t *testing.T) {
 			Protocol: "HTTP",
 			SvcName:  types.NamespacedName{Name: kubeSvcName},
 		},
-	}, map[string][]string{"cluster1": {igLink}})
+	}, map[string][]string{"cluster1": {igLink}}, false /*forceUpdate*/)
 	if err != nil {
 		t.Fatalf("expected no error in ensuring firewall rule, actual: %v", err)
 	}

@@ -161,7 +161,7 @@ func (l *LoadBalancerSyncer) CreateLoadBalancer(ing *v1beta1.Ingress, forceUpdat
 		fmt.Println("Error: This tool does not support creating an HTTPS target proxy and forwarding rule yet.")
 		err = multierror.Append(err, fmt.Errorf("This tool does not support creating HTTPS target proxy and forwarding rule yet."))
 	}
-	if fwErr := l.fws.EnsureFirewallRule(l.lbName, ports, igs); fwErr != nil {
+	if fwErr := l.fws.EnsureFirewallRule(l.lbName, ports, igs, forceUpdate); fwErr != nil {
 		// Aggregate errors and return all at the end.
 		fmt.Println("Error ensuring firewall rule:", fwErr)
 		err = multierror.Append(err, fwErr)

@@ -21,7 +21,8 @@ import (
 // FirewallRuleSyncerInterface is an interface to manage GCP firewall rules.
 type FirewallRuleSyncerInterface interface {
 	// EnsureFirewallRule ensures that the required firewall rules exist.
-	EnsureFirewallRule(lbName string, ports []ingressbe.ServicePort, igLinks map[string][]string) error
+	// If a firewall rule already exists and differs, it will not be updated unless forceUpdate is true.
+	EnsureFirewallRule(lbName string, ports []ingressbe.ServicePort, igLinks map[string][]string, forceUpdate bool) error
 	// DeleteFirewallRules deletes all firewall rules that would have been created by EnsureFirewallRule.
 	DeleteFirewallRules() error
 }
