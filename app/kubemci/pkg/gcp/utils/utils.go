@@ -56,7 +56,7 @@ func GetNameFromUrl(url string) (string, error) {
 	// To get name of a resource from its Url, split the string by "/" and use the last element.
 	components := strings.Split(url, "/")
 	if len(components) < 2 {
-		return "", fmt.Errorf("error in parsing URL: %s, expected it to contain /")
+		return "", fmt.Errorf("error in parsing URL: %s, expected it to contain /", url)
 	}
 	return components[len(components)-1], nil
 

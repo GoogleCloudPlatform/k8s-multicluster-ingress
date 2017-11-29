@@ -59,7 +59,7 @@ func getClientsForContexts(kubeconfig string, kubeContexts []string) (map[string
 	for _, c := range kubeContexts {
 		client, clientErr := getClientset(kubeconfig, c)
 		if clientErr != nil {
-			err = multierror.Append(err, fmt.Errorf("Error getting kubectl client interface for context %s:", c, clientErr))
+			err = multierror.Append(err, fmt.Errorf("Error getting kubectl client interface for context %s: %s", c, clientErr))
 			continue
 		}
 		clients[c] = client

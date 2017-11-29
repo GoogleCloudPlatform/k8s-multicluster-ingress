@@ -78,7 +78,7 @@ func (s *ForwardingRuleSyncer) EnsureHttpForwardingRule(lbName, ipAddress, targe
 			return nil
 		}
 		if forceUpdate {
-			fmt.Println("Updating existing Forwarding Rule, %v, to match desired state.", name)
+			fmt.Println("Updating existing Forwarding Rule,", name, "to match desired state.")
 			return s.updateForwardingRule(existingFR, desiredFR)
 		} else {
 			fmt.Println("Will not overwrite this differing Forwarding Rule without the --force flag")
