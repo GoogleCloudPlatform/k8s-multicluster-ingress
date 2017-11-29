@@ -16,10 +16,13 @@ package targetproxy
 
 import (
 	"fmt"
+	"reflect"
 
 	"github.com/golang/glog"
-	"github.com/hashicorp/go-multierror"
-	"google.golang.org/api/compute/v1"
+	multierror "github.com/hashicorp/go-multierror"
+	compute "google.golang.org/api/compute/v1"
+	"google.golang.org/api/googleapi"
+	"k8s.io/apimachinery/pkg/util/diff"
 	ingresslb "k8s.io/ingress-gce/pkg/loadbalancers"
 
 	utilsnamer "github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/namer"
@@ -43,10 +46,10 @@ var _ TargetProxySyncerInterface = &TargetProxySyncer{}
 
 // EnsureHttpTargetProxy ensures that the required http target proxy exists for the given url map.
 // Does nothing if it exists already, else creates a new one.
-func (s *TargetProxySyncer) EnsureHttpTargetProxy(lbName, umLink string) (string, error) {
-	fmt.Println("Ensuring http target proxy")
+func (s *TargetProxySyncer) EnsureHttpTargetProxy(lbName, umLink string, forceUpdate bool) (string, error) {
+	fmt.Println("Ensuring http target proxy.")
 	var err error
-	tpLink, httpProxyErr := s.ensureHttpProxy(lbName, umLink)
+	tpLink, httpProxyErr := s.ensureHttpProxy(lbName, umLink, forceUpdate)
 	if httpProxyErr != nil {
 		httpProxyErr = fmt.Errorf("Error in ensuring http target proxy: %s", httpProxyErr)
 		// Try ensuring both http and https target proxies and return all errors at once.
@@ -58,43 +61,47 @@ func (s *TargetProxySyncer) EnsureHttpTargetProxy(lbName, umLink string) (string
 func (s *TargetProxySyncer) DeleteTargetProxies() error {
 	// TODO(nikhiljindal): Also delete the https target proxy when we start creating it.
 	name := s.namer.TargetHttpProxyName()
-	fmt.Println("Deleting target proxy", name)
+	fmt.Println("Deleting target HTTP proxy", name)
 	err := s.tpp.DeleteTargetHttpProxy(name)
 	if err != nil {
-		fmt.Println("error", err, "in deleting target proxy", name)
+		fmt.Println("error", err, "in deleting target HTTP proxy", name)
 		return err
 	}
-	fmt.Println("target proxy", name, "deleted successfully")
+	fmt.Println("target HTTP proxy", name, "deleted successfully")
 	return nil
 }
 
 // ensureHttpProxy ensures that the required target proxy exists for the given port.
 // Does nothing if it exists already, else creates a new one.
 // Returns the self link for the ensured http proxy.
-func (s *TargetProxySyncer) ensureHttpProxy(lbName, umLink string) (string, error) {
+func (s *TargetProxySyncer) ensureHttpProxy(lbName, umLink string, forceUpdate bool) (string, error) {
 	fmt.Println("Ensuring target http proxy")
 	desiredHttpProxy := s.desiredHttpTargetProxy(lbName, umLink)
 	name := desiredHttpProxy.Name
 	// Check if target proxy already exists.
 	existingHttpProxy, err := s.tpp.GetTargetHttpProxy(name)
 	if err == nil {
-		fmt.Println("Target proxy", name, "exists already. Checking if it matches our desired target proxy")
-		glog.V(5).Infof("Existing target proxy: %v\n, desired target proxy: %v", existingHttpProxy, *desiredHttpProxy)
+		fmt.Println("Target HTTP proxy", name, "exists already. Checking if it matches our desired target proxy")
+		glog.V(5).Infof("Existing target HTTP proxy: %+v", existingHttpProxy)
 		// Target proxy with that name exists already. Check if it matches what we want.
 		if targetHttpProxyMatches(desiredHttpProxy, existingHttpProxy) {
 			// Nothing to do. Desired target proxy exists already.
-			fmt.Println("Desired target proxy exists already")
+			fmt.Println("Desired target HTTP proxy", name, "exists already.")
 			return existingHttpProxy.SelfLink, nil
 		}
-		// TODO (nikhiljindal): Require explicit permission from user before doing this.
-		fmt.Println("Updating existing target proxy", name, "to match the desired state")
-		return s.updateHttpTargetProxy(desiredHttpProxy)
+		if forceUpdate {
+			fmt.Println("Updating existing target HTTP proxy", name, "to match the desired state")
+			return s.updateHttpTargetProxy(desiredHttpProxy)
+		} else {
+			fmt.Println("Will not overwrite this differing Target HTTP Proxy without the --force flag")
+			return "", fmt.Errorf("Will not overwrite Target HTTP Proxy without --force")
+		}
 	}
-	glog.V(5).Infof("Got error %s while trying to get existing target proxy %s", err, name)
+	glog.V(5).Infof("Got error %s while trying to get existing target HTTP proxy %s", err, name)
 	// TODO(nikhiljindal): Handle non NotFound errors. We should create only if the error is NotFound.
 	// Create the target proxy.
-	fmt.Println("Creating target proxy", name)
-	glog.V(5).Infof("Creating target proxy %v", *desiredHttpProxy)
+	fmt.Println("Creating target HTTP proxy", name)
+	glog.V(5).Infof("Creating target HTTP proxy %v", *desiredHttpProxy)
 	return s.createHttpTargetProxy(desiredHttpProxy)
 }
 
@@ -132,9 +139,21 @@ func (s *TargetProxySyncer) createHttpTargetProxy(desiredHttpProxy *compute.Targ
 }
 
 func targetHttpProxyMatches(desiredHttpProxy, existingHttpProxy *compute.TargetHttpProxy) bool {
-	// TODO(nikhiljindal): Add proper logic to figure out if the 2 target proxies match.
-	// Need to add the --force flag for user to consent overritting before this method can be updated to return false.
-	return true
+	existingProxyCopy := *existingHttpProxy
+	existingProxyCopy.CreationTimestamp = ""
+	existingProxyCopy.Id = 0
+	existingProxyCopy.Kind = ""
+	existingProxyCopy.SelfLink = ""
+	existingProxyCopy.ServerResponse = googleapi.ServerResponse{}
+
+	equal := reflect.DeepEqual(&existingProxyCopy, desiredHttpProxy)
+	if !equal {
+		glog.V(2).Infof("TargetHttpProxies differ.")
+		glog.V(5).Infof("Diff: %v", diff.ObjectDiff(desiredHttpProxy, existingProxyCopy))
+	} else {
+		glog.V(2).Infof("TargetHttpProxies match.")
+	}
+	return equal
 }
 
 func (s *TargetProxySyncer) desiredHttpTargetProxy(lbName, umLink string) *compute.TargetHttpProxy {

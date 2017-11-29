@@ -70,7 +70,7 @@ func (s *ForwardingRuleSyncer) EnsureHttpForwardingRule(lbName, ipAddress, targe
 	existingFR, err := s.frp.GetGlobalForwardingRule(name)
 	if err == nil {
 		fmt.Println("forwarding rule", name, "exists already. Checking if it matches our desired forwarding rule", name)
-		glog.V(5).Infof("Existing forwarding rule: %v\n, desired forwarding rule: %v", existingFR, desiredFR)
+		glog.V(5).Infof("Existing forwarding rule:\n%+v\nDesired forwarding rule:\n%+v", existingFR, desiredFR)
 		// Forwarding Rule with that name exists already. Check if it matches what we want.
 		if forwardingRuleMatches(desiredFR, existingFR) {
 			// Nothing to do. Desired forwarding rule exists already.
@@ -78,7 +78,7 @@ func (s *ForwardingRuleSyncer) EnsureHttpForwardingRule(lbName, ipAddress, targe
 			return nil
 		}
 		if forceUpdate {
-			fmt.Println("Updating existing Forwarding Rule,", name, "to match desired state.")
+			fmt.Println("Updating existing forwarding rule", name, "to match the desired state")
 			return s.updateForwardingRule(existingFR, desiredFR)
 		} else {
 			fmt.Println("Will not overwrite this differing Forwarding Rule without the --force flag")
@@ -125,13 +125,14 @@ func (s *ForwardingRuleSyncer) GetLoadBalancerStatus(lbName string) (*status.Loa
 
 func (s *ForwardingRuleSyncer) updateForwardingRule(existingFR, desiredFR *compute.ForwardingRule) error {
 	name := desiredFR.Name
-	fmt.Println("Updating existing forwarding rule", name, "to match the desired state")
 	// We do not have an UpdateForwardingRule method.
 	// If target proxy link is the only thing that is different, then we can call SetProxyForGlobalForwardingRule.
 	// Else, we need to delete the existing rule and create a new one.
-	if existingFR.IPAddress != desiredFR.IPAddress || existingFR.PortRange != desiredFR.PortRange || existingFR.IPProtocol != desiredFR.IPProtocol {
+	if existingFR.IPAddress != desiredFR.IPAddress || existingFR.PortRange != desiredFR.PortRange ||
+		existingFR.IPProtocol != desiredFR.IPProtocol || existingFR.Description != desiredFR.Description {
 		fmt.Println("Deleting the existing forwarding rule", name, "and will create a new one")
 		if err := utils.IgnoreHTTPNotFound(s.frp.DeleteGlobalForwardingRule(name)); err != nil {
+			fmt.Println("Error deleting global forwarding rule:", err)
 			return fmt.Errorf("error in deleting existing forwarding rule %s: %s", name, err)
 		}
 		return s.createForwardingRule(desiredFR)
@@ -139,6 +140,7 @@ func (s *ForwardingRuleSyncer) updateForwardingRule(existingFR, desiredFR *compu
 	// Update target proxy link in forwarding rule.
 	err := s.frp.SetProxyForGlobalForwardingRule(name, desiredFR.Target)
 	if err != nil {
+		fmt.Println("Error setting proxy for forwarding rule. Target:", desiredFR.Target, "Error:", err)
 		return err
 	}
 	fmt.Println("Forwarding rule", name, "updated successfully")
@@ -166,9 +168,9 @@ func forwardingRuleMatches(desiredFR, existingFR *compute.ForwardingRule) bool {
 
 	equal := reflect.DeepEqual(existingFR, desiredFR)
 	if !equal {
-		glog.V(5).Infof("Rules differ:\n%v", diff.ObjectDiff(desiredFR, existingFR))
+		glog.V(5).Infof("Forwarding Rules differ:\n%v", diff.ObjectDiff(desiredFR, existingFR))
 	} else {
-		glog.V(2).Infof("rules match.")
+		glog.V(2).Infof("Rules match.")
 	}
 
 	return equal

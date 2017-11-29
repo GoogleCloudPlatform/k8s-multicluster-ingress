@@ -142,24 +142,28 @@ func (l *LoadBalancerSyncer) CreateLoadBalancer(ing *v1beta1.Ingress, forceUpdat
 	ingAnnotations := annotations.IngAnnotations(ing.ObjectMeta.Annotations)
 	// Configure HTTP target proxy and forwarding rule, if required.
 	if ingAnnotations.AllowHTTP() {
-		tpLink, tpErr := l.tps.EnsureHttpTargetProxy(l.lbName, umLink)
+		tpLink, tpErr := l.tps.EnsureHttpTargetProxy(l.lbName, umLink, forceUpdate)
 		if tpErr != nil {
 			// Aggregate errors and return all at the end.
+			fmt.Println("Error ensuring HTTP target proxy:", tpErr)
 			err = multierror.Append(err, tpErr)
 		}
 		frErr := l.frs.EnsureHttpForwardingRule(l.lbName, ipAddr, tpLink, clusters, forceUpdate)
 		if frErr != nil {
 			// Aggregate errors and return all at the end.
+			fmt.Println("Error ensuring http forwarding rule:", frErr)
 			err = multierror.Append(err, frErr)
 		}
 	}
 	// Configure HTTPS target proxy and forwarding rule, if required.
 	if (ingAnnotations.UseNamedTLS() != "") || len(ing.Spec.TLS) > 0 {
 		// TODO(nikhiljindal): Support creating https target proxy and forwarding rule.
+		fmt.Println("Error: This tool does not support creating an HTTPS target proxy and forwarding rule yet.")
 		err = multierror.Append(err, fmt.Errorf("This tool does not support creating HTTPS target proxy and forwarding rule yet."))
 	}
 	if fwErr := l.fws.EnsureFirewallRule(l.lbName, ports, igs); fwErr != nil {
 		// Aggregate errors and return all at the end.
+		fmt.Println("Error ensuring firewall rule:", fwErr)
 		err = multierror.Append(err, fwErr)
 	}
 	return err
