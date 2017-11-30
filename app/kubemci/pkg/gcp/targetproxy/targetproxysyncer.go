@@ -52,23 +52,48 @@ func (s *TargetProxySyncer) EnsureHttpTargetProxy(lbName, umLink string, forceUp
 	tpLink, httpProxyErr := s.ensureHttpProxy(lbName, umLink, forceUpdate)
 	if httpProxyErr != nil {
 		httpProxyErr = fmt.Errorf("Error in ensuring http target proxy: %s", httpProxyErr)
-		// Try ensuring both http and https target proxies and return all errors at once.
 		err = multierror.Append(err, httpProxyErr)
 	}
 	return tpLink, err
 }
 
-func (s *TargetProxySyncer) DeleteTargetProxies() error {
-	// TODO(nikhiljindal): Also delete the https target proxy when we start creating it.
-	name := s.namer.TargetHttpProxyName()
-	fmt.Println("Deleting target HTTP proxy", name)
-	err := s.tpp.DeleteTargetHttpProxy(name)
-	if err != nil {
-		fmt.Println("error", err, "in deleting target HTTP proxy", name)
-		return err
+// EnsureHttpsTargetProxy ensures that the required https target proxy exists for the given url map.
+// Does nothing if it exists already, else creates a new one.
+func (s *TargetProxySyncer) EnsureHttpsTargetProxy(lbName, umLink, certLink string, forceUpdate bool) (string, error) {
+	fmt.Println("Ensuring http target proxy.")
+	var err error
+	tpLink, proxyErr := s.ensureHttpsProxy(lbName, umLink, certLink, forceUpdate)
+	if proxyErr != nil {
+		proxyErr = fmt.Errorf("Error in ensuring https target proxy: %s", proxyErr)
+		err = multierror.Append(err, proxyErr)
 	}
-	fmt.Println("target HTTP proxy", name, "deleted successfully")
-	return nil
+	return tpLink, err
+}
+
+func (s *TargetProxySyncer) DeleteTargetProxies() error {
+	var err error
+	httpName := s.namer.TargetHttpProxyName()
+	fmt.Println("Deleting target HTTP proxy", httpName)
+	httpErr := s.tpp.DeleteTargetHttpProxy(httpName)
+	if httpErr != nil {
+		httpErr = fmt.Errorf("error in deleting target HTTP proxy %s: %s", httpName, httpErr)
+		fmt.Println(httpErr)
+		err = multierror.Append(err, httpErr)
+	} else {
+		fmt.Println("target HTTP proxy", httpName, "deleted successfully")
+	}
+
+	httpsName := s.namer.TargetHttpsProxyName()
+	fmt.Println("Deleting target HTTPS proxy", httpsName)
+	httpsErr := s.tpp.DeleteTargetHttpsProxy(httpsName)
+	if httpsErr != nil {
+		httpsErr = fmt.Errorf("error in deleting target HTTPS proxy %s: %s", httpsName, httpsErr)
+		fmt.Println(httpsErr)
+		err = multierror.Append(err, httpsErr)
+	} else {
+		fmt.Println("target HTTPS proxy", httpsName, "deleted successfully")
+	}
+	return err
 }
 
 // ensureHttpProxy ensures that the required target proxy exists for the given port.
@@ -111,6 +136,8 @@ func (s *TargetProxySyncer) updateHttpTargetProxy(desiredHttpProxy *compute.Targ
 	fmt.Println("Updating existing target http proxy", name, "to match the desired state")
 	// There is no UpdateTargetHttpProxy method.
 	// Apart from name, UrlMap is the only field that can be different. We update that field directly.
+	// TODO(nikhiljindal): Handle description field differences:
+	// https://github.com/GoogleCloudPlatform/k8s-multicluster-ingress/issues/94.
 	urlMap := &compute.UrlMap{SelfLink: desiredHttpProxy.UrlMap}
 	glog.Infof("Setting URL Map to:%+v", urlMap)
 	err := s.tpp.SetUrlMapForTargetHttpProxy(desiredHttpProxy, urlMap)
@@ -166,5 +193,100 @@ func (s *TargetProxySyncer) desiredHttpTargetProxy(lbName, umLink string) *compu
 		Name:        s.namer.TargetHttpProxyName(),
 		Description: fmt.Sprintf("Target http proxy for kubernetes multicluster loadbalancer %s", lbName),
 		UrlMap:      umLink,
+	}
+}
+
+// ensureHttpsProxy ensures that the required target proxy exists for the given port.
+// Does nothing if it exists already, else creates a new one.
+// Returns the self link for the ensured https proxy.
+func (s *TargetProxySyncer) ensureHttpsProxy(lbName, umLink, certLink string, forceUpdate bool) (string, error) {
+	fmt.Println("Ensuring target https proxy")
+	desiredHttpsProxy := s.desiredHttpsTargetProxy(lbName, umLink, certLink)
+	name := desiredHttpsProxy.Name
+	// Check if target proxy already exists.
+	existingHttpsProxy, err := s.tpp.GetTargetHttpsProxy(name)
+	if err == nil {
+		fmt.Println("Target HTTPS proxy", name, "exists already. Checking if it matches our desired target proxy")
+		glog.V(5).Infof("Existing target HTTPS proxy: %+v", existingHttpsProxy)
+		// Target proxy with that name exists already. Check if it matches what we want.
+		if targetHttpsProxyMatches(*desiredHttpsProxy, *existingHttpsProxy) {
+			// Nothing to do. Desired target proxy exists already.
+			fmt.Println("Desired target HTTPS proxy", name, "exists already.")
+			return existingHttpsProxy.SelfLink, nil
+		}
+		if forceUpdate {
+			fmt.Println("Updating existing target HTTPS proxy", name, "to match the desired state")
+			return s.updateHttpsTargetProxy(desiredHttpsProxy)
+		} else {
+			fmt.Println("Will not overwrite this differing Target HTTPS Proxy without the --force flag")
+			return "", fmt.Errorf("Will not overwrite Target HTTPS Proxy without --force")
+		}
+	}
+	glog.V(5).Infof("Got error %s while trying to get existing target HTTPS proxy %s", err, name)
+	// TODO(nikhiljindal): Handle non NotFound errors. We should create only if the error is NotFound.
+	// Create the target proxy.
+	fmt.Println("Creating target HTTPS proxy", name)
+	glog.V(5).Infof("Creating target HTTPS proxy %v", *desiredHttpsProxy)
+	return s.createHttpsTargetProxy(desiredHttpsProxy)
+}
+
+func (s *TargetProxySyncer) updateHttpsTargetProxy(desiredHttpsProxy *compute.TargetHttpsProxy) (string, error) {
+	name := desiredHttpsProxy.Name
+	fmt.Println("Updating existing target https proxy", name, "to match the desired state")
+	// There is no UpdateTargetHttpsProxy method.
+	// Apart from name, UrlMap is the only field that can be different. We update that field directly.
+	// TODO(nikhiljindal): Handle description field differences:
+	// https://github.com/GoogleCloudPlatform/k8s-multicluster-ingress/issues/94.
+	err := s.tpp.SetUrlMapForTargetHttpsProxy(desiredHttpsProxy, &compute.UrlMap{SelfLink: desiredHttpsProxy.UrlMap})
+	if err != nil {
+		return "", err
+	}
+	fmt.Println("Target https proxy", name, "updated successfully")
+	existing, err := s.tpp.GetTargetHttpsProxy(name)
+	if err != nil {
+		return "", err
+	}
+	return existing.SelfLink, nil
+}
+
+func (s *TargetProxySyncer) createHttpsTargetProxy(desiredHttpsProxy *compute.TargetHttpsProxy) (string, error) {
+	name := desiredHttpsProxy.Name
+	fmt.Println("Creating target https proxy", name)
+	glog.V(5).Infof("Creating target https proxy %v", desiredHttpsProxy)
+	err := s.tpp.CreateTargetHttpsProxy(desiredHttpsProxy)
+	if err != nil {
+		return "", err
+	}
+	fmt.Println("Target https proxy", name, "created successfully")
+	existing, err := s.tpp.GetTargetHttpsProxy(name)
+	if err != nil {
+		return "", err
+	}
+	return existing.SelfLink, nil
+}
+
+func targetHttpsProxyMatches(desiredHttpsProxy, existingHttpsProxy compute.TargetHttpsProxy) bool {
+	existingHttpsProxy.CreationTimestamp = ""
+	existingHttpsProxy.Id = 0
+	existingHttpsProxy.Kind = ""
+	existingHttpsProxy.SelfLink = ""
+	existingHttpsProxy.ServerResponse = googleapi.ServerResponse{}
+
+	equal := reflect.DeepEqual(existingHttpsProxy, desiredHttpsProxy)
+	if !equal {
+		glog.V(2).Infof("TargetHttpsProxies differ.")
+		glog.V(3).Infof("Diff: %v", diff.ObjectDiff(desiredHttpsProxy, existingHttpsProxy))
+	} else {
+		glog.V(2).Infof("TargetHttpsProxies match.")
+	}
+	return equal
+}
+func (s *TargetProxySyncer) desiredHttpsTargetProxy(lbName, umLink, certLink string) *compute.TargetHttpsProxy {
+	// Compute the desired target https proxy.
+	return &compute.TargetHttpsProxy{
+		Name:            s.namer.TargetHttpsProxyName(),
+		Description:     fmt.Sprintf("Target https proxy for kubernetes multicluster loadbalancer %s", lbName),
+		UrlMap:          umLink,
+		SslCertificates: []string{certLink},
 	}
 }
