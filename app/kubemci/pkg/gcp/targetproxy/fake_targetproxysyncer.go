@@ -21,6 +21,8 @@ const (
 type FakeTargetProxy struct {
 	LBName string
 	UmLink string
+	// Link to the SSL certificate. This is present only for HTTPS target proxies.
+	CertLink string
 }
 
 type FakeTargetProxySyncer struct {
@@ -40,6 +42,15 @@ func (f *FakeTargetProxySyncer) EnsureHttpTargetProxy(lbName, umLink string, for
 	f.EnsuredTargetProxies = append(f.EnsuredTargetProxies, FakeTargetProxy{
 		LBName: lbName,
 		UmLink: umLink,
+	})
+	return FakeTargetProxySelfLink, nil
+}
+
+func (f *FakeTargetProxySyncer) EnsureHttpsTargetProxy(lbName, umLink, certLink string, forceUpdate bool) (string, error) {
+	f.EnsuredTargetProxies = append(f.EnsuredTargetProxies, FakeTargetProxy{
+		LBName:   lbName,
+		UmLink:   umLink,
+		CertLink: certLink,
 	})
 	return FakeTargetProxySelfLink, nil
 }

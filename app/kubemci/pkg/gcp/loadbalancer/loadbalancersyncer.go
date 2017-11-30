@@ -41,6 +41,7 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/healthcheck"
 	utilsnamer "github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/namer"
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/networktags"
+	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/sslcert"
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/targetproxy"
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/urlmap"
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/utils"
@@ -67,6 +68,8 @@ type LoadBalancerSyncer struct {
 	frs forwardingrule.ForwardingRuleSyncerInterface
 	// Firewall rule syncer to sync the required firewall rule.
 	fws firewallrule.FirewallRuleSyncerInterface
+	// SSL Certificates syncer to sync the required ssl certificates.
+	scs sslcert.SSLCertSyncerInterface
 	// Kubernetes clients to send requests to kubernetes apiservers.
 	// This is a map from cluster name to the client for that cluster.
 	clients map[string]kubeclient.Interface
@@ -92,6 +95,7 @@ func NewLoadBalancerSyncer(lbName string, clients map[string]kubeclient.Interfac
 		tps:     targetproxy.NewTargetProxySyncer(namer, cloud),
 		frs:     forwardingrule.NewForwardingRuleSyncer(namer, cloud),
 		fws:     firewallrule.NewFirewallRuleSyncer(namer, cloud, ntg),
+		scs:     sslcert.NewSSLCertSyncer(namer, cloud),
 		clients: clients,
 		igp:     cloud,
 		ipp:     cloud,
@@ -157,9 +161,24 @@ func (l *LoadBalancerSyncer) CreateLoadBalancer(ing *v1beta1.Ingress, forceUpdat
 	}
 	// Configure HTTPS target proxy and forwarding rule, if required.
 	if (ingAnnotations.UseNamedTLS() != "") || len(ing.Spec.TLS) > 0 {
-		// TODO(nikhiljindal): Support creating https target proxy and forwarding rule.
-		fmt.Println("Error: This tool does not support creating an HTTPS target proxy and forwarding rule yet.")
-		err = multierror.Append(err, fmt.Errorf("This tool does not support creating HTTPS target proxy and forwarding rule yet."))
+		// TODO(nikhiljindal): Support creating https forwarding rule.
+		fmt.Println("Error: This tool does not support creating an HTTPS forwarding rule yet. So HTTPS ingress will not work")
+		err = multierror.Append(err, fmt.Errorf("This tool does not support creating an HTTPS forwarding rule yet. So HTTPS ingress will not work"))
+		// Note that we expect to load the cert from any cluster,
+		// so users are required to create the secret in all clusters.
+		certLink, cErr := l.scs.EnsureSSLCert(l.lbName, ing, client, forceUpdate)
+		if cErr != nil {
+			// Aggregate errors and return all at the end.
+			fmt.Println("Error ensuring SSL certs:", cErr)
+			err = multierror.Append(err, cErr)
+		}
+
+		_, tpErr := l.tps.EnsureHttpsTargetProxy(l.lbName, umLink, certLink, forceUpdate)
+		if tpErr != nil {
+			// Aggregate errors and return all at the end.
+			fmt.Println("Error ensuring HTTPS target proxy:", tpErr)
+			err = multierror.Append(err, tpErr)
+		}
 	}
 	if fwErr := l.fws.EnsureFirewallRule(l.lbName, ports, igs, forceUpdate); fwErr != nil {
 		// Aggregate errors and return all at the end.
@@ -190,6 +209,10 @@ func (l *LoadBalancerSyncer) DeleteLoadBalancer(ing *v1beta1.Ingress) error {
 	if frErr := l.frs.DeleteForwardingRules(); frErr != nil {
 		// Aggregate errors and return all at the end.
 		err = multierror.Append(err, frErr)
+	}
+	if scErr := l.scs.DeleteSSLCert(); scErr != nil {
+		// Aggregate errors and return all at the end.
+		err = multierror.Append(err, scErr)
 	}
 	if tpErr := l.tps.DeleteTargetProxies(); tpErr != nil {
 		// Aggregate errors and return all at the end.
