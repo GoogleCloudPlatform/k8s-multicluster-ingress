@@ -75,8 +75,9 @@ func (s *TargetProxySyncer) DeleteTargetProxies() error {
 // Does nothing if it exists already, else creates a new one.
 // Returns the self link for the ensured http proxy.
 func (s *TargetProxySyncer) ensureHttpProxy(lbName, umLink string, forceUpdate bool) (string, error) {
-	fmt.Println("Ensuring target http proxy")
+	fmt.Println("Ensuring target http proxy. UrlMap:", umLink)
 	desiredHttpProxy := s.desiredHttpTargetProxy(lbName, umLink)
+	glog.Infof("desiredHttpTargetProxy:%+v", desiredHttpProxy)
 	name := desiredHttpProxy.Name
 	// Check if target proxy already exists.
 	existingHttpProxy, err := s.tpp.GetTargetHttpProxy(name)
@@ -84,7 +85,7 @@ func (s *TargetProxySyncer) ensureHttpProxy(lbName, umLink string, forceUpdate b
 		fmt.Println("Target HTTP proxy", name, "exists already. Checking if it matches our desired target proxy")
 		glog.V(5).Infof("Existing target HTTP proxy: %+v", existingHttpProxy)
 		// Target proxy with that name exists already. Check if it matches what we want.
-		if targetHttpProxyMatches(desiredHttpProxy, existingHttpProxy) {
+		if targetHttpProxyMatches(*desiredHttpProxy, *existingHttpProxy) {
 			// Nothing to do. Desired target proxy exists already.
 			fmt.Println("Desired target HTTP proxy", name, "exists already.")
 			return existingHttpProxy.SelfLink, nil
@@ -110,13 +111,17 @@ func (s *TargetProxySyncer) updateHttpTargetProxy(desiredHttpProxy *compute.Targ
 	fmt.Println("Updating existing target http proxy", name, "to match the desired state")
 	// There is no UpdateTargetHttpProxy method.
 	// Apart from name, UrlMap is the only field that can be different. We update that field directly.
-	err := s.tpp.SetUrlMapForTargetHttpProxy(desiredHttpProxy, &compute.UrlMap{SelfLink: desiredHttpProxy.UrlMap})
+	urlMap := &compute.UrlMap{SelfLink: desiredHttpProxy.UrlMap}
+	glog.Infof("Setting URL Map to:%+v", urlMap)
+	err := s.tpp.SetUrlMapForTargetHttpProxy(desiredHttpProxy, urlMap)
 	if err != nil {
+		fmt.Println("Error setting URL Map:", err)
 		return "", err
 	}
 	fmt.Println("Target http proxy", name, "updated successfully")
 	existing, err := s.tpp.GetTargetHttpProxy(name)
 	if err != nil {
+		fmt.Println("Error getting target HTTP Proxy:", err)
 		return "", err
 	}
 	return existing.SelfLink, nil
@@ -138,18 +143,17 @@ func (s *TargetProxySyncer) createHttpTargetProxy(desiredHttpProxy *compute.Targ
 	return existing.SelfLink, nil
 }
 
-func targetHttpProxyMatches(desiredHttpProxy, existingHttpProxy *compute.TargetHttpProxy) bool {
-	existingProxyCopy := *existingHttpProxy
-	existingProxyCopy.CreationTimestamp = ""
-	existingProxyCopy.Id = 0
-	existingProxyCopy.Kind = ""
-	existingProxyCopy.SelfLink = ""
-	existingProxyCopy.ServerResponse = googleapi.ServerResponse{}
+func targetHttpProxyMatches(desiredHttpProxy, existingHttpProxy compute.TargetHttpProxy) bool {
+	existingHttpProxy.CreationTimestamp = ""
+	existingHttpProxy.Id = 0
+	existingHttpProxy.Kind = ""
+	existingHttpProxy.SelfLink = ""
+	existingHttpProxy.ServerResponse = googleapi.ServerResponse{}
 
-	equal := reflect.DeepEqual(&existingProxyCopy, desiredHttpProxy)
+	equal := reflect.DeepEqual(existingHttpProxy, desiredHttpProxy)
 	if !equal {
 		glog.V(2).Infof("TargetHttpProxies differ.")
-		glog.V(5).Infof("Diff: %v", diff.ObjectDiff(desiredHttpProxy, existingProxyCopy))
+		glog.V(0).Infof("Diff: %v", diff.ObjectDiff(desiredHttpProxy, existingHttpProxy))
 	} else {
 		glog.V(2).Infof("TargetHttpProxies match.")
 	}

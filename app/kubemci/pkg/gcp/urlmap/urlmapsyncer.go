@@ -80,7 +80,7 @@ func (s *URLMapSyncer) EnsureURLMap(lbName string, ing *v1beta1.Ingress, beMap b
 		// server side).
 		desiredUM.Fingerprint = existingUM.Fingerprint
 		// URL Map with that name exists already. Check if it matches what we want.
-		if urlMapMatches(desiredUM, existingUM) {
+		if urlMapMatches(*desiredUM, *existingUM) {
 			// Nothing to do. Desired url map exists already.
 			fmt.Println("Desired url map exists already")
 			return existingUM.SelfLink, nil
@@ -142,7 +142,7 @@ func (s *URLMapSyncer) createURLMap(desiredUM *compute.UrlMap) (string, error) {
 	return um.SelfLink, nil
 }
 
-func urlMapMatches(desiredUM, existingUM *compute.UrlMap) bool {
+func urlMapMatches(desiredUM, existingUM compute.UrlMap) bool {
 	// Clear output-only fields to do our comparison
 	existingUM.CreationTimestamp = ""
 	existingUM.Kind = ""

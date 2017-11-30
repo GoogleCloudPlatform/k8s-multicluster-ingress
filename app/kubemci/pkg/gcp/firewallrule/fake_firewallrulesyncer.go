@@ -37,7 +37,7 @@ func NewFakeFirewallRuleSyncer() FirewallRuleSyncerInterface {
 // Ensure this implements FirewallRuleSyncerInterface.
 var _ FirewallRuleSyncerInterface = &FakeFirewallRuleSyncer{}
 
-func (h *FakeFirewallRuleSyncer) EnsureFirewallRule(lbName string, ports []ingressbe.ServicePort, igLinks map[string][]string) error {
+func (h *FakeFirewallRuleSyncer) EnsureFirewallRule(lbName string, ports []ingressbe.ServicePort, igLinks map[string][]string, forceUpdate bool) error {
 	h.EnsuredFirewallRules = append(h.EnsuredFirewallRules, FakeFirewallRule{
 		LBName:  lbName,
 		Ports:   ports,

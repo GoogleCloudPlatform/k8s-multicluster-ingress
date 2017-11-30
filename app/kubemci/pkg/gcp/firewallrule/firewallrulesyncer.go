@@ -16,11 +16,14 @@ package firewallrule
 
 import (
 	"fmt"
+	"reflect"
 	"sort"
 	"strconv"
 
 	"github.com/golang/glog"
-	"google.golang.org/api/compute/v1"
+	compute "google.golang.org/api/compute/v1"
+	"google.golang.org/api/googleapi"
+	"k8s.io/apimachinery/pkg/util/diff"
 	ingressbe "k8s.io/ingress-gce/pkg/backends"
 	ingressfw "k8s.io/ingress-gce/pkg/firewalls"
 
@@ -53,11 +56,11 @@ var _ FirewallRuleSyncerInterface = &FirewallRuleSyncer{}
 
 // EnsureFirewallRule ensures that the required firewall rules exist for the given ports.
 // Does nothing if they exist already, else creates new ones.
-func (s *FirewallRuleSyncer) EnsureFirewallRule(lbName string, ports []ingressbe.ServicePort, igLinks map[string][]string) error {
+func (s *FirewallRuleSyncer) EnsureFirewallRule(lbName string, ports []ingressbe.ServicePort, igLinks map[string][]string, forceUpdate bool) error {
 	fmt.Println("Ensuring firewall rule")
 	glog.V(5).Infof("Received ports: %v", ports)
 	glog.V(5).Infof("Received instance groups: %v", igLinks)
-	err := s.ensureFirewallRule(lbName, ports, igLinks)
+	err := s.ensureFirewallRule(lbName, ports, igLinks, forceUpdate)
 	if err != nil {
 		return fmt.Errorf("Error %s in ensuring firewall rule", err)
 	}
@@ -77,7 +80,7 @@ func (s *FirewallRuleSyncer) DeleteFirewallRules() error {
 
 // ensureFirewallRule ensures that the required firewall rule exists for the given ports.
 // Does nothing if it exists already, else creates a new one.
-func (s *FirewallRuleSyncer) ensureFirewallRule(lbName string, ports []ingressbe.ServicePort, igLinks map[string][]string) error {
+func (s *FirewallRuleSyncer) ensureFirewallRule(lbName string, ports []ingressbe.ServicePort, igLinks map[string][]string, forceUpdate bool) error {
 	desiredFW, err := s.desiredFirewallRule(lbName, ports, igLinks)
 	if err != nil {
 		return err
@@ -88,14 +91,21 @@ func (s *FirewallRuleSyncer) ensureFirewallRule(lbName string, ports []ingressbe
 	if err == nil {
 		fmt.Println("Firewall rule", name, "exists already. Checking if it matches our desired firewall rule")
 		glog.V(5).Infof("Existing firewall rule: %v\n, desired firewall rule: %v", existingFW, *desiredFW)
+		// Use the existing network.
+		desiredFW.Network = existingFW.Network
 		// Firewall rule with that name exists already. Check if it matches what we want.
 		if firewallRuleMatches(desiredFW, existingFW) {
 			// Nothing to do. Desired firewall rule exists already.
-			fmt.Println("Desired firewall rule exists already")
+			fmt.Println("Desired firewall rule exists already.")
 			return nil
 		}
-		// TODO (nikhiljindal): Require explicit permission from user before doing this.
-		return s.updateFirewallRule(desiredFW)
+		if forceUpdate {
+			fmt.Println("Updating existing firewall rule to match the desired state (since --force specified)")
+			return s.updateFirewallRule(desiredFW)
+		} else {
+			fmt.Println("Will not overwrite a differing firewall rule without the --force flag.")
+			return fmt.Errorf("will not overwrite firewall rule without --force")
+		}
 	}
 	glog.V(5).Infof("Got error %s while trying to get existing firewall rule %s", err, name)
 	// TODO(nikhiljindal): Handle non NotFound errors. We should create only if the error is NotFound.
@@ -106,9 +116,9 @@ func (s *FirewallRuleSyncer) ensureFirewallRule(lbName string, ports []ingressbe
 // updateFirewallRule updates the firewall rule and returns the updated firewall rule.
 func (s *FirewallRuleSyncer) updateFirewallRule(desiredFR *compute.Firewall) error {
 	name := desiredFR.Name
-	fmt.Println("Updating existing firewall rule", name, "to match the desired state")
 	err := s.fwp.UpdateFirewall(desiredFR)
 	if err != nil {
+		fmt.Println("Error updating firewall:", err)
 		return err
 	}
 	fmt.Println("Firewall rule", name, "updated successfully")
@@ -128,11 +138,34 @@ func (s *FirewallRuleSyncer) createFirewallRule(desiredFR *compute.Firewall) err
 	return nil
 }
 
+// Note: mutates the existingFR by clearing fields we don't care about matching.
 func firewallRuleMatches(desiredFR, existingFR *compute.Firewall) bool {
-	// TODO(nikhiljindal): Add proper logic to figure out if the 2 firewall rules match.
-	// Need to add the --force flag for user to consent overwriting before this method can be updated to return false.
 	// Also need to take special care of target tags. There can be multiple target tags, all of which can be "correct".
-	return true
+
+	// Clear output-only fields.
+	existingFR.CreationTimestamp = ""
+	existingFR.Id = 0
+	existingFR.Kind = ""
+	existingFR.SelfLink = ""
+	// Check for and clear default Direction.
+	// if existingFR.Direction == "INGRESS" {
+	// 	existingFR.Direction = ""
+	// }
+
+	// It is fine if the Priority differs- The user may have legitimately changed it.
+	existingFR.ServerResponse = googleapi.ServerResponse{}
+	if existingFR.Priority == 1000 {
+		existingFR.Priority = 0
+	}
+
+	glog.V(5).Infof("Desired firewall rule:\n%#v", desiredFR)
+	glog.V(5).Infof("Existing firewall rule (ignoring some fields):\n%#v", existingFR)
+
+	equal := reflect.DeepEqual(desiredFR, existingFR)
+	if !equal {
+		glog.V(5).Infof("%s", diff.ObjectDiff(desiredFR, existingFR))
+	}
+	return equal
 }
 
 func (s *FirewallRuleSyncer) desiredFirewallRule(lbName string, ports []ingressbe.ServicePort, igLinks map[string][]string) (*compute.Firewall, error) {
@@ -159,6 +192,7 @@ func (s *FirewallRuleSyncer) desiredFirewallRule(lbName string, ports []ingressb
 			},
 		},
 		TargetTags: targetTags,
+		Direction:  "INGRESS",
 		// TODO(nikhiljindal): Set the `Network` field for non-default networks.
 	}, nil
 }

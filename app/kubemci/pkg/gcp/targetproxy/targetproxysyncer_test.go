@@ -71,7 +71,8 @@ func TestEnsureTargetHttpProxy(t *testing.T) {
 		glog.Infof("test case:%v", c.desc)
 		tpLink, err := tps.EnsureHttpTargetProxy(lbName, c.umLink, c.forceUpdate)
 		if (err != nil) != c.ensureErr {
-			t.Errorf("expected no error in ensuring target proxy, actual: %v", err)
+			glog.Errorf("expected_error:%v Got Error:%v", c.ensureErr, err)
+			t.Errorf("in ensuring target proxy, expected error? %v, actual: %v", c.ensureErr, err)
 		}
 		// Verify that GET does not return NotFound.
 		tp, err := tpp.GetTargetHttpProxy(tpName)
