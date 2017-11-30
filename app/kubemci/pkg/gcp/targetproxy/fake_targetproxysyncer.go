@@ -19,8 +19,9 @@ const (
 )
 
 type FakeTargetProxy struct {
-	LBName string
-	UmLink string
+	LBName   string
+	UmLink   string
+	CertLink string
 }
 
 type FakeTargetProxySyncer struct {
@@ -40,6 +41,15 @@ func (f *FakeTargetProxySyncer) EnsureHttpTargetProxy(lbName, umLink string, for
 	f.EnsuredTargetProxies = append(f.EnsuredTargetProxies, FakeTargetProxy{
 		LBName: lbName,
 		UmLink: umLink,
+	})
+	return FakeTargetProxySelfLink, nil
+}
+
+func (f *FakeTargetProxySyncer) EnsureHttpsTargetProxy(lbName, umLink, certLink string, forceUpdate bool) (string, error) {
+	f.EnsuredTargetProxies = append(f.EnsuredTargetProxies, FakeTargetProxy{
+		LBName:   lbName,
+		UmLink:   umLink,
+		CertLink: certLink,
 	})
 	return FakeTargetProxySelfLink, nil
 }

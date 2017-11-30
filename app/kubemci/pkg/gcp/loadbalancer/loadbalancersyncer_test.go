@@ -37,6 +37,7 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/firewallrule"
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/forwardingrule"
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/healthcheck"
+	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/sslcert"
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/targetproxy"
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/urlmap"
 )
@@ -50,6 +51,7 @@ func newLoadBalancerSyncer(lbName string) *LoadBalancerSyncer {
 		tps:    targetproxy.NewFakeTargetProxySyncer(),
 		frs:    forwardingrule.NewFakeForwardingRuleSyncer(),
 		fws:    firewallrule.NewFakeFirewallRuleSyncer(),
+		scs:    sslcert.NewFakeSSLCertSyncer(),
 		clients: map[string]kubeclient.Interface{
 			"cluster1": &fake.Clientset{},
 			"cluster2": &fake.Clientset{},
@@ -58,6 +60,8 @@ func newLoadBalancerSyncer(lbName string) *LoadBalancerSyncer {
 		ipp: ingresslb.NewFakeLoadBalancers(""),
 	}
 }
+
+// TODO(nikhiljindal): Add a https ingress test.
 
 func TestCreateLoadBalancer(t *testing.T) {
 	lbName := "lb-name"
