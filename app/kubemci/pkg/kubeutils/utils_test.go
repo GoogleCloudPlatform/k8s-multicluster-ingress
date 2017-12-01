@@ -46,7 +46,7 @@ func runGetClusterContexts(kubeContexts []string, expectedCmds []expectedCommand
 		i++
 		return output, err
 	}
-	clusters, err := getClusterContexts("kubeconfig", kubeContexts)
+	clusters, err := GetClusterContexts("kubeconfig", kubeContexts)
 	if err != nil {
 		return clusters, err
 	}

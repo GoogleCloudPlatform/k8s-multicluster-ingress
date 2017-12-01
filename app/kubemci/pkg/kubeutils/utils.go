@@ -28,18 +28,18 @@ import (
 // GetClients returns a map of cluster name to kubeclient for each cluster context.
 // Uses all contexts from the given kubeconfig if kubeContexts is empty.
 func GetClients(kubeconfig string, kubeContexts []string) (map[string]kubeclient.Interface, error) {
-	// Pass the contexts list through getClusterContexts even if we already
+	// Pass the contexts list through GetClusterContexts even if we already
 	// know the contexts to verify that they are valid.
-	contexts, err := getClusterContexts(kubeconfig, kubeContexts)
+	contexts, err := GetClusterContexts(kubeconfig, kubeContexts)
 	if err != nil {
 		return nil, err
 	}
 	return getClientsForContexts(kubeconfig, contexts)
 }
 
-// Extracts and returns the list of contexts from the given kubeconfig.
+// GetClusterContexts extracts and returns the list of contexts from the given kubeconfig.
 // Returns the passed kubeContexts if they are all valid. Returns an error otherwise.
-func getClusterContexts(kubeconfig string, kubeContexts []string) ([]string, error) {
+func GetClusterContexts(kubeconfig string, kubeContexts []string) ([]string, error) {
 	kubectlArgs := []string{"kubectl"}
 	if kubeconfig != "" {
 		kubectlArgs = append(kubectlArgs, fmt.Sprintf("--kubeconfig=%s", kubeconfig))
