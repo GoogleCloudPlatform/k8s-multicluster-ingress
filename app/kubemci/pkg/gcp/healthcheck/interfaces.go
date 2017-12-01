@@ -16,6 +16,7 @@ package healthcheck
 
 import (
 	"google.golang.org/api/compute/v1"
+	"k8s.io/client-go/kubernetes"
 	ingressbe "k8s.io/ingress-gce/pkg/backends"
 )
 
@@ -27,7 +28,7 @@ type HealthCheckSyncerInterface interface {
 	// EnsureHealthCheck ensures that the required health checks exist.
 	// Returns a map of port number to the health check for that port. The map contains all the ports for which  it was successfully able to ensure a health check.
 	// In case of no error, the map will contain all the ports from the given array of ports.
-	EnsureHealthCheck(lbName string, ports []ingressbe.ServicePort, forceUpdate bool) (HealthChecksMap, error)
+	EnsureHealthCheck(lbName string, ports []ingressbe.ServicePort, clients map[string]kubernetes.Interface, forceUpdate bool) (HealthChecksMap, error)
 	// DeleteHealthChecks deletes all the health checks that EnsureHealthCheck would have created.
 	DeleteHealthChecks(ports []ingressbe.ServicePort) error
 }

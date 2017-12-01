@@ -18,6 +18,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"strings"
 	"time"
 
 	"github.com/golang/glog"
@@ -25,10 +26,12 @@ import (
 	compute "google.golang.org/api/compute/v1"
 	"google.golang.org/api/googleapi"
 	"k8s.io/apimachinery/pkg/util/diff"
+	"k8s.io/client-go/kubernetes"
 	ingressbe "k8s.io/ingress-gce/pkg/backends"
 	ingresshc "k8s.io/ingress-gce/pkg/healthchecks"
 
 	utilsnamer "github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/namer"
+	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/kubeutils"
 )
 
 const (
@@ -66,12 +69,18 @@ var _ HealthCheckSyncerInterface = &HealthCheckSyncer{}
 // EnsureHealthCheck ensures that the required health check exists.
 // Does nothing if it exists already, else creates a new one.
 // Returns a map of the ensured health checks keyed by the corresponding port.
-func (h *HealthCheckSyncer) EnsureHealthCheck(lbName string, ports []ingressbe.ServicePort, forceUpdate bool) (HealthChecksMap, error) {
+func (h *HealthCheckSyncer) EnsureHealthCheck(lbName string, ports []ingressbe.ServicePort, clients map[string]kubernetes.Interface, forceUpdate bool) (HealthChecksMap, error) {
 	fmt.Println("Ensuring health checks")
 	var err error
 	ensuredHealthChecks := HealthChecksMap{}
 	for _, p := range ports {
-		hc, hcErr := h.ensureHealthCheck(lbName, p, forceUpdate)
+		path, pathErr := getHealthCheckPath(p, clients)
+		if pathErr != nil {
+			err = multierror.Append(err, pathErr)
+			continue
+		}
+		fmt.Println("Path for healtcheck is", path)
+		hc, hcErr := h.ensureHealthCheck(lbName, p, path, forceUpdate)
 		if hcErr != nil {
 			hcErr = fmt.Errorf("Error %s in ensuring health check for port %v", hcErr, p)
 			// Try ensuring health checks for all ports and return all errors at once.
@@ -81,6 +90,38 @@ func (h *HealthCheckSyncer) EnsureHealthCheck(lbName string, ports []ingressbe.S
 		ensuredHealthChecks[p.Port] = hc
 	}
 	return ensuredHealthChecks, err
+}
+
+func getHealthCheckPath(port ingressbe.ServicePort, clients map[string]kubernetes.Interface) (string, error) {
+	var err error
+	path := ""
+	for cName, c := range clients {
+		probe, prErr := kubeutils.GetProbe(c, port)
+		if prErr != nil {
+			prErr = fmt.Errorf("Error %s when getting readiness probe from pods for service %s", prErr, port.SvcName)
+			err = multierror.Append(err, prErr)
+			continue
+		}
+		if probe != nil && probe.HTTPGet != nil {
+			if path != "" {
+				// Ensure that all probes have the same health check path
+				if path != probe.HTTPGet.Path {
+					pathErr := fmt.Errorf("readiness probe path '%s' from pod spec in cluster '%s' does not match already extracted health check path '%s'", probe.HTTPGet.Path, cName, path)
+					err = multierror.Append(err, pathErr)
+					return path, err
+				}
+			} else {
+				// TODO share code with `applyProbeSettingsToHC` method from ingress-gce/backend to get probe settings
+				path = probe.HTTPGet.Path
+			}
+		}
+	}
+
+	// GCE requires a leading "/" for health check urls.
+	if !strings.HasPrefix(path, "/") {
+		path = "/" + path
+	}
+	return path, err
 }
 
 func (h *HealthCheckSyncer) DeleteHealthChecks(ports []ingressbe.ServicePort) error {
@@ -118,9 +159,9 @@ func getJsonIgnoreErr(v interface{}) string {
 	return string(output)
 }
 
-func (h *HealthCheckSyncer) ensureHealthCheck(lbName string, port ingressbe.ServicePort, forceUpdate bool) (*compute.HealthCheck, error) {
+func (h *HealthCheckSyncer) ensureHealthCheck(lbName string, port ingressbe.ServicePort, path string, forceUpdate bool) (*compute.HealthCheck, error) {
 	fmt.Println("Ensuring health check for port:", port)
-	desiredHC, err := h.desiredHealthCheck(lbName, port)
+	desiredHC, err := h.desiredHealthCheck(lbName, port, path)
 	if err != nil {
 		return nil, fmt.Errorf("error %s in computing desired health check", err)
 	}
@@ -190,7 +231,7 @@ func healthCheckMatches(desiredHC, existingHC compute.HealthCheck) bool {
 	return equal
 }
 
-func (h *HealthCheckSyncer) desiredHealthCheck(lbName string, port ingressbe.ServicePort) (compute.HealthCheck, error) {
+func (h *HealthCheckSyncer) desiredHealthCheck(lbName string, port ingressbe.ServicePort, path string) (compute.HealthCheck, error) {
 	// Compute the desired health check.
 	hc := compute.HealthCheck{
 		Name:        h.namer.HealthCheckName(port.Port),
@@ -210,14 +251,14 @@ func (h *HealthCheckSyncer) desiredHealthCheck(lbName string, port ingressbe.Ser
 	case "HTTP":
 		hc.HttpHealthCheck = &compute.HTTPHealthCheck{
 			Port:        port.Port,
-			RequestPath: "/", // TODO(nikhiljindal): Allow customization.
+			RequestPath: path,
 			ProxyHeader: "NONE",
 		}
 		break
 	case "HTTPS":
 		hc.HttpsHealthCheck = &compute.HTTPSHealthCheck{
 			Port:        port.Port, // TODO(nikhiljindal): Allow customization.
-			RequestPath: "/",       // TODO(nikhiljindal): Allow customization.
+			RequestPath: path,
 			// TODO(G-Harmon): When HTTPS support is added, we likely need to set ProxyHeader, like HTTP does.
 		}
 		break

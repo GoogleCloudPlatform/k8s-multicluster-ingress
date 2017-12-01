@@ -16,6 +16,7 @@ package healthcheck
 
 import (
 	"google.golang.org/api/compute/v1"
+	"k8s.io/client-go/kubernetes"
 	ingressbe "k8s.io/ingress-gce/pkg/backends"
 )
 
@@ -37,7 +38,7 @@ func NewFakeHealthCheckSyncer() HealthCheckSyncerInterface {
 // Ensure this implements HealthCheckSyncerInterface.
 var _ HealthCheckSyncerInterface = &FakeHealthCheckSyncer{}
 
-func (f *FakeHealthCheckSyncer) EnsureHealthCheck(lbName string, ports []ingressbe.ServicePort, force bool) (HealthChecksMap, error) {
+func (f *FakeHealthCheckSyncer) EnsureHealthCheck(lbName string, ports []ingressbe.ServicePort, clients map[string]kubernetes.Interface, force bool) (HealthChecksMap, error) {
 	hcMap := HealthChecksMap{}
 	for _, p := range ports {
 		f.EnsuredHealthChecks = append(f.EnsuredHealthChecks, FakeHealthCheck{
