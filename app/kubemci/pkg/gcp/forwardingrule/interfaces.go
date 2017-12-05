@@ -28,4 +28,6 @@ type ForwardingRuleSyncerInterface interface {
 	DeleteForwardingRules() error
 	// GetLoadBalancerStatus returns the struct describing the status of the given load balancer.
 	GetLoadBalancerStatus(lbName string) (*status.LoadBalancerStatus, error)
+	// ListLoadBalancerStatuses returns status of all MCI ingresses (load balancers).
+	ListLoadBalancerStatuses() ([]status.LoadBalancerStatus, error)
 }

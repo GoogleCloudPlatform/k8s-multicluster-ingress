@@ -42,6 +42,7 @@ import (
 	utilsnamer "github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/namer"
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/networktags"
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/sslcert"
+	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/status"
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/targetproxy"
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/urlmap"
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/utils"
@@ -242,6 +243,31 @@ func (l *LoadBalancerSyncer) PrintStatus() (string, error) {
 	return fmt.Sprintf("Load balancer %s has IPAddress %s and is spread across %d clusters (%s)", l.lbName, sd.IPAddress, len(sd.Clusters), strings.Join(sd.Clusters, ",")), nil
 }
 
+func formatLoadBalancersList(balancers []status.LoadBalancerStatus) (string, error) {
+	// TODO: Should reuse printers in kubernetes/pkg/printers/printers.go
+	if len(balancers) == 0 {
+		return "No multicluster ingresses found.", nil
+	}
+	var result string = "List of multicluster ingresses created:\nName; IP; Clusters\n"
+	for _, lbStatus := range balancers {
+		result += "Name: " + lbStatus.LoadBalancerName
+		result += "\tIP: " + lbStatus.IPAddress
+		result += "\tClusters: " + strings.Join(lbStatus.Clusters, ", ")
+		result += "\n"
+	}
+	result = strings.Trim(result, "\n")
+	return result, nil
+}
+
+func (l *LoadBalancerSyncer) ListLoadBalancers() (string, error) {
+	balancers, err := l.frs.ListLoadBalancerStatuses()
+	if err != nil {
+		return "", err
+	}
+	return formatLoadBalancersList(balancers)
+
+}
+
 func (l *LoadBalancerSyncer) getIPAddress(ing *v1beta1.Ingress) (string, error) {
 	key := annotations.StaticIPNameKey
 	if ing.ObjectMeta.Annotations == nil || ing.ObjectMeta.Annotations[key] == "" {
@@ -406,7 +432,7 @@ PortLoop:
 	}
 
 	if port == nil {
-		return ingressbe.ServicePort{}, fmt.Errorf("could not find matching nodeport for backend %v and service %s/%s. Looking for port %v in %v", be, namespace, be.ServiceName, be.ServicePort, svc.Spec.Ports)
+		return ingressbe.ServicePort{}, fmt.Errorf("could not find matching nodeport for backend %+v and service %s/%s. Looking for port %+v in %v", be, namespace, be.ServiceName, be.ServicePort, svc.Spec.Ports)
 	}
 
 	proto := ingressutils.ProtocolHTTP

@@ -67,3 +67,16 @@ func (f *FakeForwardingRuleSyncer) GetLoadBalancerStatus(lbName string) (*status
 	}
 	return nil, fmt.Errorf("load balancer %s does not exist", lbName)
 }
+
+func (f *FakeForwardingRuleSyncer) ListLoadBalancerStatuses() ([]status.LoadBalancerStatus, error) {
+	var ret []status.LoadBalancerStatus
+	for _, fr := range f.EnsuredForwardingRules {
+		status := status.LoadBalancerStatus{
+			LoadBalancerName: fr.LBName,
+			Clusters:         fr.Clusters,
+			IPAddress:        fr.IPAddress,
+		}
+		ret = append(ret, status)
+	}
+	return ret, nil
+}
