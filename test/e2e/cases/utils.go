@@ -34,7 +34,7 @@ const (
 
 	// On average it takes ~6 minutes for a single backend to come online in GCE.
 	LoadBalancerPollTimeout  = 12 * time.Minute
-	LoadBalancerPollInterval = 30 * time.Second
+	LoadBalancerPollInterval = 10 * time.Second
 
 	// IngressReqTimeout is the timeout on a single http request.
 	IngressReqTimeout = 10 * time.Second
@@ -53,6 +53,7 @@ func randString(n int) string {
 	return string(b)
 }
 
+// runCommand runs the command in 'args' and returns the output.
 func runCommand(args []string) (string, error) {
 	cmd := exec.Command(args[0], args[1:]...)
 	glog.Infof("Running command: %s", strings.Join(args, " "))
@@ -60,7 +61,7 @@ func runCommand(args []string) (string, error) {
 	// We dont use it right now because then "gcloud get project" fails.
 	output, err := cmd.Output()
 	if err != nil {
-		err = fmt.Errorf("unexpected error in executing command %s: error: %s, output: %s", strings.Join(args, " "), err, output)
+		err = fmt.Errorf("unexpected error in executing command '%s': error: %s, output: [%s]", strings.Join(args, " "), err, output)
 		glog.Errorf("%s", err)
 	}
 	return strings.TrimSuffix(string(output), "\n"), err
@@ -93,10 +94,10 @@ func pollURL(route, host string, timeout time.Duration, interval time.Duration, 
 		var err error
 		lastBody, err = simpleGET(httpClient, route, host)
 		if err != nil {
-			glog.Infof("host %s%s: %v unreachable", host, route, err)
+			glog.Infof("host %s%s: error:'%v' unreachable", host, route, err)
 			return expectUnreachable, nil
 		}
-		glog.Infof("Got success response from %s%s: %s", host, route, lastBody)
+		glog.Infof("Got success response from %s%s:\n%s", host, route, lastBody)
 		return !expectUnreachable, nil
 	})
 	if pollErr != nil {
