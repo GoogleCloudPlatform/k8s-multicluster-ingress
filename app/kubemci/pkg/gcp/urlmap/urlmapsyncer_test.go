@@ -23,6 +23,7 @@ import (
 	"k8s.io/api/extensions/v1beta1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	ingresslb "k8s.io/ingress-gce/pkg/loadbalancers"
+	"k8s.io/ingress-gce/pkg/utils"
 
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/backendservice"
 	utilsnamer "github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/namer"
@@ -45,8 +46,9 @@ func TestEnsureURLMap(t *testing.T) {
 		svcName: &compute.BackendService{},
 	}
 	// Should create the url map as expected.
-	ump := ingresslb.NewFakeLoadBalancers("")
-	namer := utilsnamer.NewNamer("mci1", lbName)
+	namer := utilsnamer.NewNamer("mci1" /*prefix*/, lbName)
+	ingressNamer := utils.NewNamer("cluster1", "firewall1")
+	ump := ingresslb.NewFakeLoadBalancers("" /*name*/, ingressNamer)
 	umName := namer.URLMapName()
 	ums := NewURLMapSyncer(namer, ump)
 	// GET should return NotFound.
@@ -127,8 +129,11 @@ func TestDeleteURLMap(t *testing.T) {
 		svcName: &compute.BackendService{},
 	}
 	// Should create the url map as expected.
-	ump := ingresslb.NewFakeLoadBalancers("")
-	namer := utilsnamer.NewNamer("mci1", lbName)
+
+	// TODO: get rid of duplicated namers by moving to the ingress namer.
+	namer := utilsnamer.NewNamer("mci1" /*prefix*/, lbName)
+	ingressNamer := utils.NewNamer("cluster1", "firewall1")
+	ump := ingresslb.NewFakeLoadBalancers("" /*name*/, ingressNamer)
 	umName := namer.URLMapName()
 	ums := NewURLMapSyncer(namer, ump)
 	if _, err := ums.EnsureURLMap(lbName, ing, beMap, false /*forceUpdate*/); err != nil {

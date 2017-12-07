@@ -54,8 +54,8 @@ func newLoadBalancerSyncer(lbName string) *LoadBalancerSyncer {
 			"cluster1": &fake.Clientset{},
 			"cluster2": &fake.Clientset{},
 		},
-		igp: ingressig.NewFakeInstanceGroups(nil),
-		ipp: ingresslb.NewFakeLoadBalancers(""),
+		igp: ingressig.NewFakeInstanceGroups(nil /*nodes*/, nil /*namer*/),
+		ipp: ingresslb.NewFakeLoadBalancers("" /*name*/, nil /*namer*/),
 	}
 }
 
