@@ -1,5 +1,5 @@
-hash: 7845ab3f3640d4a97f6291b96c52cfb67ba5dd895263c08108f4c6f09335d62f
-updated: 2017-11-15T15:56:11.467086867-08:00
+hash: 542ead496e8ab95f813402a343c83815226f3e1522c68bc4e525cb879477ce16
+updated: 2017-12-07T11:11:35.796265203-08:00
 imports:
 - name: cloud.google.com/go
   version: 3b1ae45394a234c385be014e9a488f2bb6eef821
@@ -36,7 +36,7 @@ imports:
 - name: github.com/go-openapi/swag
   version: f3f9494671f93fcff853e3c6e9e948b3eb71e590
 - name: github.com/gogo/protobuf
-  version: 616a82ed12d78d24d4839363e8f3c5d3f20627cf
+  version: 41168f6614b7bb144818ec8967b8c702705df564
   subpackages:
   - proto
   - sortkeys
@@ -71,7 +71,7 @@ imports:
 - name: github.com/hashicorp/errwrap
   version: 7554cd9344cec97297fa6649b055a8c98c2a1e55
 - name: github.com/hashicorp/go-multierror
-  version: 83588e72410abfbe4df460eeb6f30841ae47d4c4
+  version: b7773ae218740a7be65057fc60b366a49b538a44
 - name: github.com/hashicorp/golang-lru
   version: a0d98a5f288019575c6d1f4bb1573fef2d1fcdc4
   subpackages:
@@ -124,7 +124,7 @@ imports:
 - name: github.com/PuerkitoBio/urlesc
   version: 5bd2802263f21d8788851d5305584c82a5c75d7e
 - name: github.com/spf13/cobra
-  version: 2da4a54c5ceefcee7ca5dd0eea1e18a3b6366489
+  version: ccaecb155a2177302cb56cae929251a256d0f646
 - name: github.com/spf13/pflag
   version: 4c012f6dcd9546820e378d0bdda4d8fc772cdfea
 - name: golang.org/x/crypto
@@ -388,7 +388,7 @@ imports:
   - util/jsonpath
   - util/retry
 - name: k8s.io/ingress-gce
-  version: 6dcd1bf359213b975b621de07e4f9000a82724d6
+  version: 0faf391619ad2c7c40d26df634b2f6947dc557b1
   subpackages:
   - pkg/annotations
   - pkg/backends
