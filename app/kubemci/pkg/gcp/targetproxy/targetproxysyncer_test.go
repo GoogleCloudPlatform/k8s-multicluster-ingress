@@ -26,7 +26,7 @@ import (
 func TestEnsureTargetHttpProxy(t *testing.T) {
 	lbName := "lb-name"
 	// Should create the target proxy as expected.
-	tpp := ingresslb.NewFakeLoadBalancers("")
+	tpp := ingresslb.NewFakeLoadBalancers("" /*name*/, nil /*namer*/)
 	namer := utilsnamer.NewNamer("mci1", lbName)
 	tpName := namer.TargetHttpProxyName()
 	tps := NewTargetProxySyncer(namer, tpp)
@@ -97,7 +97,7 @@ func TestDeleteTargetProxies(t *testing.T) {
 	lbName := "lb-name"
 	umLink := "selfLink"
 	// Should create the target proxy as expected.
-	tpp := ingresslb.NewFakeLoadBalancers("")
+	tpp := ingresslb.NewFakeLoadBalancers("" /*name*/, nil /*namer*/)
 	namer := utilsnamer.NewNamer("mci1", lbName)
 	tpName := namer.TargetHttpProxyName()
 	tps := NewTargetProxySyncer(namer, tpp)

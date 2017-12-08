@@ -29,7 +29,7 @@ func TestEnsureHttpForwardingRule(t *testing.T) {
 	lbName := "lb-name"
 	namer := utilsnamer.NewNamer("mci1", lbName)
 	frName := namer.HttpForwardingRuleName()
-	frp := ingresslb.NewFakeLoadBalancers("")
+	frp := ingresslb.NewFakeLoadBalancers("" /*name*/, nil /*namer*/)
 	// GET should return NotFound.
 	if _, err := frp.GetGlobalForwardingRule(frName); err == nil {
 		t.Errorf("expected NotFound error, got nil.")
@@ -120,7 +120,7 @@ func TestDeleteForwardingRule(t *testing.T) {
 	ipAddr := "1.2.3.4"
 	tpLink := "fakeLink"
 	// Should create the forwarding rule as expected.
-	frp := ingresslb.NewFakeLoadBalancers("")
+	frp := ingresslb.NewFakeLoadBalancers("" /*name*/, nil /*namer*/)
 	namer := utilsnamer.NewNamer("mci1", lbName)
 	frName := namer.HttpForwardingRuleName()
 	frs := NewForwardingRuleSyncer(namer, frp)
@@ -146,7 +146,7 @@ func TestGetLoadBalancerStatus(t *testing.T) {
 	tpLink := "fakeLink"
 	clusters := []string{"cluster1", "cluster2"}
 	// Should create the forwarding rule as expected.
-	frp := ingresslb.NewFakeLoadBalancers("")
+	frp := ingresslb.NewFakeLoadBalancers("" /*name*/, nil /*namer*/)
 	namer := utilsnamer.NewNamer("mci1", lbName)
 	frs := NewForwardingRuleSyncer(namer, frp)
 	if err := frs.EnsureHttpForwardingRule(lbName, ipAddr, tpLink, clusters, false /*force*/); err != nil {
