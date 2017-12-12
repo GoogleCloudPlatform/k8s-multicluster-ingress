@@ -1,6 +1,15 @@
 # kubemci
 
-[![Coverage Status](https://coveralls.io/repos/github/GoogleCloudPlatform/k8s-multicluster-ingress/badge.svg)](https://coveralls.io/github/GoogleCloudPlatform/k8s-multicluster-ingress)
+[![GoReportCard Widget]][GoReportCard] [![Coveralls Widget]][Coveralls] [![GoDoc Widget]][GoDoc] [![Slack Widget]][Slack]
+
+[GoReportCard Widget]: https://goreportcard.com/badge/github.com/GoogleCloudPlatform/k8s-multicluster-ingress
+[GoReportCard]: https://goreportcard.com/report/github.com/GoogleCloudPlatform/k8s-multicluster-ingress
+[Coveralls Widget]: https://coveralls.io/repos/github/GoogleCloudPlatform/k8s-multicluster-ingress/badge.svg
+[Coveralls]: https://coveralls.io/github/GoogleCloudPlatform/k8s-multicluster-ingress
+[GoDoc Widget]: https://godoc.org/github.com/GoogleCloudPlatform/k8s-multicluster-ingress?status.svg
+[GoDoc]: https://godoc.org/github.com/GoogleCloudPlatform/k8s-multicluster-ingress
+[Slack Widget]: https://s3.eu-central-1.amazonaws.com/ngtuna/join-us-on-slack.png
+[Slack]: http://slack.kubernetes.io#sig-multicluster
 
 kubemci is a tool to configure Kubernetes ingress to load balance traffic across
 multiple Kubernetes clusters.
