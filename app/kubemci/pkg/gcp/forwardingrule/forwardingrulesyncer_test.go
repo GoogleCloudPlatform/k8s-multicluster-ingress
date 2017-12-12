@@ -92,7 +92,7 @@ func TestEnsureHttpForwardingRule(t *testing.T) {
 		// Verify that GET does not return NotFound and the returned forwarding rule is as expected.
 		fr, err := frp.GetGlobalForwardingRule(frName)
 		if err != nil {
-			t.Errorf("expected nil error, actual: %v", err)
+			t.Errorf("expected nil error getting forwarding rules, actual: %v", err)
 		}
 		if fr.IPAddress != c.expectedIpAddr {
 			t.Errorf("unexpected ip address. expected: %s, got: %s", c.expectedIpAddr, fr.IPAddress)
@@ -112,6 +112,106 @@ func TestEnsureHttpForwardingRule(t *testing.T) {
 		if status.LoadBalancerName != expectedDescr.LoadBalancerName || !reflect.DeepEqual(status.Clusters, expectedDescr.Clusters) || status.IPAddress != expectedDescr.IPAddress {
 			t.Errorf("unexpected description: %v, expected: %v", status, expectedDescr)
 		}
+	}
+}
+
+func TestListLoadBalancerStatuses(t *testing.T) {
+	lbName := "lb-name"
+	// Should create the forwarding rule as expected.
+	frp := ingresslb.NewFakeLoadBalancers("" /*name*/, nil /*namer*/)
+	namer := utilsnamer.NewNamer("mci1", lbName)
+	frs := NewForwardingRuleSyncer(namer, frp)
+	ipAddr := "1.2.3.4"
+	tpLink := "fakeLink"
+
+	clusters := []string{"cluster1", "cluster2", "cluster3"}
+
+	if err := frs.EnsureHttpForwardingRule(lbName, ipAddr, tpLink, clusters, false /*force*/); err != nil {
+		t.Fatalf("expected no error in ensuring forwarding rule, actual: %v", err)
+	}
+
+	list, err := frs.ListLoadBalancerStatuses()
+	if err != nil {
+		t.Errorf("unexpected error listing load balancer statuses: %v", err)
+	}
+	for _, rule := range list {
+		if rule.LoadBalancerName != lbName {
+			t.Errorf("Unexpected name. expected: %s, acctual: %s", lbName, rule.LoadBalancerName)
+		}
+		if rule.IPAddress != ipAddr {
+			t.Errorf("Unexpected IP addr. expected %s, actual: %s", ipAddr, rule.IPAddress)
+		}
+		actualClusters := mapFromSlice(rule.Clusters)
+		for _, expected := range clusters {
+			if _, ok := actualClusters[expected]; !ok {
+				t.Errorf("cluster %s is missing from resultant cluster list %v", expected, rule.Clusters)
+			}
+		}
+	}
+}
+
+func mapFromSlice(strs []string) map[string]struct{} {
+	mymap := make(map[string]struct{})
+	for _, s := range strs {
+		mymap[s] = struct{}{}
+	}
+	return mymap
+}
+
+func TestListLoadBalancersWithSkippedRules(t *testing.T) {
+	lbName := "lb-name"
+	// Should create the forwarding rule as expected.
+	frp := ingresslb.NewFakeLoadBalancers("" /*name*/, nil /*namer*/)
+	namer := utilsnamer.NewNamer("mci1", lbName)
+	frs := NewForwardingRuleSyncer(namer, frp)
+	ipAddr := "1.2.3.4"
+	tpLink := "fakeLink"
+
+	clusters := []string{"cluster1", "cluster2", "cluster3", "fooCluster"}
+
+	if err := frs.EnsureHttpForwardingRule(lbName, ipAddr, tpLink, clusters, false /*force*/); err != nil {
+		t.Fatalf("expected no error in ensuring forwarding rule, actual: %v", err)
+	}
+
+	// Add anoter forwarding rule that does *not* match our normal prefix.
+	namer = utilsnamer.NewNamer("otherFR", "blah")
+	frs = NewForwardingRuleSyncer(namer, frp)
+	if err := frs.EnsureHttpForwardingRule(lbName, ipAddr, tpLink, clusters, false /*force*/); err != nil {
+		t.Fatalf("expected no error in ensuring forwarding rule, actual: %v", err)
+	}
+
+	list, err := frs.ListLoadBalancerStatuses()
+	if err != nil {
+		t.Errorf("unexpected error listing load balancer statuses: %v", err)
+	}
+	for _, rule := range list {
+		if rule.LoadBalancerName != lbName {
+			t.Errorf("Unexpected name. expected: %s, acctual: %s", lbName, rule.LoadBalancerName)
+		}
+		if rule.IPAddress != ipAddr {
+			t.Errorf("Unexpected IP addr. expected %s, actual: %s", ipAddr, rule.IPAddress)
+		}
+		actualClusters := mapFromSlice(rule.Clusters)
+		for _, expected := range clusters {
+			if _, ok := actualClusters[expected]; !ok {
+				t.Errorf("cluster %s is missing from resultant cluster list %v", expected, rule.Clusters)
+			}
+		}
+	}
+}
+
+func TestListLoadBalancersNoForwardingRules(t *testing.T) {
+	lbName := "lb-name"
+	frp := ingresslb.NewFakeLoadBalancers("" /*name*/, nil /*namer*/)
+	namer := utilsnamer.NewNamer("mci1", lbName)
+	frs := NewForwardingRuleSyncer(namer, frp)
+
+	list, err := frs.ListLoadBalancerStatuses()
+	if err != nil {
+		t.Errorf("unexpected error listing load balancer statuses: %v", err)
+	}
+	if len(list) != 0 {
+		t.Errorf("Expected no fowarding rules. Actual: %v", list)
 	}
 }
 

@@ -103,8 +103,6 @@ func addCreateFlags(cmd *cobra.Command, options *CreateOptions) error {
 	cmd.Flags().BoolVarP(&options.ForceUpdate, "force", "f", options.ForceUpdate, "[optional] overwrite existing settings if they are different")
 	cmd.Flags().StringVarP(&options.Namespace, "namespace", "n", options.Namespace, "[optional] namespace for the ingress only if left unspecified by ingress spec")
 	cmd.Flags().StringVarP(&options.StaticIPName, "static-ip", "", options.StaticIPName, "[optional] Global Static IP name to use only if left unspecified by ingress spec")
-	// TODO Add a verbose flag that turns on glog logging, or figure out how
-	// to accept glog flags in addition to the cobra flags.
 	return nil
 }
 

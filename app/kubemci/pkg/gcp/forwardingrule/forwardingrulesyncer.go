@@ -19,11 +19,13 @@ import (
 	"net/http"
 	"reflect"
 	"sort"
+	"strings"
 
 	compute "google.golang.org/api/compute/v1"
 	"google.golang.org/api/googleapi"
 
 	"github.com/golang/glog"
+	multierror "github.com/hashicorp/go-multierror"
 	"k8s.io/apimachinery/pkg/util/diff"
 	ingresslb "k8s.io/ingress-gce/pkg/loadbalancers"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -121,6 +123,38 @@ func (s *ForwardingRuleSyncer) GetLoadBalancerStatus(lbName string) (*status.Loa
 		return nil, fmt.Errorf("error in parsing forwarding rule description %s. Cannot determine status without it.", err)
 	}
 	return status, nil
+}
+
+func (s *ForwardingRuleSyncer) ListLoadBalancerStatuses() ([]status.LoadBalancerStatus, error) {
+	var rules *compute.ForwardingRuleList
+	var err error
+	result := []status.LoadBalancerStatus{}
+	// TODO: When we have HTTPS ingresses, check for those as well.
+	if rules, err = s.frp.ListGlobalForwardingRules(); err != nil {
+		err = fmt.Errorf("Error getting global forwarding rules: %s", err)
+		fmt.Println(err)
+		return result, err
+	}
+	if rules == nil {
+		// This is being defensive.
+		err = fmt.Errorf("Unexpected nil from ListGlobalForwardingRules.")
+		fmt.Println(err)
+		return result, err
+	}
+	glog.V(5).Infof("rules: %+v", rules)
+	for _, item := range rules.Items {
+		if strings.HasPrefix(item.Name, "mci1") {
+			if lbStatus, decodeErr := status.FromString(item.Description); decodeErr != nil {
+				decodeErr = fmt.Errorf("Error decoding load balancer status: %s", decodeErr)
+				fmt.Println(decodeErr)
+				err = multierror.Append(err, decodeErr)
+			} else {
+				result = append(result, *lbStatus)
+			}
+
+		}
+	}
+	return result, err
 }
 
 func (s *ForwardingRuleSyncer) updateForwardingRule(existingFR, desiredFR *compute.ForwardingRule) error {

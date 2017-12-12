@@ -22,8 +22,8 @@ import (
 )
 
 var (
-	versionShortDescription = "Prints the version of this tool"
-	versionLongDescription  = `Prints the version of this tool
+	versionShortDescription = "Print the version of this tool."
+	versionLongDescription  = `Print the version of this tool.
 
 	Release builds have versions of the form x.y.z.
 	version x.y.z+ indicates that the client has some changes over the x.y.z release.
