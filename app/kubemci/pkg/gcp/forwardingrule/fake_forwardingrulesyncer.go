@@ -25,6 +25,7 @@ type FakeForwardingRule struct {
 	IPAddress string
 	TPLink    string
 	Clusters  []string
+	IsHTTPS   bool
 }
 
 type FakeForwardingRuleSyncer struct {
@@ -46,6 +47,17 @@ func (f *FakeForwardingRuleSyncer) EnsureHttpForwardingRule(lbName, ipAddress, t
 		IPAddress: ipAddress,
 		TPLink:    targetProxyLink,
 		Clusters:  clusters,
+	})
+	return nil
+}
+
+func (f *FakeForwardingRuleSyncer) EnsureHttpsForwardingRule(lbName, ipAddress, targetProxyLink string, clusters []string, forceUpdate bool) error {
+	f.EnsuredForwardingRules = append(f.EnsuredForwardingRules, FakeForwardingRule{
+		LBName:    lbName,
+		IPAddress: ipAddress,
+		TPLink:    targetProxyLink,
+		Clusters:  clusters,
+		IsHTTPS:   true,
 	})
 	return nil
 }

@@ -79,7 +79,6 @@ func TestEnsureHttpForwardingRule(t *testing.T) {
 		clusters := []string{"cluster1", "cluster2"}
 		// Should create the forwarding rule as expected.
 		namer := utilsnamer.NewNamer("mci1", lbName)
-		frName := namer.HttpForwardingRuleName()
 		frs := NewForwardingRuleSyncer(namer, frp)
 		err := frs.EnsureHttpForwardingRule(lbName, c.ipAddr, tpLink, clusters, c.forceUpdate)
 		if (err != nil) != c.ensureErr {
@@ -99,6 +98,101 @@ func TestEnsureHttpForwardingRule(t *testing.T) {
 		}
 		if fr.Target != tpLink {
 			t.Errorf("unexpected target proxy link. expected: %s, got: %s", tpLink, fr.Target)
+		}
+		if fr.PortRange != httpDefaultPortRange {
+			t.Errorf("unexpected port range: %s, expected: %s", fr.PortRange, httpDefaultPortRange)
+		}
+		expectedDescr := status.LoadBalancerStatus{
+			LoadBalancerName: lbName,
+			Clusters:         clusters,
+			IPAddress:        c.expectedIpAddr,
+		}
+		status, err := status.FromString(fr.Description)
+		if err != nil {
+			t.Errorf("unexpected error %s in unmarshalling forwarding rule description %v", err, fr.Description)
+		}
+		if status.LoadBalancerName != expectedDescr.LoadBalancerName || !reflect.DeepEqual(status.Clusters, expectedDescr.Clusters) || status.IPAddress != expectedDescr.IPAddress {
+			t.Errorf("unexpected description: %v, expected: %v", status, expectedDescr)
+		}
+	}
+}
+
+func TestEnsureHttpsForwardingRule(t *testing.T) {
+	lbName := "lb-name"
+	namer := utilsnamer.NewNamer("mci1", lbName)
+	frName := namer.HttpsForwardingRuleName()
+	frp := ingresslb.NewFakeLoadBalancers("" /*name*/, nil /*namer*/)
+	// GET should return NotFound.
+	if _, err := frp.GetGlobalForwardingRule(frName); err == nil {
+		t.Errorf("expected NotFound error, got nil.")
+	}
+	testCases := []struct {
+		desc string
+		// In's
+		ipAddr      string
+		forceUpdate bool
+		// Out's
+		ensureErr      bool
+		expectedIpAddr string
+	}{
+		{
+			desc:           "initial write (force=false)",
+			ipAddr:         "1.2.3.4",
+			forceUpdate:    false,
+			ensureErr:      false,
+			expectedIpAddr: "1.2.3.4",
+		},
+		{
+			desc:           "write same (force=false)",
+			ipAddr:         "1.2.3.4",
+			forceUpdate:    false,
+			ensureErr:      false,
+			expectedIpAddr: "1.2.3.4",
+		},
+		{
+			desc:           "write different (force=false)",
+			ipAddr:         "2.2.2.2",
+			forceUpdate:    false,
+			ensureErr:      true,
+			expectedIpAddr: "1.2.3.4",
+		},
+		{
+			desc:           "write different (force=true)",
+			ipAddr:         "2.2.2.2",
+			forceUpdate:    true,
+			ensureErr:      false,
+			expectedIpAddr: "2.2.2.2",
+		},
+	}
+	// We want the load balancers to exist across test cases.
+	for _, c := range testCases {
+		glog.Infof("===============testing case: %s=================", c.desc)
+		tpLink := "fakeLink"
+		clusters := []string{"cluster1", "cluster2"}
+		// Should create the forwarding rule as expected.
+		namer := utilsnamer.NewNamer("mci1", lbName)
+		frs := NewForwardingRuleSyncer(namer, frp)
+		err := frs.EnsureHttpsForwardingRule(lbName, c.ipAddr, tpLink, clusters, c.forceUpdate)
+		if (err != nil) != c.ensureErr {
+			t.Errorf("in ensuring forwarding rule, expected err? %v, actual: %v", c.ensureErr, err)
+		}
+		if c.ensureErr {
+			glog.Infof("Skipping validation for this test case.")
+			continue
+		}
+		// Verify that GET does not return NotFound and the returned forwarding rule is as expected.
+		fr, err := frp.GetGlobalForwardingRule(frName)
+		if err != nil {
+			t.Errorf("expected nil error, actual: %v", err)
+		}
+		if fr.IPAddress != c.expectedIpAddr {
+			t.Errorf("unexpected ip address. expected: %s, got: %s", c.expectedIpAddr, fr.IPAddress)
+		}
+		if fr.Target != tpLink {
+			t.Errorf("unexpected target proxy link. expected: %s, got: %s", tpLink, fr.Target)
+		}
+		if fr.PortRange != httpsDefaultPortRange {
+			t.Errorf("unexpected port range: %s, expected: %s", fr.PortRange, httpsDefaultPortRange)
 		}
 		expectedDescr := status.LoadBalancerStatus{
 			LoadBalancerName: lbName,
@@ -219,23 +313,33 @@ func TestDeleteForwardingRule(t *testing.T) {
 	lbName := "lb-name"
 	ipAddr := "1.2.3.4"
 	tpLink := "fakeLink"
-	// Should create the forwarding rule as expected.
 	frp := ingresslb.NewFakeLoadBalancers("" /*name*/, nil /*namer*/)
 	namer := utilsnamer.NewNamer("mci1", lbName)
-	frName := namer.HttpForwardingRuleName()
+	httpFrName := namer.HttpForwardingRuleName()
+	httpsFrName := namer.HttpsForwardingRuleName()
 	frs := NewForwardingRuleSyncer(namer, frp)
+	// Create both the http and https forwarding rules and verify that it deletes both.
 	if err := frs.EnsureHttpForwardingRule(lbName, ipAddr, tpLink, []string{}, false /*force*/); err != nil {
-		t.Fatalf("expected no error in ensuring forwarding rule, actual: %v", err)
+		t.Fatalf("expected no error in ensuring http forwarding rule, actual: %v", err)
 	}
-	if _, err := frp.GetGlobalForwardingRule(frName); err != nil {
-		t.Fatalf("expected nil error, actual: %v", err)
+	if err := frs.EnsureHttpsForwardingRule(lbName, ipAddr, tpLink, []string{}, false /*force*/); err != nil {
+		t.Fatalf("expected no error in ensuring https forwarding rule, actual: %v", err)
+	}
+	if _, err := frp.GetGlobalForwardingRule(httpFrName); err != nil {
+		t.Fatalf("expected nil error in getting http forwarding rule, actual: %v", err)
+	}
+	if _, err := frp.GetGlobalForwardingRule(httpsFrName); err != nil {
+		t.Fatalf("expected nil error in getting https forwarding rule, actual: %v", err)
 	}
 	// GET should return NotFound after DELETE.
 	if err := frs.DeleteForwardingRules(); err != nil {
 		t.Fatalf("unexpeted error in deleting forwarding rule: %s", err)
 	}
-	if _, err := frp.GetGlobalForwardingRule(frName); err == nil {
-		t.Fatalf("expected not found error, actual: nil")
+	if _, err := frp.GetGlobalForwardingRule(httpFrName); err == nil {
+		t.Fatalf("expected not found error in getting http forwarding rule, actual: nil")
+	}
+	if _, err := frp.GetGlobalForwardingRule(httpsFrName); err == nil {
+		t.Fatalf("expected not found error in getting https forwarding rule, actual: nil")
 	}
 }
 
@@ -249,21 +353,71 @@ func TestGetLoadBalancerStatus(t *testing.T) {
 	frp := ingresslb.NewFakeLoadBalancers("" /*name*/, nil /*namer*/)
 	namer := utilsnamer.NewNamer("mci1", lbName)
 	frs := NewForwardingRuleSyncer(namer, frp)
-	if err := frs.EnsureHttpForwardingRule(lbName, ipAddr, tpLink, clusters, false /*force*/); err != nil {
-		t.Fatalf("expected no error in ensuring forwarding rule, actual: %v", err)
+	testCases := []struct {
+		// Should the http forwarding rule be created.
+		http bool
+		// Should the https forwarding rule be created.
+		https bool
+		// Is get status expected to return an error.
+		shouldErr bool
+	}{
+		{
+			http:      true,
+			https:     false,
+			shouldErr: false,
+		},
+		{
+			http:      false,
+			https:     true,
+			shouldErr: false,
+		},
+		{
+			http:      true,
+			https:     true,
+			shouldErr: false,
+		},
+		{
+			http:      false,
+			https:     false,
+			shouldErr: true,
+		},
 	}
-	status, err := frs.GetLoadBalancerStatus(lbName)
-	if err != nil {
-		t.Fatalf("unexpected error in getting status description for load balancer %s", lbName)
-	}
-	// Verify that status description has the expected values set.
-	if status.LoadBalancerName != lbName {
-		t.Errorf("unexpected load balancer name, expected: %s, got: %s", lbName, status.LoadBalancerName)
-	}
-	if !reflect.DeepEqual(status.Clusters, clusters) {
-		t.Errorf("unexpected list of clusters, expected: %v, got: %v", clusters, status.Clusters)
-	}
-	if status.IPAddress != ipAddr {
-		t.Errorf("unpexpected ip address, expected: %s, got: %s", status.IPAddress, ipAddr)
+	for i, c := range testCases {
+		glog.Infof("===============testing case: %d=================", i)
+		if c.http {
+			// Ensure http forwarding rule.
+			if err := frs.EnsureHttpForwardingRule(lbName, ipAddr, tpLink, clusters, false /*force*/); err != nil {
+				t.Errorf("expected no error in ensuring http forwarding rule, actual: %v", err)
+			}
+		}
+		if c.https {
+			// Ensure https forwarding rule.
+			if err := frs.EnsureHttpsForwardingRule(lbName, ipAddr, tpLink, clusters, false /*force*/); err != nil {
+				t.Errorf("expected no error in ensuring https forwarding rule, actual: %v", err)
+			}
+		}
+		status, err := frs.GetLoadBalancerStatus(lbName)
+		if c.shouldErr != (err != nil) {
+			t.Errorf("unexpected error in getting status description for load balancer %s, expected err != nil: %v, actual err: %s", lbName, c.shouldErr, err)
+		}
+		if c.shouldErr {
+			continue
+		}
+		// Verify that status description has the expected values set.
+		if status.LoadBalancerName != lbName {
+			t.Errorf("unexpected load balancer name, expected: %s, got: %s", lbName, status.LoadBalancerName)
+		}
+		if !reflect.DeepEqual(status.Clusters, clusters) {
+			t.Errorf("unexpected list of clusters, expected: %v, got: %v", clusters, status.Clusters)
+		}
+		if status.IPAddress != ipAddr {
+			t.Errorf("unpexpected ip address, expected: %s, got: %s", status.IPAddress, ipAddr)
+		}
+		// Delete the forwarding rules if we created at least one.
+		if c.http || c.https {
+			if err := frs.DeleteForwardingRules(); err != nil {
+				t.Errorf("unexpeted error in deleting forwarding rules: %s", err)
+			}
+		}
 	}
 }
