@@ -27,6 +27,7 @@ const (
 	httpForwardingRulePrefix  = "fw"
 	httpsForwardingRulePrefix = "fws"
 	firewallRulePrefix        = "fr"
+	sslCertPrefix             = "ssl"
 
 	// A delimiter used for clarity in naming GCE resources.
 	lbNameDelimiter = "--"
@@ -90,6 +91,10 @@ func (n *Namer) HttpForwardingRuleName() string {
 
 func (n *Namer) FirewallRuleName() string {
 	return n.decorateName(fmt.Sprintf("%v-%v", n.prefix, firewallRulePrefix))
+}
+
+func (n *Namer) SSLCertName() string {
+	return n.decorateName(fmt.Sprintf("%v-%v", n.prefix, sslCertPrefix))
 }
 
 func (n *Namer) decorateName(name string) string {
