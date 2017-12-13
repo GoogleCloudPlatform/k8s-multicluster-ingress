@@ -121,6 +121,8 @@ func (l *LoadBalancerSyncer) CreateLoadBalancer(ing *v1beta1.Ingress, forceUpdat
 	healthChecks, hcErr := l.hcs.EnsureHealthCheck(l.lbName, ports, l.clients, forceUpdate)
 	if hcErr != nil {
 		// Keep aggregating errors and return all at the end, rather than giving up on the first error.
+		hcErr = fmt.Errorf("Error ensuring health check for %s: %s", l.lbName, hcErr)
+		fmt.Println(hcErr)
 		err = multierror.Append(err, hcErr)
 	}
 	igs, namedPorts, igErr := l.getIGsAndNamedPorts(ing)
@@ -135,13 +137,16 @@ func (l *LoadBalancerSyncer) CreateLoadBalancer(ing *v1beta1.Ingress, forceUpdat
 	// Create backend service. This should always be called after the health check since backend service needs to point to the health check.
 	backendServices, beErr := l.bss.EnsureBackendService(l.lbName, ports, healthChecks, namedPorts, igsForBE, forceUpdate)
 	if beErr != nil {
-		fmt.Printf("Error ensuring backend service for %s: %v\n", l.lbName, beErr)
 		// Aggregate errors and return all at the end.
+		beErr = fmt.Errorf("Error ensuring backend service for %s: %s", l.lbName, beErr)
+		fmt.Println(beErr)
 		err = multierror.Append(err, beErr)
 	}
 	umLink, umErr := l.ums.EnsureURLMap(l.lbName, ing, backendServices, forceUpdate)
 	if umErr != nil {
 		// Aggregate errors and return all at the end.
+		umErr = fmt.Errorf("Error ensuring urlmap for %s: %s", l.lbName, umErr)
+		fmt.Println(umErr)
 		err = multierror.Append(err, umErr)
 	}
 	ingAnnotations := annotations.IngAnnotations(ing.ObjectMeta.Annotations)
@@ -150,35 +155,43 @@ func (l *LoadBalancerSyncer) CreateLoadBalancer(ing *v1beta1.Ingress, forceUpdat
 		tpLink, tpErr := l.tps.EnsureHttpTargetProxy(l.lbName, umLink, forceUpdate)
 		if tpErr != nil {
 			// Aggregate errors and return all at the end.
-			fmt.Println("Error ensuring HTTP target proxy:", tpErr)
+			tpErr = fmt.Errorf("Error ensuring HTTP target proxy: %s", tpErr)
+			fmt.Println(tpErr)
 			err = multierror.Append(err, tpErr)
 		}
 		frErr := l.frs.EnsureHttpForwardingRule(l.lbName, ipAddr, tpLink, clusters, forceUpdate)
 		if frErr != nil {
 			// Aggregate errors and return all at the end.
-			fmt.Println("Error ensuring http forwarding rule:", frErr)
+			frErr = fmt.Errorf("Error ensuring http forwarding rule: %s", frErr)
+			fmt.Println(frErr)
 			err = multierror.Append(err, frErr)
 		}
 	}
 	// Configure HTTPS target proxy and forwarding rule, if required.
 	if (ingAnnotations.UseNamedTLS() != "") || len(ing.Spec.TLS) > 0 {
-		// TODO(nikhiljindal): Support creating https forwarding rule.
-		fmt.Println("Error: This tool does not support creating an HTTPS forwarding rule yet. So HTTPS ingress will not work")
-		err = multierror.Append(err, fmt.Errorf("This tool does not support creating an HTTPS forwarding rule yet. So HTTPS ingress will not work"))
 		// Note that we expect to load the cert from any cluster,
 		// so users are required to create the secret in all clusters.
 		certLink, cErr := l.scs.EnsureSSLCert(l.lbName, ing, client, forceUpdate)
 		if cErr != nil {
 			// Aggregate errors and return all at the end.
-			fmt.Println("Error ensuring SSL certs:", cErr)
+			cErr = fmt.Errorf("Error ensuring SSL certs: %s", cErr)
+			fmt.Println(cErr)
 			err = multierror.Append(err, cErr)
 		}
 
-		_, tpErr := l.tps.EnsureHttpsTargetProxy(l.lbName, umLink, certLink, forceUpdate)
+		tpLink, tpErr := l.tps.EnsureHttpsTargetProxy(l.lbName, umLink, certLink, forceUpdate)
 		if tpErr != nil {
 			// Aggregate errors and return all at the end.
-			fmt.Println("Error ensuring HTTPS target proxy:", tpErr)
+			tpErr = fmt.Errorf("Error ensuring HTTPS target proxy: %s", tpErr)
+			fmt.Println(tpErr)
 			err = multierror.Append(err, tpErr)
+		}
+		frErr := l.frs.EnsureHttpsForwardingRule(l.lbName, ipAddr, tpLink, clusters, forceUpdate)
+		if frErr != nil {
+			// Aggregate errors and return all at the end.
+			frErr = fmt.Errorf("Error ensuring https forwarding rule: %s", frErr)
+			fmt.Println(frErr)
+			err = multierror.Append(err, frErr)
 		}
 	}
 	if fwErr := l.fws.EnsureFirewallRule(l.lbName, ports, igs, forceUpdate); fwErr != nil {

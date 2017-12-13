@@ -24,7 +24,12 @@ type ForwardingRuleSyncerInterface interface {
 	// clusters is the list of clusters across which the load balancer is spread.
 	// Will only change an existing rule if forceUpdate = True.
 	EnsureHttpForwardingRule(lbName, ipAddress, targetProxyLink string, clusters []string, forceUpdate bool) error
-	// DeleteForwardingRules deletes the forwarding rules that EnsureForwardingRule would have created.
+	// EnsureHttpsForwardingRule ensures that the required https forwarding rule exists.
+	// clusters is the list of clusters across which the load balancer is spread.
+	// Will only change an existing rule if forceUpdate = True.
+	EnsureHttpsForwardingRule(lbName, ipAddress, targetProxyLink string, clusters []string, forceUpdate bool) error
+	// DeleteForwardingRules deletes the forwarding rules that
+	// EnsureHttpForwardingRule and EnsureHttpsForwardingRule would have created.
 	DeleteForwardingRules() error
 	// GetLoadBalancerStatus returns the struct describing the status of the given load balancer.
 	GetLoadBalancerStatus(lbName string) (*status.LoadBalancerStatus, error)

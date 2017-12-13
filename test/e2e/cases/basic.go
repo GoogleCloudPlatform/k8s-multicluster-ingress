@@ -28,7 +28,7 @@ import (
 func RunBasicCreateTest() {
 	// Validate inputs and instantiate required objects first to catch errors early.
 	// TODO(nikhiljindal): User should be able to pass kubeConfigPath.
-	kubeConfigPath := "kubeconfig"
+	kubeConfigPath := "minKubeconfig"
 	// TODO(nikhiljindal): User should be able to pass gcp project.
 	project, err := runCommand([]string{"gcloud", "config", "get-value", "project"})
 	if err == nil && project == "" {
