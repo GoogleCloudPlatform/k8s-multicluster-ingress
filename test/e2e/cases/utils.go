@@ -15,6 +15,7 @@
 package e2e
 
 import (
+	"crypto/tls"
 	"fmt"
 	"io/ioutil"
 	"math/rand"
@@ -77,11 +78,19 @@ func findIPv4(input string) string {
 }
 
 // Waits for the ingress paths to be reachable or returns an error if it times out.
-func waitForIngress(ip string) error {
-	timeoutClient := &http.Client{Timeout: IngressReqTimeout}
-	// TODO(nikhiljindal): Add support for https and also verify all paths rather than just the root one.
-	pollURL("http://"+ip, "" /* host */, LoadBalancerPollTimeout, LoadBalancerPollInterval, timeoutClient, false /* expectUnreachable */)
-	return nil
+func waitForIngress(ip, httpProtocol string) error {
+	tr := &http.Transport{
+		// Skip verify so that self signed certs work.
+		// TODO(nikhiljindal): Generate valid certs instead of using self signed
+		// certs so that we do not need InsecureSkipVerify.
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+	}
+	timeoutClient := &http.Client{
+		Timeout:   IngressReqTimeout,
+		Transport: tr,
+	}
+	// TODO(nikhiljindal): Verify all paths rather than just the root one.
+	return pollURL(httpProtocol+"://"+ip, "" /* host */, LoadBalancerPollTimeout, LoadBalancerPollInterval, timeoutClient, false /* expectUnreachable */)
 }
 
 // Polls the given URL until it gets a success response.

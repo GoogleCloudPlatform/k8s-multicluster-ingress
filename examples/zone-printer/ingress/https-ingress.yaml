@@ -1,0 +1,14 @@
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: nginx
+  annotations:
+    kubernetes.io/ingress.global-static-ip-name: $ZP_KUBEMCI_IP
+    kubernetes.io/ingress.class: gce-multi-cluster
+spec:
+  tls:
+  # This assumes tls-secret exists.
+  - secretName: tls-secret
+  backend:
+    serviceName: nginx
+    servicePort: 80
