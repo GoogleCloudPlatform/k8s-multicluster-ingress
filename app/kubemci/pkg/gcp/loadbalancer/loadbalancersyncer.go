@@ -224,13 +224,13 @@ func (l *LoadBalancerSyncer) DeleteLoadBalancer(ing *v1beta1.Ingress) error {
 		// Aggregate errors and return all at the end.
 		err = multierror.Append(err, frErr)
 	}
-	if scErr := l.scs.DeleteSSLCert(); scErr != nil {
-		// Aggregate errors and return all at the end.
-		err = multierror.Append(err, scErr)
-	}
 	if tpErr := l.tps.DeleteTargetProxies(); tpErr != nil {
 		// Aggregate errors and return all at the end.
 		err = multierror.Append(err, tpErr)
+	}
+	if scErr := l.scs.DeleteSSLCert(); scErr != nil {
+		// Aggregate errors and return all at the end.
+		err = multierror.Append(err, scErr)
 	}
 	if umErr := l.ums.DeleteURLMap(); umErr != nil {
 		// Aggregate errors and return all at the end.
