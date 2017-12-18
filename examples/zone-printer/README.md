@@ -147,7 +147,7 @@ KUBECONFIG=./zpkubeconfig gcloud container clusters get-credentials \
 
 # Create a cluster in eu-west and get its credentials
 gcloud container clusters create \
-    --cluster-version=1.8.4-gke.0 \
+    --cluster-version=1.8.4-gke.1 \
     --zone=europe-west1-c \
     cluster-eu-west
 
