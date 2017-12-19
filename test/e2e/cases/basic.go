@@ -16,12 +16,16 @@ package e2e
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/golang/glog"
 
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/kubeutils"
+	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 )
+
+var kubemci_bin = "./kubemci"
 
 // Creates a basic multicluster ingress and verifies that it works as expected.
 // TODO(nikhiljindal): Use ginkgo and gomega and possibly reuse k/k e2e framework.
@@ -31,7 +35,9 @@ func RunBasicCreateTest() {
 	kubeConfigPath := "minKubeconfig"
 	// TODO(nikhiljindal): User should be able to pass gcp project.
 	project, err := runCommand([]string{"gcloud", "config", "get-value", "project"})
-	if err == nil && project == "" {
+	if err != nil {
+		glog.Fatalf("Error getting default project:%v", err)
+	} else if project == "" {
 		glog.Fatalf("unexpected: no default gcp project found. Run gcloud config set project to set a default project.")
 	}
 	// Get clients for all contexts in the kubeconfig.
@@ -44,7 +50,7 @@ func RunBasicCreateTest() {
 	// TODO(nikhiljindal): Use a random namespace name.
 	lbName := randString(10)
 	ipName := randString(10)
-	glog.Infof("Creating an mci %s with ip address name %s", lbName, ipName)
+	glog.Infof("Creating an mci named '%s' with ip address named '%s'", lbName, ipName)
 
 	// Create the zone-printer app in all contexts.
 	// We use kubectl to create the app since it is easier to point it at a
@@ -54,6 +60,7 @@ func RunBasicCreateTest() {
 	for k := range clients {
 		glog.Infof("Creating app in cluster %s", k)
 		createArgs := append(args, []string{"create", fmt.Sprintf("--context=%s", k)}...)
+		// kubectl create may fail if this was setup in a previous run.
 		runCommand(createArgs)
 		defer func() {
 			// Delete the app.
@@ -63,13 +70,17 @@ func RunBasicCreateTest() {
 		}()
 	}
 	// Reserve the IP address.
-	runCommand([]string{"gcloud", "compute", "addresses", "create", "--global", ipName})
+	if _, err := runCommand([]string{"gcloud", "compute", "addresses", "create", "--global", ipName}); err != nil {
+		glog.Fatalf("Error creating IP address:%v", err)
+	}
 	defer func() {
 		runCommand([]string{"gcloud", "compute", "addresses", "delete", "--global", ipName})
 
 	}()
 	// Update the ingress YAML spec to replace $ZP_KUBEMCI_IP with ip name.
-	runCommand([]string{"sed", "-i", "-e", fmt.Sprintf("s/\\$ZP_KUBEMCI_IP/%s/", ipName), "examples/zone-printer/ingress/nginx.yaml"})
+	if _, err := runCommand([]string{"sed", "-i", "-e", fmt.Sprintf("s/\\$ZP_KUBEMCI_IP/%s/", ipName), "examples/zone-printer/ingress/nginx.yaml"}); err != nil {
+		glog.Fatalf("Error updating yaml with sed:%v", err)
+	}
 	defer func() {
 		// Put $ZP_KUBEMCI_IP back once done.
 		runCommand([]string{"sed", "-i", "-e", fmt.Sprintf("s/%s/\\$ZP_KUBEMCI_IP/", ipName), "examples/zone-printer/ingress/nginx.yaml"})
@@ -77,9 +88,12 @@ func RunBasicCreateTest() {
 
 	// Setup done.
 	// Run kubemci create command.
-	kubemciArgs := []string{"kubemci", "--ingress=examples/zone-printer/ingress/nginx.yaml", fmt.Sprintf("--gcp-project=%s", project), fmt.Sprintf("--kubeconfig=%s", kubeConfigPath)}
+	kubemciArgs := []string{kubemci_bin, "--ingress=examples/zone-printer/ingress/nginx.yaml", fmt.Sprintf("--gcp-project=%s", project), fmt.Sprintf("--kubeconfig=%s", kubeConfigPath)}
 	createArgs := append(kubemciArgs, []string{"create", lbName}...)
-	runCommand(createArgs)
+	if _, err := runCommand(createArgs); err != nil {
+		glog.Fatalf("Error creating kubemci:%v", err)
+		return
+	}
 	defer func() {
 		// Delete the mci.
 		deleteArgs := append(kubemciArgs, []string{"delete", lbName}...)
@@ -90,7 +104,7 @@ func RunBasicCreateTest() {
 	// TODO(nikhiljindal): Figure out why is sleep required? get-status should work immediately after create is successful.
 	time.Sleep(5 * time.Second)
 	// Ensure that get-status returns the expected output.
-	getStatusArgs := []string{"kubemci", "get-status", lbName, fmt.Sprintf("--gcp-project=%s", project)}
+	getStatusArgs := []string{kubemci_bin, "get-status", lbName, fmt.Sprintf("--gcp-project=%s", project)}
 	output, _ := runCommand(getStatusArgs)
 	glog.Infof("Output from get-status: %s", output)
 	ipAddress := findIPv4(output)
@@ -99,6 +113,18 @@ func RunBasicCreateTest() {
 	if err := waitForIngress(ipAddress); err != nil {
 		glog.Errorf("error in GET %s: %s", ipAddress, err)
 	}
+	fmt.Println("PASS: got 200 from ingress url")
+
+	listArgs := []string{kubemci_bin, "list", fmt.Sprintf("--gcp-project=%s", project)}
+	listStr, err := runCommand(listArgs)
+	if err != nil {
+		glog.Fatalf("Error listing MCIs: %v", err)
+	}
+	glog.Infof("kubemci list returned:\n%s", listStr)
+	if !strings.Contains(listStr, lbName) || !strings.Contains(listStr, ipAddress) {
+		glog.Fatalf("Status does not contain lb name (%s) and IP (%s): %s", lbName, ipAddress, listStr)
+	}
+	fmt.Println("PASS: found loadbalancer name and IP in 'list' command.")
 
 	// TODO(nikhiljindal): Ensure that the ingress is created and deleted in all
 	// clusters as expected.
