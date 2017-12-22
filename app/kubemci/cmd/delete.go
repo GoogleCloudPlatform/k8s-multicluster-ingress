@@ -18,16 +18,13 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/golang/glog"
 	"github.com/hashicorp/go-multierror"
 	"github.com/spf13/cobra"
 	"k8s.io/api/extensions/v1beta1"
-	"k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	kubeclient "k8s.io/client-go/kubernetes"
 
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/cloudinterface"
 	gcplb "github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/loadbalancer"
+	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/ingress"
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/kubeutils"
 )
 
@@ -113,7 +110,7 @@ func runDelete(options *DeleteOptions, args []string) error {
 
 	// Unmarshal the YAML into ingress struct.
 	var ing v1beta1.Ingress
-	if err := unmarshallAndApplyDefaults(options.IngressFilename, options.Namespace, &ing); err != nil {
+	if err := ingress.UnmarshallAndApplyDefaults(options.IngressFilename, options.Namespace, &ing); err != nil {
 		return fmt.Errorf("error in unmarshalling the yaml file %s, err: %s", options.IngressFilename, err)
 	}
 	cloudInterface, err := cloudinterface.NewGCECloudInterface(options.GCPProject)
@@ -121,10 +118,16 @@ func runDelete(options *DeleteOptions, args []string) error {
 		return fmt.Errorf("error in creating cloud interface: %s", err)
 	}
 
-	// Delete ingress from all clusters.
-	clients, delErr := deleteIngress(options.KubeconfigFilename, options.KubeContexts, &ing)
-	if delErr != nil {
-		err = multierror.Append(err, delErr)
+	// Get clients for all clusters
+	clients, err := kubeutils.GetClients(options.KubeconfigFilename, options.KubeContexts)
+	if err != nil {
+		return err
+	}
+
+	// Delete ingress resource in clusters
+	err = ingress.NewIngressSyncer().DeleteIngress(&ing, clients)
+	if err != nil {
+		return err
 	}
 
 	lbs, err := gcplb.NewLoadBalancerSyncer(options.LBName, clients, cloudInterface, options.GCPProject)
@@ -133,35 +136,6 @@ func runDelete(options *DeleteOptions, args []string) error {
 	}
 	if delErr := lbs.DeleteLoadBalancer(&ing); delErr != nil {
 		err = multierror.Append(err, delErr)
-	}
-	return err
-}
-
-// Extracts the contexts from the given kubeconfig and deletes ingress in those context clusters.
-func deleteIngress(kubeconfig string, kubeContexts []string, ing *v1beta1.Ingress) (map[string]kubeclient.Interface, error) {
-	clients, err := kubeutils.GetClients(kubeconfig, kubeContexts)
-	if err != nil {
-		return nil, err
-	}
-	return clients, deleteIngressInClusters(ing, clients)
-}
-
-// Deletes the given ingress from all clusters corresponding to the given clients.
-func deleteIngressInClusters(ing *v1beta1.Ingress, clients map[string]kubeclient.Interface) error {
-	var err error
-	for cluster, client := range clients {
-		glog.V(4).Infof("Deleting Ingress from cluster: %v...", cluster)
-		glog.V(3).Infof("Using namespace %s for ingress %s", ing.Namespace, ing.Name)
-		deleteErr := client.Extensions().Ingresses(ing.Namespace).Delete(ing.Name, &metav1.DeleteOptions{})
-		glog.V(2).Infof("Error in deleting ingress %s: %s", ing.Name, deleteErr)
-		if deleteErr != nil {
-			if errors.IsNotFound(err) {
-				fmt.Println("Ingress doesnt exist; moving on.")
-				continue
-			} else {
-				err = multierror.Append(err, fmt.Errorf("Error in deleting ingress from cluster %s: %s", cluster, deleteErr))
-			}
-		}
 	}
 	return err
 }

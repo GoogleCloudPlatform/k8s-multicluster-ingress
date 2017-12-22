@@ -16,12 +16,6 @@ package cmd
 
 import (
 	"testing"
-
-	"k8s.io/api/extensions/v1beta1"
-	"k8s.io/apimachinery/pkg/runtime"
-	kubeclient "k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/kubernetes/fake"
-	core "k8s.io/client-go/testing"
 )
 
 func TestValidateDeleteArgs(t *testing.T) {
@@ -77,36 +71,4 @@ func TestValidateDeleteArgs(t *testing.T) {
 	if err := validateDeleteArgs(&options, []string{"lbname"}); err != nil {
 		t.Errorf("unexpected error from validateDeleteArgs: %s", err)
 	}
-}
-
-func TestDeleteIngress(t *testing.T) {
-	fakeClient := fake.Clientset{}
-	fakeClient.AddReactor("delete", "ingresses", func(action core.Action) (handled bool, ret runtime.Object, err error) {
-		return true, nil, nil
-	})
-	clients := map[string]kubeclient.Interface{
-		"cluster1": &fakeClient,
-		"cluster2": &fakeClient,
-	}
-	var ing v1beta1.Ingress
-	if err := unmarshallAndApplyDefaults("../../../testdata/ingress.yaml", "", &ing); err != nil {
-		t.Fatalf("%s", err)
-	}
-	// Verify that on calling deleteIngressInClusters, fakeClient sees 2 actions to delete the ingress.
-	err := deleteIngressInClusters(&ing, clients)
-	if err != nil {
-		t.Fatalf("%s", err)
-	}
-
-	actions := fakeClient.Actions()
-	if len(actions) != 2 {
-		t.Errorf("Expected 2 actions: delete ingress 1, delete ingress 2. Got:%v", actions)
-	}
-	if !actions[0].Matches("delete", "ingresses") {
-		t.Errorf("Expected ingress deletion.")
-	}
-	if !actions[1].Matches("delete", "ingresses") {
-		t.Errorf("Expected ingress deletion.")
-	}
-	// TODO(nikhiljindal): Also add tests for error cases including one for does not exist.
 }

@@ -17,21 +17,15 @@ package cmd
 import (
 	"fmt"
 	"io"
-	"io/ioutil"
 
-	"github.com/ghodss/yaml"
-	"github.com/golang/glog"
-	multierror "github.com/hashicorp/go-multierror"
 	"github.com/spf13/cobra"
 	"k8s.io/api/extensions/v1beta1"
-	"k8s.io/apimachinery/pkg/api/errors"
-	kubeclient "k8s.io/client-go/kubernetes"
-	"k8s.io/ingress-gce/pkg/annotations"
 	// gcp is needed for GKE cluster auth to work.
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/cloudinterface"
 	gcplb "github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/loadbalancer"
+	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/ingress"
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/kubeutils"
 )
 
@@ -41,7 +35,6 @@ var (
 
 	Takes an ingress spec and a list of clusters and creates a multicluster ingress targetting those clusters.
 	`
-	defaultIngressNamespace = "default"
 )
 
 type CreateOptions struct {
@@ -128,17 +121,11 @@ func runCreate(options *CreateOptions, args []string) error {
 
 	// Unmarshal the YAML into ingress struct.
 	var ing v1beta1.Ingress
-	if err := unmarshallAndApplyDefaults(options.IngressFilename, options.Namespace, &ing); err != nil {
+	if err := ingress.UnmarshallAndApplyDefaults(options.IngressFilename, options.Namespace, &ing); err != nil {
 		return fmt.Errorf("error in unmarshalling the yaml file %s, err: %s", options.IngressFilename, err)
 	}
-	ingAnnotations := annotations.IngAnnotations(ing.Annotations)
-	if ingAnnotations == nil || ingAnnotations.StaticIPName() == "" {
-		if options.StaticIPName == "" {
-			return fmt.Errorf("ingress spec must provide a Global Static IP through annotation of %q (alternatively, use --static-ip flag)", annotations.StaticIPNameKey)
-		}
-		addAnnotation(&ing, annotations.StaticIPNameKey, options.StaticIPName)
-	} else if options.StaticIPName != "" && ingAnnotations.StaticIPName() != options.StaticIPName {
-		return fmt.Errorf("the StaticIPName from the provided ingress %q does not match --static-ip=%v. You must pass '--static-ip=%v' to perform this operation.", ingAnnotations.StaticIPName(), options.StaticIPName, ingAnnotations.StaticIPName())
+	if err := ingress.ApplyStaticIP(options.StaticIPName, &ing); err != nil {
+		return fmt.Errorf("error in verifying static IP for ingress %s, err: %s", options.IngressFilename, err)
 	}
 
 	cloudInterface, err := cloudinterface.NewGCECloudInterface(options.GCPProject)
@@ -146,8 +133,14 @@ func runCreate(options *CreateOptions, args []string) error {
 		return fmt.Errorf("error in creating cloud interface: %s", err)
 	}
 
-	// Create ingress in all clusters.
-	clusters, clients, err := createIngress(options.KubeconfigFilename, options.KubeContexts, &ing)
+	// Get clients for all clusters
+	clients, err := kubeutils.GetClients(options.KubeconfigFilename, options.KubeContexts)
+	if err != nil {
+		return err
+	}
+
+	// Ensure that the ingress resource is deployed to the clusters
+	clusters, err := ingress.NewIngressSyncer().EnsureIngress(&ing, clients, options.ForceUpdate)
 	if err != nil {
 		return err
 	}
@@ -157,83 +150,4 @@ func runCreate(options *CreateOptions, args []string) error {
 		return err
 	}
 	return lbs.CreateLoadBalancer(&ing, options.ForceUpdate, clusters)
-}
-
-// Extracts the contexts from the given kubeconfig and creates ingress in those context clusters.
-// Returns the list of clusters in which it created the ingress and a map of clients for each of those clusters.
-func createIngress(kubeconfig string, kubeContexts []string, ing *v1beta1.Ingress) ([]string, map[string]kubeclient.Interface, error) {
-	clients, err := kubeutils.GetClients(kubeconfig, kubeContexts)
-	if err != nil {
-		return nil, nil, err
-	}
-	clusters, createErr := createIngressInClusters(ing, clients)
-	return clusters, clients, createErr
-}
-
-// Creates the given ingress in all clusters corresponding to the given clients.
-func createIngressInClusters(ing *v1beta1.Ingress, clients map[string]kubeclient.Interface) ([]string, error) {
-	var err error
-	var clusters []string
-	for cluster, client := range clients {
-		glog.V(4).Infof("Creating Ingress in cluster: %v...", cluster)
-		clusters = append(clusters, cluster)
-		glog.V(3).Infof("Using namespace %s for ingress %s", ing.Namespace, ing.Name)
-		actualIng, createErr := client.Extensions().Ingresses(ing.Namespace).Create(ing)
-		glog.V(2).Infof("Ingress Create returned: err:%v. Actual Ingress:%+v", createErr, actualIng)
-		if createErr != nil {
-			if errors.IsAlreadyExists(createErr) {
-				fmt.Println("Ingress already exists; moving on.")
-				continue
-			} else {
-				err = multierror.Append(err, fmt.Errorf("Error in creating ingress in cluster %s: %s", cluster, createErr))
-			}
-		}
-		fmt.Println("Created Ingress for cluster:", cluster)
-	}
-	return clusters, err
-}
-
-func unmarshall(filename string, ing *v1beta1.Ingress) error {
-	// Read the file
-	bytes, err := ioutil.ReadFile(filename)
-	if err != nil {
-		return err
-	}
-	// Unmarshall into ingress struct.
-	if err := yaml.Unmarshal(bytes, ing); err != nil {
-		return err
-	}
-	return nil
-}
-
-// TODO Move to ingress-gce/pkg/annotations
-func addAnnotation(ing *v1beta1.Ingress, key, val string) {
-	if ing.Annotations == nil {
-		ing.Annotations = annotations.IngAnnotations{}
-	}
-	ing.Annotations[key] = val
-}
-
-func unmarshallAndApplyDefaults(filename, namespace string, ing *v1beta1.Ingress) error {
-	if err := unmarshall(filename, ing); err != nil {
-		return err
-	}
-	if ing.Namespace == "" {
-		if namespace == "" {
-			ing.Namespace = defaultIngressNamespace
-		} else {
-			ing.Namespace = namespace
-		}
-	} else if namespace != "" && ing.Namespace != namespace {
-		return fmt.Errorf("the namespace from the provided ingress %q does not match the namespace %q. You must pass '--namespace=%v' to perform this operation.", ing.Namespace, namespace, ing.Namespace)
-	}
-	ingAnnotations := annotations.IngAnnotations(ing.Annotations)
-	class := ingAnnotations.IngressClass()
-	if class == "" {
-		addAnnotation(ing, annotations.IngressClassKey, annotations.GceMultiIngressClass)
-		glog.V(3).Infof("Adding class annotation to be of type %v\n", annotations.GceMultiIngressClass)
-	} else if class != annotations.GceMultiIngressClass {
-		return fmt.Errorf("ingress class is %v, must be %v", class, annotations.GceMultiIngressClass)
-	}
-	return nil
 }

@@ -15,15 +15,7 @@
 package cmd
 
 import (
-	"reflect"
-	"sort"
 	"testing"
-
-	"k8s.io/api/extensions/v1beta1"
-	"k8s.io/apimachinery/pkg/runtime"
-	kubeclient "k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/kubernetes/fake"
-	core "k8s.io/client-go/testing"
 )
 
 func TestValidateCreateArgs(t *testing.T) {
@@ -79,41 +71,4 @@ func TestValidateCreateArgs(t *testing.T) {
 	if err := validateCreateArgs(&options, []string{"lbname"}); err != nil {
 		t.Errorf("unexpected error from validateCreateArgs: %s", err)
 	}
-}
-
-func TestCreateIngressInClusters(t *testing.T) {
-	fakeClient := fake.Clientset{}
-	fakeClient.AddReactor("create", "ingresses", func(action core.Action) (handled bool, ret runtime.Object, err error) {
-		return true, action.(core.CreateAction).GetObject(), nil
-	})
-	clients := map[string]kubeclient.Interface{
-		"cluster1": &fakeClient,
-		"cluster2": &fakeClient,
-	}
-	var ing v1beta1.Ingress
-	if err := unmarshallAndApplyDefaults("../../../testdata/ingress.yaml", "", &ing); err != nil {
-		t.Fatalf("%s", err)
-	}
-	// Verify that on calling createIngressInClusters, fakeClient sees 2 actions to create the ingress.
-	clusters, err := createIngressInClusters(&ing, clients)
-	if err != nil {
-		t.Fatalf("%s", err)
-	}
-	actions := fakeClient.Actions()
-	if len(actions) != 2 {
-		t.Errorf("Expected 2 actions: Create Ingress 1, Create Ingress 2. Got:%v", actions)
-	}
-	if !actions[0].Matches("create", "ingresses") {
-		t.Errorf("Expected ingress creation.")
-	}
-	if !actions[1].Matches("create", "ingresses") {
-		t.Errorf("Expected ingress creation.")
-	}
-	expectedClusters := []string{"cluster1", "cluster2"}
-	sort.Strings(clusters)
-	if !reflect.DeepEqual(clusters, expectedClusters) {
-		t.Errorf("unexpected list of clusters, expected: %v, got: %v", expectedClusters, clusters)
-	}
-	// TODO(G-Harmon): Verify that the ingress matches testdata/ingress.yaml
-	// TODO(nikhiljindal): Also add tests for error cases including one for already exists.
 }
