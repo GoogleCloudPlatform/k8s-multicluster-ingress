@@ -150,7 +150,7 @@ func testHTTPSIngress(project, kubeConfigPath, lbName string, clients map[string
 	runCommand(certGenArgs)
 	// Create the secret in all clusters.
 	for k := range clients {
-		createSecretArgs := []string{"kubectl", "create", "secret", "tls", "tls-secret", "--key", "tls.key", "--cert", "tls.crt", fmt.Sprintf("--context=%s", k)}
+		createSecretArgs := []string{"kubectl", fmt.Sprintf("--kubeconfig=%s", kubeConfigPath), "create", "secret", "tls", "tls-secret", "--key", "tls.key", "--cert", "tls.crt", fmt.Sprintf("--context=%s", k)}
 		// create secret may fail if this was setup in a previous run.
 		runCommand(createSecretArgs)
 	}
@@ -169,7 +169,7 @@ func testHTTPSIngress(project, kubeConfigPath, lbName string, clients map[string
 		runCommand(deleteArgs)
 		// Delete the secret from all clusters.
 		for k := range clients {
-			deleteSecretArgs := []string{"kubectl", "delete", "secret", "tls-secret", fmt.Sprintf("--context=%s", k)}
+			deleteSecretArgs := []string{"kubectl", fmt.Sprintf("--kubeconfig=%s", kubeConfigPath), "delete", "secret", "tls-secret", fmt.Sprintf("--context=%s", k)}
 			runCommand(deleteSecretArgs)
 		}
 	}
