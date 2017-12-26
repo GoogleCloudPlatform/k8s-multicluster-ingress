@@ -1,0 +1,29 @@
+apiVersion: apps/v1beta1
+kind: Deployment
+metadata:
+  name: hc-from-probe
+  labels:
+    app: hc-from-probe
+    type: test
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: hc-from-probe
+  template:
+    metadata:
+      labels:
+        app: hc-from-probe
+    spec:
+      containers:
+      - image: gcr.io/google_containers/defaultbackend:1.4
+        name: hc-from-probe
+        ports:
+          - containerPort: 8080
+        readinessProbe:
+          httpGet:
+            path: "/healthz"
+            port: 8080
+            scheme: "HTTP"
+          initialDelaySeconds: 30
+          timeoutSeconds: 5

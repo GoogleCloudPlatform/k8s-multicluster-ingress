@@ -51,7 +51,7 @@ import (
 const (
 	// Prefix used by the namer to generate names.
 	// This is used to identify resources created by this code.
-	mciPrefix = "mci1"
+	MciPrefix = "mci1"
 )
 
 // LoadBalancerSyncer manages the GCP resources necessary for an L7 GCP Load balancer.
@@ -83,7 +83,7 @@ type LoadBalancerSyncer struct {
 
 func NewLoadBalancerSyncer(lbName string, clients map[string]kubeclient.Interface, cloud *gce.GCECloud, gcpProjectId string) (*LoadBalancerSyncer, error) {
 
-	namer := utilsnamer.NewNamer(mciPrefix, lbName)
+	namer := utilsnamer.NewNamer(MciPrefix, lbName)
 	ntg, err := networktags.NewNetworkTagsGetter(gcpProjectId)
 	if err != nil {
 		return nil, err
