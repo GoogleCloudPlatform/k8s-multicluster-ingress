@@ -136,7 +136,7 @@ purposes of this tutorial:
 ```shell
 # Create a cluster in us-east and get its credentials
 gcloud container clusters create \
-    --cluster-version=1.8.1-gke.0 \
+    --cluster-version=1.8.4-gke.1 \
     --zone=us-east4-a \
     cluster-us-east
 
@@ -147,7 +147,7 @@ KUBECONFIG=./zpkubeconfig gcloud container clusters get-credentials \
 
 # Create a cluster in eu-west and get its credentials
 gcloud container clusters create \
-    --cluster-version=1.8.1-gke.0 \
+    --cluster-version=1.8.4-gke.1 \
     --zone=europe-west1-c \
     cluster-eu-west
 
@@ -158,7 +158,7 @@ KUBECONFIG=./zpkubeconfig gcloud container clusters get-credentials \
 
 # Create a cluster in asia-east and get its credentials
 gcloud container clusters create \
-    --cluster-version=1.8.1-gke.0 \
+    --cluster-version=1.8.4-gke.1 \
     --zone=asia-east1-b \
     cluster-asia-east
 
