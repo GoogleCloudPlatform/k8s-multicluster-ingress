@@ -15,6 +15,7 @@
 package loadbalancer
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -34,6 +35,7 @@ import (
 	ingresslb "k8s.io/ingress-gce/pkg/loadbalancers"
 	ingressutils "k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce"
+	"k8s.io/kubernetes/pkg/printers"
 
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/backendservice"
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/firewallrule"
@@ -257,19 +259,19 @@ func (l *LoadBalancerSyncer) PrintStatus() (string, error) {
 }
 
 func formatLoadBalancersList(balancers []status.LoadBalancerStatus) (string, error) {
-	// TODO: Should reuse printers in kubernetes/pkg/printers/printers.go
 	if len(balancers) == 0 {
 		return "No multicluster ingresses found.", nil
 	}
-	var result string = "List of multicluster ingresses created:\nName; IP; Clusters\n"
+
+	buf := bytes.NewBuffer([]byte{})
+	out := printers.GetNewTabWriter(buf)
+	columnNames := []string{"NAME", "IP", "CLUSTERS"}
+	fmt.Fprintf(out, "%s\n", strings.Join(columnNames, "\t"))
 	for _, lbStatus := range balancers {
-		result += "Name: " + lbStatus.LoadBalancerName
-		result += "\tIP: " + lbStatus.IPAddress
-		result += "\tClusters: " + strings.Join(lbStatus.Clusters, ", ")
-		result += "\n"
+		fmt.Fprintf(out, "%s\t%s\t%s\n", lbStatus.LoadBalancerName, lbStatus.IPAddress, strings.Join(lbStatus.Clusters, ", "))
 	}
-	result = strings.Trim(result, "\n")
-	return result, nil
+	out.Flush()
+	return buf.String(), nil
 }
 
 func (l *LoadBalancerSyncer) ListLoadBalancers() (string, error) {
