@@ -171,7 +171,6 @@ func (s *ForwardingRuleSyncer) ListLoadBalancerStatuses() ([]status.LoadBalancer
 	var rules *compute.ForwardingRuleList
 	var err error
 	result := []status.LoadBalancerStatus{}
-	// TODO: When we have HTTPS ingresses, check for those as well.
 	if rules, err = s.frp.ListGlobalForwardingRules(); err != nil {
 		err = fmt.Errorf("Error getting global forwarding rules: %s", err)
 		fmt.Println(err)
@@ -184,6 +183,7 @@ func (s *ForwardingRuleSyncer) ListLoadBalancerStatuses() ([]status.LoadBalancer
 		return result, err
 	}
 	glog.V(5).Infof("rules: %+v", rules)
+	lbsSeen := map[string]bool{}
 	for _, item := range rules.Items {
 		if strings.HasPrefix(item.Name, "mci1") {
 			if lbStatus, decodeErr := status.FromString(item.Description); decodeErr != nil {
@@ -191,9 +191,15 @@ func (s *ForwardingRuleSyncer) ListLoadBalancerStatuses() ([]status.LoadBalancer
 				fmt.Println(decodeErr)
 				err = multierror.Append(err, decodeErr)
 			} else {
+				if lbsSeen[lbStatus.LoadBalancerName] {
+					// Single load balancer can have multiple forwarding rules
+					// (for ex: one for http and one for https).
+					// Skip the load balancer to not list it multiple times.
+					continue
+				}
+				lbsSeen[lbStatus.LoadBalancerName] = true
 				result = append(result, *lbStatus)
 			}
-
 		}
 	}
 	return result, err
