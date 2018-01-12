@@ -16,6 +16,7 @@ package sslcert
 
 import (
 	"fmt"
+	"net/http"
 	"reflect"
 
 	compute "google.golang.org/api/compute/v1"
@@ -26,6 +27,7 @@ import (
 	"k8s.io/ingress-gce/pkg/annotations"
 	ingresslb "k8s.io/ingress-gce/pkg/loadbalancers"
 	"k8s.io/ingress-gce/pkg/tls"
+	"k8s.io/ingress-gce/pkg/utils"
 
 	utilsnamer "github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/namer"
 )
@@ -59,9 +61,17 @@ func (s *SSLCertSyncer) EnsureSSLCert(lbName string, ing *v1beta1.Ingress, clien
 }
 
 func (s *SSLCertSyncer) ensurePreSharedSSLCert(lbName string, ing *v1beta1.Ingress, forceUpdate bool) (string, error) {
-	err := fmt.Errorf("Pre shared cert is not supported by this tool yet")
-	fmt.Println(err)
-	return "", err
+	ingAnnotations := annotations.IngAnnotations(ing.ObjectMeta.Annotations)
+	certName := ingAnnotations.UseNamedTLS()
+	if certName == "" {
+		return "", fmt.Errorf("unexpected empty value for %s annotation", annotations.PreSharedCertKey)
+	}
+	// Fetch the certificate and return its self link.
+	cert, err := s.scp.GetSslCertificate(certName)
+	if err != nil {
+		return "", err
+	}
+	return cert.SelfLink, nil
 }
 
 func (s *SSLCertSyncer) ensureSecretSSLCert(lbName string, ing *v1beta1.Ingress, client kubeclient.Interface, forceUpdate bool) (string, error) {
@@ -102,7 +112,7 @@ func (s *SSLCertSyncer) DeleteSSLCert() error {
 	name := s.namer.SSLCertName()
 	fmt.Println("Deleting ssl cert", name)
 	err := s.scp.DeleteSslCertificate(name)
-	if err != nil {
+	if err != nil && !utils.IsHTTPErrorCode(err, http.StatusNotFound) {
 		fmt.Println("error", err, "in deleting ssl cert", name)
 		return err
 	}
@@ -114,6 +124,14 @@ func (s *SSLCertSyncer) updateSSLCert(desiredCert *compute.SslCertificate) (stri
 	name := desiredCert.Name
 	fmt.Println("Deleting existing ssl cert", name, "and recreating it to match the desired state.")
 	// SSL Cert does not support update. We need to delete and then create again.
+	// Note: This is different than what we do in ingress-gce.
+	// In ingress-gce, we first create a new cert with a different name,
+	// update the target proxy to point to the new cert and then delete
+	// the old cert.
+	// What we do here is simpler, but can lead to downtime in the brief period
+	// when we have deleted the old cert but havent created the new one.
+	// TODO(nikhiljindal): Converge this with ingress-gce by sharing the same code.
+	// https://github.com/GoogleCloudPlatform/k8s-multicluster-ingress/issues/124
 	err := s.scp.DeleteSslCertificate(name)
 	if err != nil {
 		return "", fmt.Errorf("error in deleting ssl cert %s: %s", name, err)
