@@ -38,6 +38,7 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/forwardingrule"
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/healthcheck"
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/sslcert"
+	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/status"
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/targetproxy"
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/urlmap"
 )
@@ -343,5 +344,73 @@ func TestDeleteLoadBalancer(t *testing.T) {
 	}
 	if len(fhc.EnsuredHealthChecks) != 0 {
 		t.Errorf("unexpected health checks have not been deleted: %v", fhc.EnsuredHealthChecks)
+	}
+}
+
+func TestFormatLoadBalancersList(t *testing.T) {
+	testCases := []struct {
+		statuses       []status.LoadBalancerStatus
+		expectedOutput string
+	}{
+		{
+			// No ingresses.
+			[]status.LoadBalancerStatus{},
+			"No multicluster ingresses found.",
+		},
+		{
+			// Name only.
+			[]status.LoadBalancerStatus{
+				status.LoadBalancerStatus{
+					LoadBalancerName: "lb",
+				},
+			},
+			"NAME      IP        CLUSTERS\nlb                  \n",
+		},
+		{
+			// Missing IP.
+			[]status.LoadBalancerStatus{
+				status.LoadBalancerStatus{
+					LoadBalancerName: "lb",
+					Clusters:         []string{"cluster1", "cluster2"},
+				},
+			},
+			"NAME      IP        CLUSTERS\nlb                  cluster1, cluster2\n",
+		},
+		{
+			// All information.
+			[]status.LoadBalancerStatus{
+				status.LoadBalancerStatus{
+					LoadBalancerName: "lb",
+					IPAddress:        "192.168.1.5",
+					Clusters:         []string{"cluster1", "cluster2"},
+				},
+			},
+			"NAME      IP            CLUSTERS\nlb        192.168.1.5   cluster1, cluster2\n",
+		},
+		{
+			// Multiple ingresses.
+			[]status.LoadBalancerStatus{
+				status.LoadBalancerStatus{
+					LoadBalancerName: "lb1",
+					IPAddress:        "192.168.1.5",
+					Clusters:         []string{"cluster1", "cluster2"},
+				},
+				status.LoadBalancerStatus{
+					LoadBalancerName: "lb2",
+					IPAddress:        "192.168.1.7",
+					Clusters:         []string{"cluster1", "cluster2"},
+				},
+			},
+			"NAME      IP            CLUSTERS\nlb1       192.168.1.5   cluster1, cluster2\nlb2       192.168.1.7   cluster1, cluster2\n",
+		},
+	}
+	for i, c := range testCases {
+		output, err := formatLoadBalancersList(c.statuses)
+		if err != nil {
+			t.Errorf("case %d: unexpected error: %s", i, err)
+		}
+		if output != c.expectedOutput {
+			t.Errorf("case %d: unexpected output %s, expected: %s", i, output, c.expectedOutput)
+		}
 	}
 }
