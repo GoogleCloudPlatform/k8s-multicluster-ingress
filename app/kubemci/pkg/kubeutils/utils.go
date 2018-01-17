@@ -17,6 +17,7 @@ package kubeutils
 import (
 	"fmt"
 	"os/exec"
+	"reflect"
 	"strings"
 
 	"github.com/golang/glog"
@@ -25,6 +26,7 @@ import (
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/apimachinery/pkg/runtime"
 	kubeclient "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 	ingressbe "k8s.io/ingress-gce/pkg/backends"
@@ -163,4 +165,35 @@ func isSimpleHTTPProbe(probe *api_v1.Probe) bool {
 	return (probe != nil && probe.Handler.HTTPGet != nil && probe.Handler.HTTPGet.Host == "" &&
 		(len(probe.Handler.HTTPGet.HTTPHeaders) == 0 ||
 			(len(probe.Handler.HTTPGet.HTTPHeaders) == 1 && probe.Handler.HTTPGet.HTTPHeaders[0].Name == "Host")))
+}
+
+// Note: copied from https://github.com/kubernetes/federation/blob/7951a643cebc3abdcd903eaff90d1383b43928d1/pkg/federation-controller/util/meta.go#L61
+// Checks if cluster-independent, user provided data in two given ObjectMeta are equal. If in
+// the future the ObjectMeta structure is expanded then any field that is not populated
+// by the api server should be included here.
+func ObjectMetaEquivalent(a, b meta_v1.ObjectMeta) bool {
+	if a.Name != b.Name {
+		return false
+	}
+	if a.Namespace != b.Namespace {
+		return false
+	}
+	if !reflect.DeepEqual(a.Labels, b.Labels) && (len(a.Labels) != 0 || len(b.Labels) != 0) {
+		return false
+	}
+	if !reflect.DeepEqual(a.Annotations, b.Annotations) && (len(a.Annotations) != 0 || len(b.Annotations) != 0) {
+		return false
+	}
+	return true
+}
+
+// Note: copied from https://github.com/kubernetes/federation/blob/7951a643cebc3abdcd903eaff90d1383b43928d1/pkg/federation-controller/util/meta.go#L79
+// Checks if cluster-independent, user provided data in ObjectMeta and Spec in two given top
+// level api objects are equivalent.
+func ObjectMetaAndSpecEquivalent(a, b runtime.Object) bool {
+	objectMetaA := reflect.ValueOf(a).Elem().FieldByName("ObjectMeta").Interface().(meta_v1.ObjectMeta)
+	objectMetaB := reflect.ValueOf(b).Elem().FieldByName("ObjectMeta").Interface().(meta_v1.ObjectMeta)
+	specA := reflect.ValueOf(a).Elem().FieldByName("Spec").Interface()
+	specB := reflect.ValueOf(b).Elem().FieldByName("Spec").Interface()
+	return ObjectMetaEquivalent(objectMetaA, objectMetaB) && reflect.DeepEqual(specA, specB)
 }

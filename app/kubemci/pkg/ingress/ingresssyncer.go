@@ -3,7 +3,6 @@ package ingress
 import (
 	"fmt"
 	"io/ioutil"
-	"reflect"
 
 	"github.com/ghodss/yaml"
 	"github.com/golang/glog"
@@ -14,6 +13,8 @@ import (
 	"k8s.io/apimachinery/pkg/util/diff"
 	kubeclient "k8s.io/client-go/kubernetes"
 	"k8s.io/ingress-gce/pkg/annotations"
+
+	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/kubeutils"
 )
 
 var (
@@ -50,7 +51,7 @@ func (i *IngressSyncer) EnsureIngress(ing *v1beta1.Ingress, clients map[string]k
 			}
 			fmt.Println("Created Ingress in cluster:", cluster)
 		} else {
-			if !reflect.DeepEqual(ing, existingIng) {
+			if !kubeutils.ObjectMetaAndSpecEquivalent(ing, existingIng) {
 				fmt.Printf("Found existing ingress resource which differs from the proposed one\n")
 				glog.V(2).Infof("Diff: %v\n", diff.ObjectDiff(ing, existingIng))
 				if forceUpdate {

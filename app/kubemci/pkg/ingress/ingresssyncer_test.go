@@ -5,6 +5,7 @@ import (
 	"sort"
 	"testing"
 
+	core_v1 "k8s.io/api/core/v1"
 	"k8s.io/api/extensions/v1beta1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -62,14 +63,17 @@ func TestEnsureIngress(t *testing.T) {
 }
 
 func TestEnsureExistingIngressDoesNothing(t *testing.T) {
-	var ing v1beta1.Ingress
-	if err := UnmarshallAndApplyDefaults("../../../../testdata/ingress.yaml", "", &ing); err != nil {
+	var oldIng, newIng v1beta1.Ingress
+	if err := UnmarshallAndApplyDefaults("../../../../testdata/ingress.yaml", "", &oldIng); err != nil {
 		t.Fatalf("%s", err)
 	}
+	newIng = *oldIng.DeepCopy()
+	// Update an insignificant attribute to make sure we don't compare irrelevant stuff
+	oldIng.Status.LoadBalancer.Ingress = append(oldIng.Status.LoadBalancer.Ingress, core_v1.LoadBalancerIngress{"127.0.0.1", "localhost"})
 
 	fakeClient := fake.Clientset{}
 	fakeClient.AddReactor("get", "ingresses", func(action core.Action) (handled bool, ret runtime.Object, err error) {
-		return true, &ing, nil
+		return true, &oldIng, nil
 	})
 	fakeClient.AddReactor("create", "ingresses", func(action core.Action) (handled bool, ret runtime.Object, err error) {
 		return true, action.(core.CreateAction).GetObject(), nil
@@ -78,7 +82,7 @@ func TestEnsureExistingIngressDoesNothing(t *testing.T) {
 		"cluster1": &fakeClient,
 		"cluster2": &fakeClient,
 	}
-	_, err := NewIngressSyncer().EnsureIngress(&ing, clients, false)
+	_, err := NewIngressSyncer().EnsureIngress(&newIng, clients, false)
 	if err != nil {
 		t.Fatalf("%s", err)
 	}
