@@ -15,186 +15,180 @@ import (
 	core "k8s.io/client-go/testing"
 )
 
+type reactorAction struct {
+	verb   string
+	action func(action core.Action) (handled bool, ret runtime.Object, err error)
+}
+
 func TestEnsureIngress(t *testing.T) {
-	var ing v1beta1.Ingress
-	if err := UnmarshallAndApplyDefaults("../../../../testdata/ingress.yaml", "", &ing); err != nil {
+
+	var originalIngress, updatedIngress v1beta1.Ingress
+	if err := UnmarshallAndApplyDefaults("../../../../testdata/ingress.yaml", "", &originalIngress); err != nil {
 		t.Fatalf("%s", err)
 	}
 
-	fakeClient := fake.Clientset{}
-	fakeClient.AddReactor("get", "ingresses", func(action core.Action) (handled bool, ret runtime.Object, err error) {
-		return true, &v1beta1.Ingress{}, errors.NewNotFound(schema.ParseGroupResource("extensions.ingress"), ing.Name)
-	})
-	fakeClient.AddReactor("create", "ingresses", func(action core.Action) (handled bool, ret runtime.Object, err error) {
-		return true, action.(core.CreateAction).GetObject(), nil
-	})
-	clients := map[string]kubeclient.Interface{
-		"cluster1": &fakeClient,
-		"cluster2": &fakeClient,
+	updatedIngress = *originalIngress.DeepCopy()
+	updatedIngress.Spec.Rules[0].HTTP.Paths[0].Path = "/bar"
+
+	testCases := []struct {
+		desc            string
+		action          string
+		ingress         v1beta1.Ingress
+		forceUpdate     bool
+		shouldFail      bool
+		reactors        []reactorAction
+		expectedActions []string
+	}{
+		{
+			desc:    "expected no error in ensuring ingress",
+			action:  "ensure",
+			ingress: originalIngress,
+			reactors: []reactorAction{
+				{
+					verb: "get",
+					action: func(action core.Action) (handled bool, ret runtime.Object, err error) {
+						return true, &v1beta1.Ingress{}, errors.NewNotFound(schema.ParseGroupResource("extensions.ingress"), originalIngress.Name)
+					},
+				},
+				{
+					verb: "create",
+					action: func(action core.Action) (handled bool, ret runtime.Object, err error) {
+						return true, action.(core.CreateAction).GetObject(), nil
+					},
+				},
+			},
+			expectedActions: []string{
+				"get",
+				"create",
+				"get",
+				"create",
+			},
+		},
+		{
+			desc:    "expected ensuring existing ingress to do nothing",
+			action:  "ensure",
+			ingress: originalIngress,
+			reactors: []reactorAction{
+				{
+					verb: "get",
+					action: func(action core.Action) (handled bool, ret runtime.Object, err error) {
+						oldIng := *originalIngress.DeepCopy()
+						// Update an insignificant attribute to make sure we don't compare irrelevant stuff
+						oldIng.Status.LoadBalancer.Ingress = append(oldIng.Status.LoadBalancer.Ingress, core_v1.LoadBalancerIngress{"127.0.0.1", "localhost"})
+						return true, &oldIng, nil
+					},
+				},
+			},
+			expectedActions: []string{
+				"get",
+				"get",
+			},
+		},
+		{
+			desc:        "expected updating ingress without force to fail",
+			action:      "ensure",
+			ingress:     updatedIngress,
+			forceUpdate: false,
+			shouldFail:  true,
+			reactors: []reactorAction{
+				{
+					verb: "get",
+					action: func(action core.Action) (handled bool, ret runtime.Object, err error) {
+						return true, &originalIngress, nil
+					},
+				},
+			},
+		},
+		{
+			desc:        "expected updating ingress with force to succeed",
+			action:      "ensure",
+			ingress:     updatedIngress,
+			forceUpdate: true,
+			reactors: []reactorAction{
+				{
+					verb: "get",
+					action: func(action core.Action) (handled bool, ret runtime.Object, err error) {
+						return true, &originalIngress, nil
+					},
+				},
+				{
+					verb: "create",
+					action: func(action core.Action) (handled bool, ret runtime.Object, err error) {
+						return true, action.(core.CreateAction).GetObject(), nil
+					},
+				},
+			},
+			expectedActions: []string{
+				"get",
+				"update",
+				"get",
+				"update",
+			},
+		},
+		{
+			desc:    "expected deleting ingress to succeed",
+			action:  "delete",
+			ingress: originalIngress,
+			reactors: []reactorAction{
+				{
+					verb: "delete",
+					action: func(action core.Action) (handled bool, ret runtime.Object, err error) {
+						return true, nil, nil
+					},
+				},
+			},
+			expectedActions: []string{
+				"delete",
+				"delete",
+			},
+		},
 	}
 
-	clusters, err := NewIngressSyncer().EnsureIngress(&ing, clients, false)
-	if err != nil {
-		t.Fatalf("%s", err)
+	for _, c := range testCases {
+		fakeClient := fake.Clientset{}
+		for _, a := range c.reactors {
+			fakeClient.AddReactor(a.verb, "ingresses", a.action)
+		}
+		clients := map[string]kubeclient.Interface{
+			"cluster1": &fakeClient,
+			"cluster2": &fakeClient,
+		}
+
+		var err error
+		if c.action == "ensure" {
+			var clusters []string
+			clusters, err = NewIngressSyncer().EnsureIngress(&c.ingress, clients, c.forceUpdate)
+			expectedClusters := []string{"cluster1", "cluster2"}
+			sort.Strings(clusters)
+			if !reflect.DeepEqual(clusters, expectedClusters) {
+				t.Errorf("%s: unexpected list of clusters, expected: %v, got: %v", c.desc, expectedClusters, clusters)
+			}
+		} else if c.action == "delete" {
+			err = NewIngressSyncer().DeleteIngress(&c.ingress, clients)
+		}
+
+		if c.shouldFail {
+			if err == nil {
+				t.Fatalf("%s: Actions attempted: %+v", c.desc, fakeClient.Actions())
+			}
+		} else {
+			if err != nil {
+				t.Fatalf("%s: %s", c.desc, err)
+			}
+
+			actions := fakeClient.Actions()
+			if len(actions) != len(c.expectedActions) {
+				t.Errorf("%s: Expected %d actions, got: %d\n%+v", c.desc, len(c.expectedActions), len(actions), actions)
+			}
+			for i, a := range actions {
+				if !a.Matches(c.expectedActions[i], "ingresses") {
+					t.Errorf("%s: Expected ingress %s.", c.desc, c.expectedActions[i])
+				}
+			}
+		}
 	}
-	actions := fakeClient.Actions()
-	if len(actions) != 4 {
-		t.Errorf("Expected 4 actions: Get Ingress 1, Create Ingress 1, Get Ingress 2, Create Ingress 2. Got:\n%+v\n%v\n%v\n%v\n%v\n%v\n", actions, len(actions), actions[0], actions[1], actions[2], actions[3])
-	}
-	if !actions[0].Matches("get", "ingresses") {
-		t.Errorf("Expected ingress get.")
-	}
-	if !actions[1].Matches("create", "ingresses") {
-		t.Errorf("Expected ingress creation.")
-	}
-	if !actions[2].Matches("get", "ingresses") {
-		t.Errorf("Expected ingress get.")
-	}
-	if !actions[3].Matches("create", "ingresses") {
-		t.Errorf("Expected ingress creation.")
-	}
-	expectedClusters := []string{"cluster1", "cluster2"}
-	sort.Strings(clusters)
-	if !reflect.DeepEqual(clusters, expectedClusters) {
-		t.Errorf("unexpected list of clusters, expected: %v, got: %v", expectedClusters, clusters)
-	}
+
 	// TODO(G-Harmon): Verify that the ingress matches testdata/ingress.yaml
 	// TODO(nikhiljindal): Also add tests for error cases including one for already exists.
-}
-
-func TestEnsureExistingIngressDoesNothing(t *testing.T) {
-	var oldIng, newIng v1beta1.Ingress
-	if err := UnmarshallAndApplyDefaults("../../../../testdata/ingress.yaml", "", &oldIng); err != nil {
-		t.Fatalf("%s", err)
-	}
-	newIng = *oldIng.DeepCopy()
-	// Update an insignificant attribute to make sure we don't compare irrelevant stuff
-	oldIng.Status.LoadBalancer.Ingress = append(oldIng.Status.LoadBalancer.Ingress, core_v1.LoadBalancerIngress{"127.0.0.1", "localhost"})
-
-	fakeClient := fake.Clientset{}
-	fakeClient.AddReactor("get", "ingresses", func(action core.Action) (handled bool, ret runtime.Object, err error) {
-		return true, &oldIng, nil
-	})
-	fakeClient.AddReactor("create", "ingresses", func(action core.Action) (handled bool, ret runtime.Object, err error) {
-		return true, action.(core.CreateAction).GetObject(), nil
-	})
-	clients := map[string]kubeclient.Interface{
-		"cluster1": &fakeClient,
-		"cluster2": &fakeClient,
-	}
-	_, err := NewIngressSyncer().EnsureIngress(&newIng, clients, false)
-	if err != nil {
-		t.Fatalf("%s", err)
-	}
-	actions := fakeClient.Actions()
-	if len(actions) != 2 {
-		t.Errorf("Expected 2 actions: Get Ingress 1, Get Ingress 2. Got:\n%+v\n%v\n", actions, len(actions))
-	}
-	if !actions[0].Matches("get", "ingresses") {
-		t.Errorf("Expected ingress get.")
-	}
-	if !actions[1].Matches("get", "ingresses") {
-		t.Errorf("Expected ingress get.")
-	}
-}
-
-func TestUpdateExistingIngressFailsWithoutForce(t *testing.T) {
-	var oldIng, newIng v1beta1.Ingress
-	if err := UnmarshallAndApplyDefaults("../../../../testdata/ingress.yaml", "", &oldIng); err != nil {
-		t.Fatalf("%s", err)
-	}
-	newIng = *oldIng.DeepCopy()
-	newIng.Spec.Rules[0].HTTP.Paths[0].Path = "/bar"
-
-	fakeClient := fake.Clientset{}
-	fakeClient.AddReactor("get", "ingresses", func(action core.Action) (handled bool, ret runtime.Object, err error) {
-		return true, &oldIng, nil
-	})
-	fakeClient.AddReactor("create", "ingresses", func(action core.Action) (handled bool, ret runtime.Object, err error) {
-		return true, action.(core.CreateAction).GetObject(), nil
-	})
-	clients := map[string]kubeclient.Interface{
-		"cluster1": &fakeClient,
-		"cluster2": &fakeClient,
-	}
-	_, err := NewIngressSyncer().EnsureIngress(&newIng, clients, false)
-	if err == nil {
-		actions := fakeClient.Actions()
-		t.Fatalf("EnsureIngress tried to update existing ingress even though forceUpdate was set to 'false'.\n Actions attempted: %+v\n", actions)
-	}
-}
-
-func TestUpdateExistingIngressSucceedsWithForce(t *testing.T) {
-	var oldIng, newIng v1beta1.Ingress
-	if err := UnmarshallAndApplyDefaults("../../../../testdata/ingress.yaml", "", &oldIng); err != nil {
-		t.Fatalf("%s", err)
-	}
-	newIng = *oldIng.DeepCopy()
-	newIng.Spec.Rules[0].HTTP.Paths[0].Path = "/bar"
-
-	fakeClient := fake.Clientset{}
-	fakeClient.AddReactor("get", "ingresses", func(action core.Action) (handled bool, ret runtime.Object, err error) {
-		return true, &oldIng, nil
-	})
-	fakeClient.AddReactor("create", "ingresses", func(action core.Action) (handled bool, ret runtime.Object, err error) {
-		return true, action.(core.CreateAction).GetObject(), nil
-	})
-	clients := map[string]kubeclient.Interface{
-		"cluster1": &fakeClient,
-		"cluster2": &fakeClient,
-	}
-	_, err := NewIngressSyncer().EnsureIngress(&newIng, clients, true)
-	if err != nil {
-		t.Fatalf("%s", err)
-	}
-	actions := fakeClient.Actions()
-	if len(actions) != 4 {
-		t.Errorf("Expected 2 actions: Get Ingress 1, Create Ingress 1, Get Ingress 2, Create Ingress 2. Got:\n%+v\n%v\n", actions, len(actions))
-	}
-	if !actions[0].Matches("get", "ingresses") {
-		t.Errorf("Expected ingress get.")
-	}
-	if !actions[1].Matches("update", "ingresses") {
-		t.Errorf("Expected ingress update.")
-	}
-	if !actions[2].Matches("get", "ingresses") {
-		t.Errorf("Expected ingress get.")
-	}
-	if !actions[3].Matches("update", "ingresses") {
-		t.Errorf("Expected ingress update.")
-	}
-}
-
-func TestDeleteIngress(t *testing.T) {
-	var ing v1beta1.Ingress
-	if err := UnmarshallAndApplyDefaults("../../../../testdata/ingress.yaml", "", &ing); err != nil {
-		t.Fatalf("%s", err)
-	}
-
-	fakeClient := fake.Clientset{}
-	fakeClient.AddReactor("delete", "ingresses", func(action core.Action) (handled bool, ret runtime.Object, err error) {
-		return true, nil, nil
-	})
-	clients := map[string]kubeclient.Interface{
-		"cluster1": &fakeClient,
-		"cluster2": &fakeClient,
-	}
-
-	// Verify that on calling deleteIngressInClusters, fakeClient sees 2 actions to delete the ingress.
-	err := NewIngressSyncer().DeleteIngress(&ing, clients)
-	if err != nil {
-		t.Fatalf("%s", err)
-	}
-
-	actions := fakeClient.Actions()
-	if len(actions) != 2 {
-		t.Errorf("Expected 2 actions: delete ingress 1, delete ingress 2. Got:%v", actions)
-	}
-	if !actions[0].Matches("delete", "ingresses") {
-		t.Errorf("Expected ingress deletion.")
-	}
-	if !actions[1].Matches("delete", "ingresses") {
-		t.Errorf("Expected ingress deletion.")
-	}
 	// TODO(nikhiljindal): Also add tests for error cases including one for does not exist.
 }
