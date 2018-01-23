@@ -17,122 +17,56 @@ package e2e
 import (
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/golang/glog"
 	kubeclient "k8s.io/client-go/kubernetes"
 
-	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/kubeutils"
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 )
-
-// kubemci is expected to be in PATH.
-var kubemci = "kubemci"
 
 // Creates a basic multicluster ingress and verifies that it works as expected.
 // TODO(nikhiljindal): Use ginkgo and gomega and possibly reuse k/k e2e framework.
 func RunBasicCreateTest() {
-	project, kubeConfigPath, lbName, ipName, clients := setup()
+	project, kubeConfigPath, lbName, ipName, clients := initDeps()
+	kubectlArgs := []string{"kubectl", fmt.Sprintf("--kubeconfig=%s", kubeConfigPath)}
+	setupBasic(kubectlArgs, ipName, clients)
 	defer func() {
-		cleanup(kubeConfigPath, lbName, ipName, clients)
+		cleanupBasic(kubectlArgs, lbName, ipName, clients)
+		cleanupDeps(ipName)
 	}()
 	testHTTPIngress(project, kubeConfigPath, lbName)
-	testHTTPSIngress(project, kubeConfigPath, lbName, clients)
+	testHTTPSIngress(project, kubeConfigPath, lbName, kubectlArgs, clients)
 }
 
-func setup() (project, kubeConfigPath, lbName, ipName string, clients map[string]kubeclient.Interface) {
-	// Validate inputs and instantiate required objects first to catch errors early.
-	// TODO(nikhiljindal): User should be able to pass kubeConfigPath.
-	kubeConfigPath = "minKubeconfig"
-	// TODO(nikhiljindal): User should be able to pass gcp project.
-	project, err := runCommand([]string{"gcloud", "config", "get-value", "project"})
-	if err != nil {
-		glog.Fatalf("Error getting default project: %v", err)
-	} else if project == "" {
-		glog.Fatalf("unexpected: no default gcp project found. Run gcloud config set project to set a default project.")
-	}
-	// Get clients for all contexts in the kubeconfig.
-	clients, err = kubeutils.GetClients(kubeConfigPath, []string{})
-	if err != nil {
-		glog.Fatalf("unexpected error in instantiating clients for all kubeconfig contexts: %s", err)
-	}
-
-	// Generate random names to be able to run this multiple times.
-	// TODO(nikhiljindal): Use a random namespace name.
-	lbName = randString(10)
-	ipName = randString(10)
-	glog.Infof("Creating an mci named '%s' with ip address named '%s'", lbName, ipName)
-
+func setupBasic(kubectlArgs []string, ipName string, clients map[string]kubeclient.Interface) {
 	// Create the zone-printer app in all contexts.
-	// We use kubectl to create the app since it is easier to point it at a
-	// directory with all resources instead of having to create all of them
-	// explicitly with go-client.
-	args := []string{"kubectl", fmt.Sprintf("--kubeconfig=%s", kubeConfigPath), "-f", "examples/zone-printer/app/"}
-	for k := range clients {
-		glog.Infof("Creating app in cluster %s", k)
-		createArgs := append(args, []string{"create", fmt.Sprintf("--context=%s", k)}...)
-		// kubectl create may fail if this was setup in a previous run.
-		runCommand(createArgs)
-	}
-	// Reserve the IP address.
-	if _, err := runCommand([]string{"gcloud", "compute", "addresses", "create", "--global", ipName}); err != nil {
-		glog.Fatalf("Error creating IP address:%v", err)
-	}
+	deployApp(kubectlArgs, clients, "examples/zone-printer/app/")
 	// Update the ingress YAML specs to replace $ZP_KUBEMCI_IP with ip name.
-	if _, err := runCommand([]string{"sed", "-i", "-e", fmt.Sprintf("s/\\$ZP_KUBEMCI_IP/%s/", ipName), "examples/zone-printer/ingress/nginx.yaml"}); err != nil {
-		glog.Fatalf("Error updating http ingress yaml with sed: %v", err)
-	}
-	if _, err := runCommand([]string{"sed", "-i", "-e", fmt.Sprintf("s/\\$ZP_KUBEMCI_IP/%s/", ipName), "examples/zone-printer/ingress/https-ingress.yaml"}); err != nil {
-		glog.Fatalf("Error updating https ingress yaml with sed: %v", err)
-	}
-
-	return project, kubeConfigPath, lbName, ipName, clients
+	replaceVariable("examples/zone-printer/ingress/nginx.yaml", "\\$ZP_KUBEMCI_IP", ipName)
+	replaceVariable("examples/zone-printer/ingress/https-ingress.yaml", "\\$ZP_KUBEMCI_IP", ipName)
 }
 
-func cleanup(kubeConfigPath, lbName, ipName string, clients map[string]kubeclient.Interface) {
+func cleanupBasic(kubectlArgs []string, lbName, ipName string, clients map[string]kubeclient.Interface) {
 	// Delete the zone-printer app from all contexts.
-	args := []string{"kubectl", fmt.Sprintf("--kubeconfig=%s", kubeConfigPath), "-f", "examples/zone-printer/app/"}
-	for k := range clients {
-		glog.Infof("Deleting app from cluster %s", k)
-		deleteArgs := append(args, []string{"delete", fmt.Sprintf("--context=%s", k)}...)
-		runCommand(deleteArgs)
-	}
-	// Release the IP address.
-	runCommand([]string{"gcloud", "compute", "addresses", "delete", "--global", ipName})
-
+	cleanupApp(kubectlArgs, clients, "examples/zone-printer/app/")
 	// Update the ingress YAML spec to put $ZP_KUBEMCI_IP back.
-	runCommand([]string{"sed", "-i", "-e", fmt.Sprintf("s/%s/\\$ZP_KUBEMCI_IP/", ipName), "examples/zone-printer/ingress/nginx.yaml"})
-	runCommand([]string{"sed", "-i", "-e", fmt.Sprintf("s/%s/\\$ZP_KUBEMCI_IP/", ipName), "examples/zone-printer/ingress/https-ingress.yaml"})
+	replaceVariable("examples/zone-printer/ingress/nginx.yaml", ipName, "\\$ZP_KUBEMCI_IP")
+	replaceVariable("examples/zone-printer/ingress/https-ingress.yaml", ipName, "\\$ZP_KUBEMCI_IP")
 }
 
 func testHTTPIngress(project, kubeConfigPath, lbName string) {
 	glog.Infof("Testing HTTP ingress")
-	// Run kubemci create command.
-	kubemciArgs := []string{kubemci, "--ingress=examples/zone-printer/ingress/nginx.yaml", fmt.Sprintf("--gcp-project=%s", project), fmt.Sprintf("--kubeconfig=%s", kubeConfigPath)}
-	createArgs := append(kubemciArgs, []string{"create", lbName}...)
-	if _, err := runCommand(createArgs); err != nil {
-		glog.Fatalf("Error running kubemci create: %v", err)
-		return
-	}
-	deleteFn := func() {
-		glog.Infof("Deleting HTTP ingress")
-		deleteArgs := append(kubemciArgs, []string{"delete", lbName}...)
-		runCommand(deleteArgs)
+	deleteFn, err := createIngress(project, kubeConfigPath, lbName, "examples/zone-printer/ingress/nginx.yaml")
+	if err != nil {
+		glog.Fatalf("error creating ingress: %+v", err)
 	}
 	defer deleteFn()
 
 	// Tests
-	// TODO(nikhiljindal): Figure out why is sleep required? get-status should work immediately after create is successful.
-	time.Sleep(5 * time.Second)
-	// Ensure that get-status returns the expected output.
-	getStatusArgs := []string{kubemci, "get-status", lbName, fmt.Sprintf("--gcp-project=%s", project)}
-	output, _ := runCommand(getStatusArgs)
-	glog.Infof("Output from get-status: %s", output)
-	ipAddress := findIPv4(output)
-	glog.Infof("IP Address: %s", ipAddress)
+	ipAddress := getIpAddress(project, lbName)
 	// Ensure that the IP address eventually returns 202.
-	if err := waitForIngress(ipAddress, "http"); err != nil {
-		glog.Errorf("error in GET %s: %s", ipAddress, err)
+	if err := waitForIngress("http", ipAddress, "/"); err != nil {
+		glog.Errorf("error in waiting for ingress: %s", err)
 	}
 	fmt.Println("PASS: got 200 from ingress url")
 	testList(project, ipAddress, lbName)
@@ -141,55 +75,27 @@ func testHTTPIngress(project, kubeConfigPath, lbName string) {
 	// clusters as expected.
 }
 
-func testHTTPSIngress(project, kubeConfigPath, lbName string, clients map[string]kubeclient.Interface) {
+func testHTTPSIngress(project, kubeConfigPath, lbName string, kubectlArgs []string, clients map[string]kubeclient.Interface) {
 	glog.Infof("Testing HTTPS ingress")
-	// Generate the crt and key.
-	// TODO(nikhiljindal): Generate valid certs instead of using self signed
-	// certs so that we do not need InsecureSkipVerify.
-	certGenArgs := []string{"openssl", "req", "-x509", "-nodes", "-days", "365", "-newkey", "rsa:2048", "-keyout", "tls.key", "-out", "tls.crt", "-subj", "/CN=nginxsvc/O=nginxsv"}
-	runCommand(certGenArgs)
-	// Create the secret in all clusters.
-	for k := range clients {
-		createSecretArgs := []string{"kubectl", fmt.Sprintf("--kubeconfig=%s", kubeConfigPath), "create", "secret", "tls", "tls-secret", "--key", "tls.key", "--cert", "tls.crt", fmt.Sprintf("--context=%s", k)}
-		// create secret may fail if this was setup in a previous run.
-		runCommand(createSecretArgs)
-	}
+	// Creates secrets with TLS crt and key in every cluster
+	deleteTLSFn := createTLSSecrets(kubectlArgs, clients)
+	defer deleteTLSFn()
 
 	// Run kubemci create command.
-	kubemciArgs := []string{kubemci, "--ingress=examples/zone-printer/ingress/https-ingress.yaml", fmt.Sprintf("--gcp-project=%s", project), fmt.Sprintf("--kubeconfig=%s", kubeConfigPath)}
-	createArgs := append(kubemciArgs, []string{"create", lbName}...)
-	if _, err := runCommand(createArgs); err != nil {
-		glog.Fatalf("Error running kubemci create: %v", err)
-		return
-	}
-	deleteFn := func() {
-		glog.Infof("Deleting HTTPS ingress")
-		// Delete the mci and delete the secret.
-		deleteArgs := append(kubemciArgs, []string{"delete", lbName}...)
-		runCommand(deleteArgs)
-		// Delete the secret from all clusters.
-		for k := range clients {
-			deleteSecretArgs := []string{"kubectl", fmt.Sprintf("--kubeconfig=%s", kubeConfigPath), "delete", "secret", "tls-secret", fmt.Sprintf("--context=%s", k)}
-			runCommand(deleteSecretArgs)
-		}
+	deleteFn, err := createIngress(project, kubeConfigPath, lbName, "examples/zone-printer/ingress/https-ingress.yaml")
+	if err != nil {
+		glog.Fatalf("error creating ingress: %+v", err)
 	}
 	defer deleteFn()
 
 	// Tests
-	// TODO(nikhiljindal): Figure out why is sleep required? get-status should work immediately after create is successful.
-	time.Sleep(5 * time.Second)
-	// Ensure that get-status returns the expected output.
-	getStatusArgs := []string{kubemci, "get-status", lbName, fmt.Sprintf("--gcp-project=%s", project)}
-	output, _ := runCommand(getStatusArgs)
-	glog.Infof("Output from get-status: %s", output)
-	ipAddress := findIPv4(output)
-	glog.Infof("IP Address: %s", ipAddress)
+	ipAddress := getIpAddress(project, lbName)
 	// Ensure that the IP address eventually returns 202.
-	if err := waitForIngress(ipAddress, "http"); err != nil {
+	if err := waitForIngress("http", ipAddress, "/"); err != nil {
 		glog.Errorf("error in GET %s: %s", ipAddress, err)
 	}
 	// Ensure that the IP address returns 202 for https as well.
-	if err := waitForIngress(ipAddress, "https"); err != nil {
+	if err := waitForIngress("https", ipAddress, "/"); err != nil {
 		glog.Errorf("error in GET %s: %s", ipAddress, err)
 	}
 	fmt.Println("PASS: got 200 from ingress url")

@@ -23,4 +23,5 @@ import (
 func main() {
 	flag.Parse()
 	e2e.RunBasicCreateTest()
+	e2e.RunHCFromProbeTest()
 }

@@ -1,0 +1,11 @@
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  name: hc-from-probe
+  annotations:
+    kubernetes.io/ingress.global-static-ip-name: $E2E_KUBEMCI_IP
+    kubernetes.io/ingress.class: gce-multi-cluster
+spec:
+  backend:
+    serviceName: hc-from-probe
+    servicePort: 8080
