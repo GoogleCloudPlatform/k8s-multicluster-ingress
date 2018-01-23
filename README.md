@@ -36,3 +36,9 @@ See [CONTRIBUTING.md](/CONTRIBUTING.md) for instructions on how to contribute.
 
 You can also checkout [existing
 issues](https://github.com/GoogleCloudPlatform/k8s-multicluster-ingress/issues) for ways to contribute.
+
+## Feedback
+
+If you are using kubemci, we would love to hear from you! Tell us how you are
+using it and what works and what does not:
+https://github.com/GoogleCloudPlatform/k8s-multicluster-ingress/issues/117
