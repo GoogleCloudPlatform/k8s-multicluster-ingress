@@ -18,6 +18,8 @@ import (
 	"strings"
 	"testing"
 
+	compute "google.golang.org/api/compute/v1"
+
 	api_v1 "k8s.io/api/core/v1"
 	"k8s.io/api/extensions/v1beta1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -25,15 +27,15 @@ import (
 	kubeclient "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/fake"
 	core "k8s.io/client-go/testing"
+	"k8s.io/ingress-gce/pkg/annotations"
 	ingresslb "k8s.io/ingress-gce/pkg/loadbalancers"
 
 	utilsnamer "github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/namer"
 	"github.com/golang/glog"
 )
 
-func TestEnsureSSLCert(t *testing.T) {
+func TestEnsureSSLCertForSecret(t *testing.T) {
 	lbName := "lb-name"
-	// Should create the ssl cert as expected.
 	scp := ingresslb.NewFakeLoadBalancers("" /* name */, nil /* namer */)
 	namer := utilsnamer.NewNamer("mci1", lbName)
 	certName := namer.SSLCertName()
@@ -76,17 +78,20 @@ func TestEnsureSSLCert(t *testing.T) {
 		},
 	}
 
-	ing, client := setupIng()
+	ing, client := setupIng(true /* withSecret */)
 	if _, err := scs.EnsureSSLCert(lbName, ing, client, false /*forceUpdate*/); err != nil {
 		for _, c := range testCases {
 			glog.Infof("\nTest case: %s", c.desc)
-			_, err := scs.EnsureSSLCert(c.lBName, ing, client, c.forceUpdate)
+			ensuredCertName, err := scs.EnsureSSLCert(c.lBName, ing, client, c.forceUpdate)
 			if (err != nil) != c.ensureErr {
 				t.Errorf("Ensuring SSL cert... expected err? %v. actual: %v", c.ensureErr, err)
 			}
 			if c.ensureErr {
 				t.Logf("Skipping validation.")
 				continue
+			}
+			if ensuredCertName != certName {
+				t.Errorf("unexpected cert name, expected: %s, actual: %s", certName, ensuredCertName)
 			}
 			// Verify that GET does not return NotFound.
 			cert, err := scp.GetSslCertificate(certName)
@@ -100,18 +105,54 @@ func TestEnsureSSLCert(t *testing.T) {
 	}
 }
 
-func setupIng() (*v1beta1.Ingress, kubeclient.Interface) {
+func TestEnsureSSLCertForPreShared(t *testing.T) {
+	lbName := "lb-name"
+	certName := "testCert"
+	scp := ingresslb.NewFakeLoadBalancers("" /* name */, nil /* namer */)
+	namer := utilsnamer.NewNamer("mci1", lbName)
+	scs := NewSSLCertSyncer(namer, scp)
+	// GET should return NotFound.
+	if _, err := scp.GetSslCertificate(certName); err == nil {
+		t.Fatalf("expected NotFound error, got nil")
+	}
+	ing, client := setupIng(false /* withSecret */)
+
+	// EnsureSSLCert should give an error when both the secret and pre shared annotation are missing.
+	_, err := scs.EnsureSSLCert(lbName, ing, client, false /*forceUpdate*/)
+	if err == nil {
+		t.Errorf("unexpected nil error, expected error since both secret and pre shared cert annotation are missing")
+	}
+	// Adding the annotation without a cert should still return an error.
+	ing.ObjectMeta.Annotations = map[string]string{
+		annotations.PreSharedCertKey: certName,
+	}
+	_, err = scs.EnsureSSLCert(lbName, ing, client, false /*forceUpdate*/)
+	if err == nil {
+		t.Errorf("unexpected nil error, expected error since the pre shared cert is missing")
+	}
+
+	// EnsureSSLCert should return success if the cert exists as expected.
+	if _, err := scp.CreateSslCertificate(&compute.SslCertificate{
+		Name: certName,
+	}); err != nil {
+		t.Errorf("unexpected error in creating ssl cert: %s", err)
+	}
+	ensuredCertName, err := scs.EnsureSSLCert(lbName, ing, client, false /*forceUpdate*/)
+	if err != nil {
+		t.Errorf("unexpected error in ensuring ssl cert: %s", err)
+	}
+	if ensuredCertName != certName {
+		t.Errorf("unexpected ensured cert name, expected: %s, actual: %s", certName, ensuredCertName)
+	}
+}
+
+func setupIng(withSecret bool) (*v1beta1.Ingress, kubeclient.Interface) {
 	// Create ingress with secret for SSL cert.
 	svcName := "svcName"
 	svcPort := "svcPort"
 	secretName := "certSecret"
 	ing := &v1beta1.Ingress{
 		Spec: v1beta1.IngressSpec{
-			TLS: []v1beta1.IngressTLS{
-				{
-					SecretName: secretName,
-				},
-			},
 			Backend: &v1beta1.IngressBackend{
 				ServiceName: svcName,
 				ServicePort: intstr.FromString(svcPort),
@@ -119,6 +160,19 @@ func setupIng() (*v1beta1.Ingress, kubeclient.Interface) {
 		},
 	}
 	client := &fake.Clientset{}
+	if withSecret {
+		setupIngAndClientForSecret(ing, client, secretName)
+	}
+	return ing, client
+}
+
+func setupIngAndClientForSecret(ing *v1beta1.Ingress, client *fake.Clientset, secretName string) {
+	// Setup the secret.
+	ing.Spec.TLS = []v1beta1.IngressTLS{
+		{
+			SecretName: secretName,
+		},
+	}
 	// Add a reaction to return secret with a fake ssl cert.
 	client.AddReactor("get", "secrets", func(action core.Action) (handled bool, ret runtime.Object, err error) {
 		ret = &api_v1.Secret{
@@ -129,7 +183,6 @@ func setupIng() (*v1beta1.Ingress, kubeclient.Interface) {
 		}
 		return true, ret, nil
 	})
-	return ing, client
 }
 
 func TestDeleteSSLCert(t *testing.T) {
@@ -139,7 +192,11 @@ func TestDeleteSSLCert(t *testing.T) {
 	namer := utilsnamer.NewNamer("mci1", lbName)
 	certName := namer.SSLCertName()
 	scs := NewSSLCertSyncer(namer, scp)
-	ing, client := setupIng()
+	// Calling DeleteSSLCert when cert does not exist should not return an error.
+	if err := scs.DeleteSSLCert(); err != nil {
+		t.Fatalf("unexpected err while deleting SSL cert that does not exist: %s", err)
+	}
+	ing, client := setupIng(true /* withSecret */)
 	if _, err := scs.EnsureSSLCert(lbName, ing, client, false /*forceUpdate*/); err != nil {
 		t.Fatalf("expected no error in ensuring ssl cert, actual: %v", err)
 	}
