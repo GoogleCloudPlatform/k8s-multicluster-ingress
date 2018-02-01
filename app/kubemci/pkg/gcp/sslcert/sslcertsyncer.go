@@ -95,7 +95,6 @@ func (s *SSLCertSyncer) ensureSecretSSLCert(lbName string, ing *v1beta1.Ingress,
 		}
 		fmt.Println("Existing SSL certificate does not match the desired certificate. Note that updating existing certificate will cause downtime.")
 		if forceUpdate {
-			fmt.Println("Updating existing SSL cert", name, "to match the desired state")
 			return s.updateSSLCert(desiredCert)
 		} else {
 			fmt.Println("Will not overwrite this differing SSL cert without the --force flag.")

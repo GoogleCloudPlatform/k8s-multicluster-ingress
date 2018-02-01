@@ -116,7 +116,6 @@ func (s *TargetProxySyncer) ensureHttpProxy(lbName, umLink string, forceUpdate b
 			return existingHttpProxy.SelfLink, nil
 		}
 		if forceUpdate {
-			fmt.Println("Updating existing target HTTP proxy", name, "to match the desired state")
 			return s.updateHttpTargetProxy(desiredHttpProxy)
 		} else {
 			fmt.Println("Will not overwrite this differing Target HTTP Proxy without the --force flag")

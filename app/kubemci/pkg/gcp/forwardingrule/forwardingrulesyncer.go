@@ -92,7 +92,6 @@ func (s *ForwardingRuleSyncer) ensureForwardingRule(lbName, ipAddress, targetPro
 			return nil
 		}
 		if forceUpdate {
-			fmt.Println("Updating existing forwarding rule", name, "to match the desired state")
 			return s.updateForwardingRule(existingFR, desiredFR)
 		} else {
 			fmt.Println("Will not overwrite this differing Forwarding Rule without the --force flag")
@@ -207,6 +206,7 @@ func (s *ForwardingRuleSyncer) ListLoadBalancerStatuses() ([]status.LoadBalancer
 
 func (s *ForwardingRuleSyncer) updateForwardingRule(existingFR, desiredFR *compute.ForwardingRule) error {
 	name := desiredFR.Name
+	fmt.Println("Updating existing forwarding rule", name, "to match the desired state")
 	// We do not have an UpdateForwardingRule method.
 	// If target proxy link is the only thing that is different, then we can call SetProxyForGlobalForwardingRule.
 	// Else, we need to delete the existing rule and create a new one.

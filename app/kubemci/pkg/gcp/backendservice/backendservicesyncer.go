@@ -137,7 +137,6 @@ func (b *BackendServiceSyncer) ensureBackendService(lbName string, port ingressb
 		if forceUpdate {
 			// TODO(G-Harmon): Figure out how to properly calculate the fp. Using Sha256 returned a googleapi error.
 			desiredBE.Fingerprint = existingBE.Fingerprint
-			fmt.Println("Updating existing backend service", name, "to match the desired state (since --force specified)")
 			return b.updateBackendService(desiredBE)
 		} else {
 			// TODO(G-Harmon): Show diff to user and prompt yes/no for overwriting.
@@ -157,6 +156,7 @@ func (b *BackendServiceSyncer) ensureBackendService(lbName string, port ingressb
 // updateBackendService updates the backend service and returns the updated backend service.
 func (b *BackendServiceSyncer) updateBackendService(desiredBE *compute.BackendService) (*compute.BackendService, error) {
 	name := desiredBE.Name
+	fmt.Println("Updating existing backend service", name, "to match the desired state")
 	err := b.bsp.UpdateGlobalBackendService(desiredBE)
 	if err != nil {
 		// TODO(G-Harmon): Errors should probably go to STDERR.

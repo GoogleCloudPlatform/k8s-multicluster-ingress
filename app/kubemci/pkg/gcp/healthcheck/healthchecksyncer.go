@@ -178,7 +178,6 @@ func (h *HealthCheckSyncer) ensureHealthCheck(lbName string, port ingressbe.Serv
 			return existingHC, nil
 		}
 		if forceUpdate {
-			fmt.Println("Updating existing health check", name, "to match the desired state")
 			return h.updateHealthCheck(&desiredHC)
 		} else {
 			// TODO(G-Harmon): prompt yes/no for overwriting.
