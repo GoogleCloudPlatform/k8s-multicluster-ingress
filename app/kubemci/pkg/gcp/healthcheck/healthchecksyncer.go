@@ -79,7 +79,7 @@ func (h *HealthCheckSyncer) EnsureHealthCheck(lbName string, ports []ingressbe.S
 			err = multierror.Append(err, pathErr)
 			continue
 		}
-		fmt.Println("Path for healtcheck is", path)
+		fmt.Println("Path for healthcheck is", path)
 		hc, hcErr := h.ensureHealthCheck(lbName, p, path, forceUpdate)
 		if hcErr != nil {
 			hcErr = fmt.Errorf("Error %s in ensuring health check for port %v", hcErr, p)
