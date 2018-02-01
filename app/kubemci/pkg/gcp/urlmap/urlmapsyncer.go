@@ -86,7 +86,6 @@ func (s *URLMapSyncer) EnsureURLMap(lbName string, ing *v1beta1.Ingress, beMap b
 			return existingUM.SelfLink, nil
 		}
 		if forceUpdate {
-			fmt.Println("Updating existing URL Map", name, "to match the desired state")
 			return s.updateURLMap(desiredUM)
 		} else {
 			fmt.Println("Will not overwrite this differing URL Map without the --force flag.")

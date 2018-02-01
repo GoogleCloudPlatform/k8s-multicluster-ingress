@@ -100,7 +100,6 @@ func (s *FirewallRuleSyncer) ensureFirewallRule(lbName string, ports []ingressbe
 			return nil
 		}
 		if forceUpdate {
-			fmt.Println("Updating existing firewall rule to match the desired state (since --force specified)")
 			return s.updateFirewallRule(desiredFW)
 		} else {
 			fmt.Println("Will not overwrite a differing firewall rule without the --force flag.")
@@ -116,6 +115,7 @@ func (s *FirewallRuleSyncer) ensureFirewallRule(lbName string, ports []ingressbe
 // updateFirewallRule updates the firewall rule and returns the updated firewall rule.
 func (s *FirewallRuleSyncer) updateFirewallRule(desiredFR *compute.Firewall) error {
 	name := desiredFR.Name
+	fmt.Println("Updating existing firewall rule", name, "to match the desired state")
 	err := s.fwp.UpdateFirewall(desiredFR)
 	if err != nil {
 		fmt.Println("Error updating firewall:", err)
