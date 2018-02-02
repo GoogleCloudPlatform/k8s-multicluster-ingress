@@ -258,7 +258,7 @@ func (h *HealthCheckSyncer) desiredHealthCheck(lbName string, port ingressbe.Ser
 		hc.HttpsHealthCheck = &compute.HTTPSHealthCheck{
 			Port:        port.Port, // TODO(nikhiljindal): Allow customization.
 			RequestPath: path,
-			// TODO(G-Harmon): When HTTPS support is added, we likely need to set ProxyHeader, like HTTP does.
+			ProxyHeader: "NONE",
 		}
 		break
 	default:

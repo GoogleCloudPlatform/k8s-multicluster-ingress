@@ -71,6 +71,12 @@ func testHTTPIngress(project, kubeConfigPath, lbName string) {
 	fmt.Println("PASS: got 200 from ingress url")
 	testList(project, ipAddress, lbName)
 
+	// Running create again should not return any error.
+	_, err = createIngress(project, kubeConfigPath, lbName, "examples/zone-printer/ingress/nginx.yaml")
+	if err != nil {
+		glog.Fatalf("Unexpected error in re-creating ingress: %+v", err)
+	}
+
 	// TODO(nikhiljindal): Ensure that the ingress is created and deleted in all
 	// clusters as expected.
 }
@@ -100,6 +106,14 @@ func testHTTPSIngress(project, kubeConfigPath, lbName string, kubectlArgs []stri
 	}
 	fmt.Println("PASS: got 200 from ingress url")
 	testList(project, ipAddress, lbName)
+
+	// Running create again should not return any error.
+	_, err = createIngress(project, kubeConfigPath, lbName, "examples/zone-printer/ingress/https-ingress.yaml")
+	if err != nil {
+		// TODO(nikhiljindal): Change this to unexpected fatal error once
+		// https://github.com/GoogleCloudPlatform/k8s-multicluster-ingress/issues/125 is fixed.
+		glog.Infof("Expected error in re-creating https ingress: %+v", err)
+	}
 
 	// TODO(nikhiljindal): Ensure that the ingress is created and deleted in all
 	// clusters as expected.
