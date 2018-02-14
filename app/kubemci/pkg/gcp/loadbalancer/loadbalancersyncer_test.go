@@ -360,7 +360,7 @@ func TestFormatLoadBalancersList(t *testing.T) {
 		{
 			// Name only.
 			[]status.LoadBalancerStatus{
-				status.LoadBalancerStatus{
+				{
 					LoadBalancerName: "lb",
 				},
 			},
@@ -369,7 +369,7 @@ func TestFormatLoadBalancersList(t *testing.T) {
 		{
 			// Missing IP.
 			[]status.LoadBalancerStatus{
-				status.LoadBalancerStatus{
+				{
 					LoadBalancerName: "lb",
 					Clusters:         []string{"cluster1", "cluster2"},
 				},
@@ -379,7 +379,7 @@ func TestFormatLoadBalancersList(t *testing.T) {
 		{
 			// All information.
 			[]status.LoadBalancerStatus{
-				status.LoadBalancerStatus{
+				{
 					LoadBalancerName: "lb",
 					IPAddress:        "192.168.1.5",
 					Clusters:         []string{"cluster1", "cluster2"},
@@ -390,12 +390,12 @@ func TestFormatLoadBalancersList(t *testing.T) {
 		{
 			// Multiple ingresses.
 			[]status.LoadBalancerStatus{
-				status.LoadBalancerStatus{
+				{
 					LoadBalancerName: "lb1",
 					IPAddress:        "192.168.1.5",
 					Clusters:         []string{"cluster1", "cluster2"},
 				},
-				status.LoadBalancerStatus{
+				{
 					LoadBalancerName: "lb2",
 					IPAddress:        "192.168.1.7",
 					Clusters:         []string{"cluster1", "cluster2"},
