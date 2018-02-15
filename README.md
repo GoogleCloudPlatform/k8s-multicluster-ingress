@@ -42,3 +42,15 @@ issues](https://github.com/GoogleCloudPlatform/k8s-multicluster-ingress/issues) 
 If you are using kubemci, we would love to hear from you! Tell us how you are
 using it and what works and what does not:
 https://github.com/GoogleCloudPlatform/k8s-multicluster-ingress/issues/117
+
+## Caveats
+
+* Users will be need to specify a unique NodePort for their multicluster services (that should be available across all clusters). This is a pretty onerous requirement, required because health checks need to be the same across all clusters.
+
+* This will only work for clusters in the same GCP project. In future, we can integrate with Shared VPC to enable cross project load balancing.
+
+* Load balancing across clusters in the same region will happen in proportion to the number of nodes in each cluster, instead of number of containers.
+
+* Since ILBs and ingress share the same instance groups (IGs), there is a race condition where deleting ILBs can cause the IG supposed to be used for multicluster ingress to be deleted. This will be fixed in the next ingress controller forced sync (every 10 mins). The same race condition exists in single cluster ingress as well.
+
+* Users need to explicitly update all their existing multicluster ingresses (by running `kubemci create ingress`), if they add nodes from a new zone to a cluster. This is required so that the tool can update backend service and add a new instance group to it.
