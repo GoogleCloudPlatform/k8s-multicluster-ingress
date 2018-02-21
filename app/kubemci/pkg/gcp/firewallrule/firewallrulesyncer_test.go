@@ -24,8 +24,8 @@ import (
 	ingressbe "k8s.io/ingress-gce/pkg/backends"
 	ingressfw "k8s.io/ingress-gce/pkg/firewalls"
 
+	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/instances"
 	utilsnamer "github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/namer"
-	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/networktags"
 )
 
 func TestEnsureFirewallRule(t *testing.T) {
@@ -81,10 +81,9 @@ func TestEnsureFirewallRule(t *testing.T) {
 
 		kubeSvcName := "svc-name"
 		igLink := "https://www.googleapis.com/compute/v1/projects/abc/zones/def/instanceGroups/ig1"
-		networkTag := "fake-network-tag"
 		// Should create the firewall rule as expected.
-		ntg := networktags.NewFakeNetworkTagsGetter([]string{networkTag})
-		fws := NewFirewallRuleSyncer(namer, fwp, ntg)
+		ig := instances.NewFakeInstanceGetter()
+		fws := NewFirewallRuleSyncer(namer, fwp, ig)
 		err := fws.EnsureFirewallRule(lbName, []ingressbe.ServicePort{
 			{
 				Port:     c.port,
@@ -108,6 +107,7 @@ func TestEnsureFirewallRule(t *testing.T) {
 			allowed, _ := json.Marshal(fw.Allowed)
 			t.Errorf("unexpected allowed, expected only one port item with port %s, got: %s", expectedPort, allowed)
 		}
+		networkTag := instances.FakeInstance.Tags.Items[0]
 		if len(fw.TargetTags) != 1 || fw.TargetTags[0] != networkTag {
 			t.Errorf("unexpected target tags in firewall rule, expected only on item for %s, got: %v", networkTag, fw.TargetTags)
 		}
@@ -120,13 +120,12 @@ func TestDeleteFirewallRule(t *testing.T) {
 	port := int64(32211)
 	kubeSvcName := "svc-name"
 	igLink := "https://www.googleapis.com/compute/v1/projects/abc/zones/def/instanceGroups/ig1"
-	networkTag := "fake-network-tag"
 	// Should create the firewall rule as expected.
 	fwp := ingressfw.NewFakeFirewallsProvider(false /* xpn */, false /* read only */)
-	ntg := networktags.NewFakeNetworkTagsGetter([]string{networkTag})
+	ig := instances.NewFakeInstanceGetter()
 	namer := utilsnamer.NewNamer("mci1", lbName)
 	fwName := namer.FirewallRuleName()
-	fws := NewFirewallRuleSyncer(namer, fwp, ntg)
+	fws := NewFirewallRuleSyncer(namer, fwp, ig)
 	// GET should return NotFound.
 	if _, err := fwp.GetFirewall(fwName); err == nil {
 		t.Fatalf("expected NotFound error, actual: nil")
