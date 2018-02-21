@@ -53,7 +53,7 @@ func GetClusterContexts(kubeconfig string, kubeContexts []string) ([]string, err
 	}
 	contextArgs := append(kubectlArgs, []string{"config", "get-contexts", "-o=name"}...)
 	contextArgs = append(contextArgs, kubeContexts...)
-	output, err := executeCommand(contextArgs)
+	output, err := ExecuteCommand(contextArgs)
 	if err != nil {
 		return nil, fmt.Errorf("error in getting contexts from kubeconfig: %s", err)
 	}
@@ -74,12 +74,16 @@ func getClientsForContexts(kubeconfig string, kubeContexts []string) (map[string
 	return clients, err
 }
 
+// ExecuteCommand executes the command in 'args' and returns the output and error, if any.
 // Extracted out here to allow overriding in tests.
-var executeCommand = func(args []string) (string, error) {
+var ExecuteCommand = func(args []string) (string, error) {
 	glog.V(3).Infof("Running command: %s\n", strings.Join(args, " "))
-	output, err := exec.Command(args[0], args[1:]...).CombinedOutput()
+	// TODO(nikhiljindal): Figure out how to use CombinedOutput here to get error message in output.
+	// We dont use it right now because then "gcloud get project" fails.
+	output, err := exec.Command(args[0], args[1:]...).Output()
 	if err != nil {
-		glog.V(3).Infof("%s", output)
+		err = fmt.Errorf("unexpected error in executing command %q: error: %q, output: %q", strings.Join(args, " "), err, output)
+		glog.V(3).Infof("%s", err)
 	}
 	return strings.TrimSuffix(string(output), "\n"), err
 }

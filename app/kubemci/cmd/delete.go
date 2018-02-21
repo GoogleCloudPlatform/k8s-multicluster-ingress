@@ -24,6 +24,7 @@ import (
 
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/cloudinterface"
 	gcplb "github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/loadbalancer"
+	gcputils "github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/utils"
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/ingress"
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/kubeutils"
 )
@@ -82,7 +83,7 @@ func addDeleteFlags(cmd *cobra.Command, options *DeleteOptions) error {
 	cmd.Flags().StringVarP(&options.KubeconfigFilename, "kubeconfig", "k", options.KubeconfigFilename, "[required] path to kubeconfig file")
 	cmd.Flags().StringSliceVar(&options.KubeContexts, "kubecontexts", options.KubeContexts, "[optional] contexts in the kubeconfig file to delete the ingress from")
 	// TODO(nikhiljindal): Add a short flag "-p" if it seems useful.
-	cmd.Flags().StringVarP(&options.GCPProject, "gcp-project", "", options.GCPProject, "[required] name of the gcp project")
+	cmd.Flags().StringVarP(&options.GCPProject, "gcp-project", "", options.GCPProject, "[optional] name of the gcp project. Is fetched using gcloud config get-value project if unset here")
 	cmd.Flags().StringVarP(&options.Namespace, "namespace", "n", options.Namespace, "[optional] namespace for the ingress only if left unspecified by ingress spec")
 	// TODO Add a verbose flag that turns on glog logging.
 	return nil
@@ -97,7 +98,11 @@ func validateDeleteArgs(options *DeleteOptions, args []string) error {
 		return fmt.Errorf("unexpected missing argument ingress.")
 	}
 	if options.GCPProject == "" {
-		return fmt.Errorf("unexpected missing argument gcp-project.")
+		project, err := gcputils.GetProjectFromGCloud()
+		if project == "" || err != nil {
+			return fmt.Errorf("unexpected cannot determine GCP project. Either set --gcp-project flag, or set a default project with gcloud such that gcloud config get-value project returns that")
+		}
+		options.GCPProject = project
 	}
 	if options.KubeconfigFilename == "" {
 		return fmt.Errorf("unexpected missing argument kubeconfig.")

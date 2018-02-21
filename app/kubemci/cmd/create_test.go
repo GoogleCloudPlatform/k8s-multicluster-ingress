@@ -15,9 +15,14 @@
 package cmd
 
 import (
+	"strings"
 	"testing"
+
+	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/kubeutils"
 )
 
+// Test to verify validate.
+// This tests all flags except `--gcp-project`, which is tested by the next test.
 func TestValidateCreateArgs(t *testing.T) {
 	// validateCreateArgs should return an error with empty options.
 	options := CreateOptions{}
@@ -44,15 +49,6 @@ func TestValidateCreateArgs(t *testing.T) {
 		t.Errorf("Expected error for missing ingress")
 	}
 
-	// validateCreateArgs should return an error with missing gcp project.
-	options = CreateOptions{
-		IngressFilename:    "ingress.yaml",
-		KubeconfigFilename: "kubeconfig",
-	}
-	if err := validateCreateArgs(&options, []string{"lbname"}); err == nil {
-		t.Errorf("Expected error for missing gcp project")
-	}
-
 	// validateCreateArgs should return an error with missing kubeconfig.
 	options = CreateOptions{
 		IngressFilename: "ingress.yaml",
@@ -66,6 +62,47 @@ func TestValidateCreateArgs(t *testing.T) {
 	options = CreateOptions{
 		IngressFilename:    "ingress.yaml",
 		GCPProject:         "gcp-project",
+		KubeconfigFilename: "kubeconfig",
+	}
+	if err := validateCreateArgs(&options, []string{"lbname"}); err != nil {
+		t.Errorf("unexpected error from validateCreateArgs: %s", err)
+	}
+}
+
+// Test to verify validate for `--gcp-project` flag.
+// This is tested separately since this requires extra logic to mock gcloud commands execution.
+func TestValidateCreateWithGCPProject(t *testing.T) {
+	mockProject := ""
+	kubeutils.ExecuteCommand = func(args []string) (string, error) {
+		if strings.Join(args, " ") == "gcloud config get-value project" {
+			return mockProject, nil
+		}
+		return "", nil
+	}
+
+	// validateCreateArgs should return an error with missing gcp project.
+	options := CreateOptions{
+		IngressFilename:    "ingress.yaml",
+		KubeconfigFilename: "kubeconfig",
+	}
+	if err := validateCreateArgs(&options, []string{"lbname"}); err == nil {
+		t.Errorf("Expected error for missing gcp project")
+	}
+
+	// validateCreateArgs should succeed when all arguments are passed as expected.
+	options = CreateOptions{
+		IngressFilename:    "ingress.yaml",
+		GCPProject:         "gcp-project",
+		KubeconfigFilename: "kubeconfig",
+	}
+	if err := validateCreateArgs(&options, []string{"lbname"}); err != nil {
+		t.Errorf("unexpected error from validateCreateArgs: %s", err)
+	}
+
+	// validateCreateArgs should succeed when gcp project is passed via gcloud.
+	mockProject = "mock-project"
+	options = CreateOptions{
+		IngressFilename:    "ingress.yaml",
 		KubeconfigFilename: "kubeconfig",
 	}
 	if err := validateCreateArgs(&options, []string{"lbname"}); err != nil {
