@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package networktags
+package instances
 
 import (
 	"context"
@@ -25,27 +25,27 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/utils"
 )
 
-func NewNetworkTagsGetter(projectID string) (NetworkTagsGetterInterface, error) {
+func NewInstanceGetter(projectID string) (InstanceGetterInterface, error) {
 	ctx := context.Background()
 	client, err := google.DefaultClient(ctx, compute.CloudPlatformScope)
 	if err != nil {
 		return nil, fmt.Errorf("error in instantiating GCP client: %s", err)
 	}
-	return &NetworkTagsGetter{
+	return &InstanceGetter{
 		client:       client,
 		gcpProjectID: projectID,
 	}, nil
 }
 
-type NetworkTagsGetter struct {
+type InstanceGetter struct {
 	gcpProjectID string
 	client       *http.Client
 }
 
-// Ensure this implements NetworkTagsGetterInterface
-var _ NetworkTagsGetterInterface = &NetworkTagsGetter{}
+// Ensure this implements InstanceGetterInterface
+var _ InstanceGetterInterface = &InstanceGetter{}
 
-func (g *NetworkTagsGetter) GetNetworkTags(igUrl string) ([]string, error) {
+func (g *InstanceGetter) GetInstance(igUrl string) (*compute.Instance, error) {
 	service, err := compute.New(g.client)
 	if err != nil {
 		return nil, fmt.Errorf("error in instantiating GCP client: %s", err)
@@ -72,8 +72,5 @@ func (g *NetworkTagsGetter) GetNetworkTags(igUrl string) ([]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("error in fetching instance %s/%s: %s", iZone, iName, err)
 	}
-	if len(instance.Tags.Items) == 0 {
-		return nil, fmt.Errorf("no network tag found on instance %s/%s", iZone, iName)
-	}
-	return instance.Tags.Items, nil
+	return instance, nil
 }

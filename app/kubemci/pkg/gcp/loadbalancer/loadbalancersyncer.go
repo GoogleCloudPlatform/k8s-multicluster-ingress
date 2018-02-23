@@ -41,8 +41,8 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/firewallrule"
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/forwardingrule"
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/healthcheck"
+	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/instances"
 	utilsnamer "github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/namer"
-	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/networktags"
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/sslcert"
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/status"
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/targetproxy"
@@ -86,7 +86,7 @@ type LoadBalancerSyncer struct {
 func NewLoadBalancerSyncer(lbName string, clients map[string]kubeclient.Interface, cloud *gce.GCECloud, gcpProjectId string) (*LoadBalancerSyncer, error) {
 
 	namer := utilsnamer.NewNamer(MciPrefix, lbName)
-	ntg, err := networktags.NewNetworkTagsGetter(gcpProjectId)
+	ig, err := instances.NewInstanceGetter(gcpProjectId)
 	if err != nil {
 		return nil, err
 	}
@@ -97,7 +97,7 @@ func NewLoadBalancerSyncer(lbName string, clients map[string]kubeclient.Interfac
 		ums:     urlmap.NewURLMapSyncer(namer, cloud),
 		tps:     targetproxy.NewTargetProxySyncer(namer, cloud),
 		frs:     forwardingrule.NewForwardingRuleSyncer(namer, cloud),
-		fws:     firewallrule.NewFirewallRuleSyncer(namer, cloud, ntg),
+		fws:     firewallrule.NewFirewallRuleSyncer(namer, cloud, ig),
 		scs:     sslcert.NewSSLCertSyncer(namer, cloud),
 		clients: clients,
 		igp:     cloud,

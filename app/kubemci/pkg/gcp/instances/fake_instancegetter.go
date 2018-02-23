@@ -12,22 +12,31 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package networktags
+package instances
 
-func NewFakeNetworkTagsGetter(tags []string) NetworkTagsGetterInterface {
-	return &FakeNetworkTagsGetter{
-		tags: tags,
-	}
+import (
+	compute "google.golang.org/api/compute/v1"
+)
+
+var FakeInstance = &compute.Instance{
+	Name: "fake-instance",
+	Zone: "my-zone",
+	Tags: &compute.Tags{
+		Items: []string{"fake-tag"},
+	},
 }
 
-// FakeNetworkTagsGetter to be used for tests.
-type FakeNetworkTagsGetter struct {
-	tags []string
+func NewFakeInstanceGetter() InstanceGetterInterface {
+	return &FakeInstanceGetter{}
 }
 
-// Ensure this implements NetworkTagsGetterInterface
-var _ NetworkTagsGetterInterface = &FakeNetworkTagsGetter{}
+// FakeInstanceGetter to be used for tests.
+type FakeInstanceGetter struct {
+}
 
-func (g *FakeNetworkTagsGetter) GetNetworkTags(igUrl string) ([]string, error) {
-	return g.tags, nil
+// Ensure this implements InstanceGetterInterface
+var _ InstanceGetterInterface = &FakeInstanceGetter{}
+
+func (g *FakeInstanceGetter) GetInstance(igUrl string) (*compute.Instance, error) {
+	return FakeInstance, nil
 }

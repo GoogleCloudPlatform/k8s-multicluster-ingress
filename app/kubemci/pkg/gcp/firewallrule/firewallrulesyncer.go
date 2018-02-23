@@ -27,8 +27,8 @@ import (
 	ingressbe "k8s.io/ingress-gce/pkg/backends"
 	ingressfw "k8s.io/ingress-gce/pkg/firewalls"
 
+	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/instances"
 	utilsnamer "github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/namer"
-	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/networktags"
 )
 
 // Src ranges from which the GCE L7 performs health checks.
@@ -39,15 +39,15 @@ type FirewallRuleSyncer struct {
 	namer *utilsnamer.Namer
 	// Firewall rules provider to call GCE APIs to manipulate firewall rules.
 	fwp ingressfw.Firewall
-	// NetworkTagsGetterInterface to fetch network tags from instances.
-	ntg networktags.NetworkTagsGetterInterface
+	// InstanceGetterInterface to fetch instances.
+	ig instances.InstanceGetterInterface
 }
 
-func NewFirewallRuleSyncer(namer *utilsnamer.Namer, fwp ingressfw.Firewall, ntg networktags.NetworkTagsGetterInterface) FirewallRuleSyncerInterface {
+func NewFirewallRuleSyncer(namer *utilsnamer.Namer, fwp ingressfw.Firewall, ig instances.InstanceGetterInterface) FirewallRuleSyncerInterface {
 	return &FirewallRuleSyncer{
 		namer: namer,
 		fwp:   fwp,
-		ntg:   ntg,
+		ig:    ig,
 	}
 }
 
@@ -170,7 +170,11 @@ func firewallRuleMatches(desiredFR, existingFR *compute.Firewall) bool {
 
 func (s *FirewallRuleSyncer) desiredFirewallRule(lbName string, ports []ingressbe.ServicePort, igLinks map[string][]string) (*compute.Firewall, error) {
 	// Compute the desired firewall rule.
-	targetTags, err := s.getTargetTags(igLinks)
+	instances, err := s.getInstances(igLinks)
+	if err != nil {
+		return nil, err
+	}
+	targetTags, err := s.getTargetTags(instances)
 	if err != nil {
 		return nil, err
 	}
@@ -181,6 +185,11 @@ func (s *FirewallRuleSyncer) desiredFirewallRule(lbName string, ports []ingressb
 	// Sort the ports and tags to have a deterministic order.
 	sort.Strings(fwPorts)
 	sort.Strings(targetTags)
+
+	// We assume that all instances are in the same network, so we just fetch the network of the first instance.
+	// TODO(nikhiljindal): Handle the case where different clusters in the same project are in different networks.
+	network := s.getNetworkName(instances[0])
+
 	return &compute.Firewall{
 		Name:         s.namer.FirewallRuleName(),
 		Description:  fmt.Sprintf("Firewall rule for kubernetes multicluster loadbalancer %s", lbName),
@@ -193,22 +202,47 @@ func (s *FirewallRuleSyncer) desiredFirewallRule(lbName string, ports []ingressb
 		},
 		TargetTags: targetTags,
 		Direction:  "INGRESS",
-		// TODO(nikhiljindal): Set the `Network` field for non-default networks.
+		Network:    network,
 	}, nil
 }
 
-func (s *FirewallRuleSyncer) getTargetTags(igLinks map[string][]string) ([]string, error) {
-	// We assume that all instances in a cluster have the same target tags.
-	// This is true for default GKE and GCE clusters (brought up using kube-up).
-	// So we return the first target tag from the first instance in first instance group of each cluster.
-	// TODO(nikhiljindal): Make this more resilient. If we fail to fetch tag from one instance group, try the next.
-	var tags []string
+// Returns an array of instances, with an instance from each cluster.
+func (s *FirewallRuleSyncer) getInstances(igLinks map[string][]string) ([]*compute.Instance, error) {
+	var instances []*compute.Instance
 	for _, v := range igLinks {
-		items, err := s.ntg.GetNetworkTags(v[0])
+		// Return an instance from the first instance group of each cluster.
+		// TODO(nikhiljindal): Make this more resilient. If we fail to fetch an instance from the first instance group, try the next group.
+		instance, err := s.ig.GetInstance(v[0])
 		if err != nil {
 			return nil, err
+		}
+		instances = append(instances, instance)
+	}
+	return instances, nil
+}
+
+// getTargetTags returns the required network tags to target all instances.
+// It assumes that the input contains an instance from each cluster.
+func (s *FirewallRuleSyncer) getTargetTags(instances []*compute.Instance) ([]string, error) {
+	// We assume that all instances in a cluster have the same target tags.
+	// This is true for default GKE and GCE clusters (brought up using kube-up).
+	// So we return the first target tag from an instance in each cluster.
+	var tags []string
+	for _, instance := range instances {
+		items := instance.Tags.Items
+		if len(items) == 0 {
+			return nil, fmt.Errorf("no network tag found on instance %s/%s", instance.Zone, instance.Name)
 		}
 		tags = append(tags, items[0])
 	}
 	return tags, nil
+}
+
+// getNetworkName returns the full network URL of the given instance.
+// Example network URL: https://www.googleapis.com/compute/v1/projects/myproject/global/networks/my-network
+func (s *FirewallRuleSyncer) getNetworkName(instance *compute.Instance) string {
+	if len(instance.NetworkInterfaces) > 0 {
+		return instance.NetworkInterfaces[0].Network
+	}
+	return ""
 }
