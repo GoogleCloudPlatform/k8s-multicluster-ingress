@@ -35,7 +35,7 @@ type expectedCommand struct {
 
 func runGetClusterContexts(kubeContexts []string, expectedCmds []expectedCommand) ([]string, error) {
 	i := 0
-	executeCommand = func(args []string) (string, error) {
+	ExecuteCommand = func(args []string) (string, error) {
 		if i >= len(expectedCmds) {
 			return "", fmt.Errorf("unexpected command: %s", strings.Join(args, " "))
 		}

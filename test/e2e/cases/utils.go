@@ -20,13 +20,12 @@ import (
 	"io/ioutil"
 	"math/rand"
 	"net/http"
-	"os/exec"
 	"regexp"
-	"strings"
 	"time"
 
 	"github.com/golang/glog"
 
+	gcputils "github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/utils"
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/kubeutils"
 	"k8s.io/apimachinery/pkg/util/wait"
 	kubeclient "k8s.io/client-go/kubernetes"
@@ -60,20 +59,6 @@ func randString(n int) string {
 	return string(b)
 }
 
-// runCommand runs the command in 'args' and returns the output.
-func runCommand(args []string) (string, error) {
-	cmd := exec.Command(args[0], args[1:]...)
-	glog.Infof("Running command: %s", strings.Join(args, " "))
-	// TODO(nikhiljindal): Figure out how to use CombinedOutput here to get error message in output.
-	// We dont use it right now because then "gcloud get project" fails.
-	output, err := cmd.Output()
-	if err != nil {
-		err = fmt.Errorf("unexpected error in executing command '%s': error: %s, output: [%s]", strings.Join(args, " "), err, output)
-		glog.Errorf("%s", err)
-	}
-	return strings.TrimSuffix(string(output), "\n"), err
-}
-
 // Returns the first IPv4 address found in the given string.
 func findIPv4(input string) string {
 	numBlock := "(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])"
@@ -88,7 +73,7 @@ func findIPv4(input string) string {
 func createIngress(project, kubeConfigPath, lbName, ingressPath string) (func(), error) {
 	kubemciArgs := []string{kubemci, fmt.Sprintf("--ingress=%s", ingressPath), fmt.Sprintf("--gcp-project=%s", project), fmt.Sprintf("--kubeconfig=%s", kubeConfigPath)}
 	createArgs := append(kubemciArgs, []string{"create", lbName}...)
-	if _, err := runCommand(createArgs); err != nil {
+	if _, err := kubeutils.ExecuteCommand(createArgs); err != nil {
 		glog.Fatalf("Error running kubemci create: %v", err)
 		return nil, err
 	}
@@ -96,7 +81,7 @@ func createIngress(project, kubeConfigPath, lbName, ingressPath string) (func(),
 	deleteFn := func() {
 		glog.Infof("Deleting ingress %s", ingressPath)
 		deleteArgs := append(kubemciArgs, []string{"delete", lbName}...)
-		runCommand(deleteArgs)
+		kubeutils.ExecuteCommand(deleteArgs)
 	}
 
 	return deleteFn, nil
@@ -104,24 +89,24 @@ func createIngress(project, kubeConfigPath, lbName, ingressPath string) (func(),
 
 // createTLSSecrets generates crt and key and puts them as secrets in every cluster
 // and returns a delete function that MUST be called after the test is done
-func createTLSSecrets(kubectlArgs []string, clients map[string]kubeclient.Interface) (func()){
+func createTLSSecrets(kubectlArgs []string, clients map[string]kubeclient.Interface) func() {
 	// Generate the crt and key.
 	// TODO(nikhiljindal): Generate valid certs instead of using self signed
 	// certs so that we do not need InsecureSkipVerify.
 	certGenArgs := []string{"openssl", "req", "-x509", "-nodes", "-days", "365", "-newkey", "rsa:2048", "-keyout", "tls.key", "-out", "tls.crt", "-subj", "/CN=nginxsvc/O=nginxsv"}
-	runCommand(certGenArgs)
+	kubeutils.ExecuteCommand(certGenArgs)
 	// Create the secret in all clusters.
 	for k := range clients {
 		createSecretArgs := append(kubectlArgs, []string{"create", "secret", "tls", "tls-secret", "--key", "tls.key", "--cert", "tls.crt", fmt.Sprintf("--context=%s", k)}...)
 		// create secret may fail if this was setup in a previous run.
-		runCommand(createSecretArgs)
+		kubeutils.ExecuteCommand(createSecretArgs)
 	}
 
 	deleteFn := func() {
 		// Delete the secret from all clusters.
 		for k := range clients {
 			deleteSecretArgs := append(kubectlArgs, []string{"delete", "secret", "tls-secret", fmt.Sprintf("--context=%s", k)}...)
-			runCommand(deleteSecretArgs)
+			kubeutils.ExecuteCommand(deleteSecretArgs)
 		}
 	}
 	return deleteFn
@@ -133,7 +118,7 @@ func getIpAddress(project, lbName string) string {
 	time.Sleep(5 * time.Second)
 	// Ensure that get-status returns the expected output.
 	getStatusArgs := []string{kubemci, "get-status", lbName, fmt.Sprintf("--gcp-project=%s", project)}
-	output, _ := runCommand(getStatusArgs)
+	output, _ := kubeutils.ExecuteCommand(getStatusArgs)
 	glog.Infof("Output from get-status: %s", output)
 	ipAddress := findIPv4(output)
 	glog.Infof("IP Address: %s", ipAddress)
@@ -217,7 +202,7 @@ func ensureGnuSed() string {
 				"then which gsed;" +
 				"else return 1;" +
 				"fi"
-		out, err := runCommand([]string{"bash", "-c", ensureGnuSedScript})
+		out, err := kubeutils.ExecuteCommand([]string{"bash", "-c", ensureGnuSedScript})
 		if err != nil {
 			glog.Fatalf("Failed to find GNU sed as sed or gsed. If you are on Mac: brew install gnu-sed.")
 		}
@@ -229,7 +214,7 @@ func ensureGnuSed() string {
 
 // replaceVariable replaces a string in a file with the given value
 func replaceVariable(filepath, variable, value string) {
-	if _, err := runCommand([]string{ensureGnuSed(), "-i", "-e", fmt.Sprintf("s/%s/%s/", variable, value), filepath}); err != nil {
+	if _, err := kubeutils.ExecuteCommand([]string{ensureGnuSed(), "-i", "-e", fmt.Sprintf("s/%s/%s/", variable, value), filepath}); err != nil {
 		glog.Fatalf("Error updating yaml '%s' with sed: %v", filepath, err)
 	}
 }
@@ -245,7 +230,7 @@ func deployApp(kubectlArgs []string, clients map[string]kubeclient.Interface, fi
 		glog.Infof("Creating app in cluster %s", k)
 		createArgs := append(args, []string{"create", fmt.Sprintf("--context=%s", k)}...)
 		// kubectl create may fail if this was setup in a previous run.
-		runCommand(createArgs)
+		kubeutils.ExecuteCommand(createArgs)
 	}
 }
 
@@ -256,7 +241,7 @@ func cleanupApp(kubectlArgs []string, clients map[string]kubeclient.Interface, f
 	for k := range clients {
 		glog.Infof("Deleting app from cluster %s", k)
 		deleteArgs := append(args, []string{"delete", fmt.Sprintf("--context=%s", k)}...)
-		runCommand(deleteArgs)
+		kubeutils.ExecuteCommand(deleteArgs)
 	}
 }
 
@@ -269,7 +254,7 @@ func initDeps() (project, kubeConfigPath, lbName, ipName string, clients map[str
 	// TODO(nikhiljindal): User should be able to pass kubeConfigPath.
 	kubeConfigPath = "minKubeconfig"
 	// TODO(nikhiljindal): User should be able to pass gcp project.
-	project, err := runCommand([]string{"gcloud", "config", "get-value", "project"})
+	project, err := gcputils.GetProjectFromGCloud()
 	if err != nil {
 		glog.Fatalf("Error getting default project: %v", err)
 	} else if project == "" {
@@ -288,7 +273,7 @@ func initDeps() (project, kubeConfigPath, lbName, ipName string, clients map[str
 	glog.Infof("Creating an mci named '%s' with ip address named '%s'", lbName, ipName)
 
 	// Reserve the IP address.
-	if _, err := runCommand([]string{"gcloud", "compute", "addresses", "create", "--global", ipName}); err != nil {
+	if _, err := kubeutils.ExecuteCommand([]string{"gcloud", "compute", "addresses", "create", "--global", ipName}); err != nil {
 		glog.Fatalf("Error creating IP address: %v", err)
 	}
 
@@ -298,5 +283,5 @@ func initDeps() (project, kubeConfigPath, lbName, ipName string, clients map[str
 // cleanupDeps cleans up any resources created in initDeps
 func cleanupDeps(ipName string) {
 	// Release the IP address.
-	runCommand([]string{"gcloud", "compute", "addresses", "delete", "--global", ipName})
+	kubeutils.ExecuteCommand([]string{"gcloud", "compute", "addresses", "delete", "--global", ipName})
 }

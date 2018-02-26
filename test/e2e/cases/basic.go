@@ -18,9 +18,9 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/kubeutils"
 	"github.com/golang/glog"
 	kubeclient "k8s.io/client-go/kubernetes"
-
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 )
 
@@ -122,7 +122,7 @@ func testHTTPSIngress(project, kubeConfigPath, lbName string, kubectlArgs []stri
 // testList tests that the list command returns a load balancer with the given name and ip address.
 func testList(project, ipAddress, lbName string) {
 	listArgs := []string{kubemci, "list", fmt.Sprintf("--gcp-project=%s", project)}
-	listStr, err := runCommand(listArgs)
+	listStr, err := kubeutils.ExecuteCommand(listArgs)
 	if err != nil {
 		glog.Fatalf("Error listing MCIs: %v", err)
 	}

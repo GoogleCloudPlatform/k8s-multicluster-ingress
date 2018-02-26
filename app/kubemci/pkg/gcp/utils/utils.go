@@ -17,6 +17,8 @@ package utils
 import (
 	"fmt"
 	"strings"
+
+	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/kubeutils"
 )
 
 // Returns the zone and name of the instance group from a GCP instance group URL.
@@ -60,4 +62,15 @@ func GetNameFromUrl(url string) (string, error) {
 	}
 	return components[len(components)-1], nil
 
+}
+
+// getProjectFromGCloud return the default project as configured with gcloud.
+func GetProjectFromGCloud() (string, error) {
+	// Try to get the default project from gcloud.
+	args := []string{"gcloud", "config", "get-value", "project"}
+	project, err := kubeutils.ExecuteCommand(args)
+	if err != nil {
+		return "", fmt.Errorf("error in fetching gcp project from gcloud: %s", err)
+	}
+	return project, nil
 }
