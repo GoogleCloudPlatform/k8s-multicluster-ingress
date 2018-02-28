@@ -170,8 +170,10 @@ func sslCertMatches(desiredCert, existingCert compute.SslCertificate) bool {
 	existingCert.Id = 0
 	existingCert.SelfLink = ""
 
+	// Private key is write only, so we compare the certificate alone.
+	// We are assuming that no one will change just the key.
 	// NOTE: We do not print the diff, to not leak the certificate.
-	return reflect.DeepEqual(existingCert, desiredCert)
+	return reflect.DeepEqual(existingCert.Certificate, desiredCert.Certificate)
 }
 
 func (s *SSLCertSyncer) desiredSSLCert(lbName string, ing *v1beta1.Ingress, client kubeclient.Interface) (*compute.SslCertificate, error) {

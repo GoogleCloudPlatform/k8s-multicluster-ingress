@@ -171,11 +171,23 @@ func isSimpleHTTPProbe(probe *api_v1.Probe) bool {
 			(len(probe.Handler.HTTPGet.HTTPHeaders) == 1 && probe.Handler.HTTPGet.HTTPHeaders[0].Name == "Host")))
 }
 
+// Returns a copy of the given annotations map such that it does not contain keys that are present in the ignore map.
+func ignoreAnnotations(annotations, ignore map[string]string) map[string]string {
+	result := map[string]string{}
+	for k, v := range annotations {
+		if _, exists := ignore[k]; !exists {
+			result[k] = v
+		}
+	}
+	return result
+}
+
 // Note: copied from https://github.com/kubernetes/federation/blob/7951a643cebc3abdcd903eaff90d1383b43928d1/pkg/federation-controller/util/meta.go#L61
 // Checks if cluster-independent, user provided data in two given ObjectMeta are equal. If in
 // the future the ObjectMeta structure is expanded then any field that is not populated
 // by the api server should be included here.
-func ObjectMetaEquivalent(a, b meta_v1.ObjectMeta) bool {
+// Ignores annotations with keys in ignoreAnnotationKeys.
+func ObjectMetaEquivalent(a, b meta_v1.ObjectMeta, ignoreAnnotationKeys map[string]string) bool {
 	if a.Name != b.Name {
 		return false
 	}
@@ -185,7 +197,10 @@ func ObjectMetaEquivalent(a, b meta_v1.ObjectMeta) bool {
 	if !reflect.DeepEqual(a.Labels, b.Labels) && (len(a.Labels) != 0 || len(b.Labels) != 0) {
 		return false
 	}
-	if !reflect.DeepEqual(a.Annotations, b.Annotations) && (len(a.Annotations) != 0 || len(b.Annotations) != 0) {
+	// Remove ignoreAnnotationKeys from the list of annotations.
+	aAnnotations := ignoreAnnotations(a.Annotations, ignoreAnnotationKeys)
+	bAnnotations := ignoreAnnotations(b.Annotations, ignoreAnnotationKeys)
+	if !reflect.DeepEqual(aAnnotations, bAnnotations) && (len(aAnnotations) != 0 || len(bAnnotations) != 0) {
 		return false
 	}
 	return true
@@ -194,10 +209,11 @@ func ObjectMetaEquivalent(a, b meta_v1.ObjectMeta) bool {
 // Note: copied from https://github.com/kubernetes/federation/blob/7951a643cebc3abdcd903eaff90d1383b43928d1/pkg/federation-controller/util/meta.go#L79
 // Checks if cluster-independent, user provided data in ObjectMeta and Spec in two given top
 // level api objects are equivalent.
-func ObjectMetaAndSpecEquivalent(a, b runtime.Object) bool {
+// Ignores annotations with keys in ignoreAnnotationKeys.
+func ObjectMetaAndSpecEquivalent(a, b runtime.Object, ignoreAnnotationKeys map[string]string) bool {
 	objectMetaA := reflect.ValueOf(a).Elem().FieldByName("ObjectMeta").Interface().(meta_v1.ObjectMeta)
 	objectMetaB := reflect.ValueOf(b).Elem().FieldByName("ObjectMeta").Interface().(meta_v1.ObjectMeta)
 	specA := reflect.ValueOf(a).Elem().FieldByName("Spec").Interface()
 	specB := reflect.ValueOf(b).Elem().FieldByName("Spec").Interface()
-	return ObjectMetaEquivalent(objectMetaA, objectMetaB) && reflect.DeepEqual(specA, specB)
+	return ObjectMetaEquivalent(objectMetaA, objectMetaB, ignoreAnnotationKeys) && reflect.DeepEqual(specA, specB)
 }
