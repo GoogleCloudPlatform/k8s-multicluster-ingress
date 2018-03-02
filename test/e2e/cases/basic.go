@@ -110,9 +110,7 @@ func testHTTPSIngress(project, kubeConfigPath, lbName string, kubectlArgs []stri
 	// Running create again should not return any error.
 	_, err = createIngress(project, kubeConfigPath, lbName, "examples/zone-printer/ingress/https-ingress.yaml")
 	if err != nil {
-		// TODO(nikhiljindal): Change this to unexpected fatal error once
-		// https://github.com/GoogleCloudPlatform/k8s-multicluster-ingress/issues/125 is fixed.
-		glog.Infof("Expected error in re-creating https ingress: %+v", err)
+		glog.Fatalf("Unexpected error in re-creating https ingress: %+v", err)
 	}
 
 	// TODO(nikhiljindal): Ensure that the ingress is created and deleted in all

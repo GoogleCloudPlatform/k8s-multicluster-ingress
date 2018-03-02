@@ -18,7 +18,8 @@ import (
 )
 
 var (
-	defaultIngressNamespace = "default"
+	defaultIngressNamespace    = "default"
+	instanceGroupAnnotationKey = "ingress.gcp.kubernetes.io/instance-groups"
 )
 
 type IngressSyncer struct {
@@ -51,7 +52,12 @@ func (i *IngressSyncer) EnsureIngress(ing *v1beta1.Ingress, clients map[string]k
 			}
 			fmt.Println("Created Ingress in cluster:", cluster)
 		} else {
-			if !kubeutils.ObjectMetaAndSpecEquivalent(ing, existingIng) {
+			// Ignore instance group annotation while comparing ingresses.
+			// Its added by the in-cluster ingress-gce controller, so the existing ingress will have it while the user provided will not.
+			ignoreAnnotations := map[string]string{
+				instanceGroupAnnotationKey: "",
+			}
+			if !kubeutils.ObjectMetaAndSpecEquivalent(ing, existingIng, ignoreAnnotations) {
 				fmt.Printf("Found existing ingress resource which differs from the proposed one\n")
 				glog.V(2).Infof("Diff: %v\n", diff.ObjectDiff(ing, existingIng))
 				if forceUpdate {
