@@ -24,6 +24,7 @@ import (
 	"google.golang.org/api/googleapi"
 	"k8s.io/apimachinery/pkg/util/diff"
 	ingresslb "k8s.io/ingress-gce/pkg/loadbalancers"
+	"k8s.io/ingress-gce/pkg/utils"
 
 	utilsnamer "github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/namer"
 )
@@ -74,24 +75,22 @@ func (s *TargetProxySyncer) DeleteTargetProxies() error {
 	var err error
 	httpName := s.namer.TargetHttpProxyName()
 	fmt.Println("Deleting target HTTP proxy", httpName)
-	httpErr := s.tpp.DeleteTargetHttpProxy(httpName)
-	if httpErr != nil {
+	if httpErr := utils.IgnoreHTTPNotFound(s.tpp.DeleteTargetHttpProxy(httpName)); httpErr != nil {
 		httpErr = fmt.Errorf("error in deleting target HTTP proxy %s: %s", httpName, httpErr)
 		fmt.Println(httpErr)
 		err = multierror.Append(err, httpErr)
 	} else {
-		fmt.Println("target HTTP proxy", httpName, "deleted successfully")
+		fmt.Println("Target HTTP proxy", httpName, "deleted successfully")
 	}
 
 	httpsName := s.namer.TargetHttpsProxyName()
 	fmt.Println("Deleting target HTTPS proxy", httpsName)
-	httpsErr := s.tpp.DeleteTargetHttpsProxy(httpsName)
-	if httpsErr != nil {
+	if httpsErr := utils.IgnoreHTTPNotFound(s.tpp.DeleteTargetHttpsProxy(httpsName)); httpsErr != nil {
 		httpsErr = fmt.Errorf("error in deleting target HTTPS proxy %s: %s", httpsName, httpsErr)
 		fmt.Println(httpsErr)
 		err = multierror.Append(err, httpsErr)
 	} else {
-		fmt.Println("target HTTPS proxy", httpsName, "deleted successfully")
+		fmt.Println("Target HTTPS proxy", httpsName, "deleted successfully")
 	}
 	return err
 }

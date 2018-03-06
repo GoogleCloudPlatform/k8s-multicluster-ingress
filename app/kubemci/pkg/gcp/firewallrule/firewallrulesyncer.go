@@ -26,6 +26,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/diff"
 	ingressbe "k8s.io/ingress-gce/pkg/backends"
 	ingressfw "k8s.io/ingress-gce/pkg/firewalls"
+	"k8s.io/ingress-gce/pkg/utils"
 
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/instances"
 	utilsnamer "github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/namer"
@@ -70,11 +71,11 @@ func (s *FirewallRuleSyncer) EnsureFirewallRule(lbName string, ports []ingressbe
 func (s *FirewallRuleSyncer) DeleteFirewallRules() error {
 	name := s.namer.FirewallRuleName()
 	fmt.Println("Deleting firewall rule", name)
-	if err := s.fwp.DeleteFirewall(name); err != nil {
+	if err := utils.IgnoreHTTPNotFound(s.fwp.DeleteFirewall(name)); err != nil {
 		fmt.Printf("Error in deleting firewall rule %s: %s", name, err)
 		return err
 	}
-	fmt.Println("firewall rule", name, "deleted successfully")
+	fmt.Println("Firewall rule", name, "deleted successfully")
 	return nil
 }
 

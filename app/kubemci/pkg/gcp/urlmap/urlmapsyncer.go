@@ -101,12 +101,11 @@ func (s *URLMapSyncer) EnsureURLMap(lbName string, ing *v1beta1.Ingress, beMap b
 func (s *URLMapSyncer) DeleteURLMap() error {
 	name := s.namer.URLMapName()
 	fmt.Println("Deleting url map", name)
-	err := s.ump.DeleteUrlMap(name)
-	if err != nil {
-		fmt.Println("error", err, "in deleting url map", name)
+	if err := utils.IgnoreHTTPNotFound(s.ump.DeleteUrlMap(name)); err != nil {
+		fmt.Println("Error", err, "in deleting url map", name)
 		return err
 	}
-	fmt.Println("url map", name, "deleted successfully")
+	fmt.Println("Url map", name, "deleted successfully")
 	return nil
 }
 

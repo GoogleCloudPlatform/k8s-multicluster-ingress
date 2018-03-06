@@ -29,6 +29,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	ingressbe "k8s.io/ingress-gce/pkg/backends"
 	ingresshc "k8s.io/ingress-gce/pkg/healthchecks"
+	"k8s.io/ingress-gce/pkg/utils"
 
 	utilsnamer "github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/namer"
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/kubeutils"
@@ -143,7 +144,7 @@ func (h *HealthCheckSyncer) DeleteHealthChecks(ports []ingressbe.ServicePort) er
 func (h *HealthCheckSyncer) deleteHealthCheck(port ingressbe.ServicePort) error {
 	name := h.namer.HealthCheckName(port.Port)
 	glog.V(2).Infof("Deleting health check %s", name)
-	if err := h.hcp.DeleteHealthCheck(name); err != nil {
+	if err := utils.IgnoreHTTPNotFound(h.hcp.DeleteHealthCheck(name)); err != nil {
 		glog.V(2).Infof("Error in deleting health check %s: %s", name, err)
 		return err
 	}

@@ -16,7 +16,6 @@ package sslcert
 
 import (
 	"fmt"
-	"net/http"
 	"reflect"
 
 	compute "google.golang.org/api/compute/v1"
@@ -110,12 +109,11 @@ func (s *SSLCertSyncer) ensureSecretSSLCert(lbName string, ing *v1beta1.Ingress,
 func (s *SSLCertSyncer) DeleteSSLCert() error {
 	name := s.namer.SSLCertName()
 	fmt.Println("Deleting ssl cert", name)
-	err := s.scp.DeleteSslCertificate(name)
-	if err != nil && !utils.IsHTTPErrorCode(err, http.StatusNotFound) {
-		fmt.Println("error", err, "in deleting ssl cert", name)
+	if err := utils.IgnoreHTTPNotFound(s.scp.DeleteSslCertificate(name)); err != nil {
+		fmt.Println("Error", err, "in deleting ssl cert", name)
 		return err
 	}
-	fmt.Println("ssl cert", name, "deleted successfully")
+	fmt.Println("Ssl cert", name, "deleted successfully")
 	return nil
 }
 
