@@ -109,14 +109,20 @@ func (s *SSLCertSyncer) ensureSecretSSLCert(lbName string, ing *v1beta1.Ingress,
 
 func (s *SSLCertSyncer) DeleteSSLCert() error {
 	name := s.namer.SSLCertName()
-	fmt.Println("Deleting ssl cert", name)
+	fmt.Println("Deleting SSL cert", name)
 	err := s.scp.DeleteSslCertificate(name)
-	if err != nil && !utils.IsHTTPErrorCode(err, http.StatusNotFound) {
-		fmt.Println("error", err, "in deleting ssl cert", name)
-		return err
+	if err != nil {
+		if utils.IsHTTPErrorCode(err, http.StatusNotFound) {
+			fmt.Println("SSL cert", name, "does not exist. Nothing to delete")
+			return nil
+		} else {
+			fmt.Println("Error", err, "in deleting SSL cert", name)
+			return err
+		}
+	} else {
+		fmt.Println("SSL cert", name, "deleted successfully")
+		return nil
 	}
-	fmt.Println("ssl cert", name, "deleted successfully")
-	return nil
 }
 
 func (s *SSLCertSyncer) updateSSLCert(desiredCert *compute.SslCertificate) (string, error) {

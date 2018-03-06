@@ -17,6 +17,7 @@ package healthcheck
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"reflect"
 	"strings"
 	"time"
@@ -29,6 +30,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	ingressbe "k8s.io/ingress-gce/pkg/backends"
 	ingresshc "k8s.io/ingress-gce/pkg/healthchecks"
+	"k8s.io/ingress-gce/pkg/utils"
 
 	utilsnamer "github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/namer"
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/kubeutils"
@@ -143,12 +145,19 @@ func (h *HealthCheckSyncer) DeleteHealthChecks(ports []ingressbe.ServicePort) er
 func (h *HealthCheckSyncer) deleteHealthCheck(port ingressbe.ServicePort) error {
 	name := h.namer.HealthCheckName(port.Port)
 	glog.V(2).Infof("Deleting health check %s", name)
-	if err := h.hcp.DeleteHealthCheck(name); err != nil {
-		glog.V(2).Infof("Error in deleting health check %s: %s", name, err)
-		return err
+	err := h.hcp.DeleteHealthCheck(name)
+	if err != nil {
+		if utils.IsHTTPErrorCode(err, http.StatusNotFound) {
+			fmt.Println("Health check", name, "does not exist. Nothing to delete")
+			return nil
+		} else {
+			fmt.Println("Error in deleting health check", name, ":", err)
+			return err
+		}
+	} else {
+		glog.V(2).Infof("Successfully deleted health check %s", name)
+		return nil
 	}
-	glog.V(2).Infof("Successfully deleted health check %s", name)
-	return nil
 }
 
 func getJsonIgnoreErr(v interface{}) string {

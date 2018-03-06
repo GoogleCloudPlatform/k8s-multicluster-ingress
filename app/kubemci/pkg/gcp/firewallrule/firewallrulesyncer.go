@@ -16,6 +16,7 @@ package firewallrule
 
 import (
 	"fmt"
+	"net/http"
 	"reflect"
 	"sort"
 	"strconv"
@@ -26,6 +27,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/diff"
 	ingressbe "k8s.io/ingress-gce/pkg/backends"
 	ingressfw "k8s.io/ingress-gce/pkg/firewalls"
+	"k8s.io/ingress-gce/pkg/utils"
 
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/instances"
 	utilsnamer "github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/namer"
@@ -70,12 +72,19 @@ func (s *FirewallRuleSyncer) EnsureFirewallRule(lbName string, ports []ingressbe
 func (s *FirewallRuleSyncer) DeleteFirewallRules() error {
 	name := s.namer.FirewallRuleName()
 	fmt.Println("Deleting firewall rule", name)
-	if err := s.fwp.DeleteFirewall(name); err != nil {
-		fmt.Printf("Error in deleting firewall rule %s: %s", name, err)
-		return err
+	err := s.fwp.DeleteFirewall(name)
+	if err != nil {
+		if utils.IsHTTPErrorCode(err, http.StatusNotFound) {
+			fmt.Println("Firewall rule", name, "does not exist. Nothing to delete")
+			return nil
+		} else {
+			fmt.Printf("Error in deleting firewall rule %s: %s", name, err)
+			return err
+		}
+	} else {
+		fmt.Println("Firewall rule", name, "deleted successfully")
+		return nil
 	}
-	fmt.Println("firewall rule", name, "deleted successfully")
-	return nil
 }
 
 // ensureFirewallRule ensures that the required firewall rule exists for the given ports.
