@@ -18,6 +18,7 @@ import (
 	"crypto/md5"
 	"encoding/hex"
 	"fmt"
+	"net/http"
 	"reflect"
 
 	compute "google.golang.org/api/compute/v1"
@@ -103,11 +104,17 @@ func (s *URLMapSyncer) DeleteURLMap() error {
 	fmt.Println("Deleting url map", name)
 	err := s.ump.DeleteUrlMap(name)
 	if err != nil {
-		fmt.Println("error", err, "in deleting url map", name)
-		return err
+		if utils.IsHTTPErrorCode(err, http.StatusNotFound) {
+			fmt.Println("URL map", name, "does not exist. Nothing to delete")
+			return nil
+		} else {
+			fmt.Println("Error", err, "in deleting URL map", name)
+			return err
+		}
+	} else {
+		fmt.Println("URL map", name, "deleted successfully")
+		return nil
 	}
-	fmt.Println("url map", name, "deleted successfully")
-	return nil
 }
 
 func (s *URLMapSyncer) updateURLMap(desiredUM *compute.UrlMap) (string, error) {

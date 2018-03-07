@@ -17,6 +17,7 @@ package backendservice
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"reflect"
 	"sort"
 
@@ -26,6 +27,7 @@ import (
 	multierror "github.com/hashicorp/go-multierror"
 	"k8s.io/apimachinery/pkg/util/diff"
 	ingressbe "k8s.io/ingress-gce/pkg/backends"
+	"k8s.io/ingress-gce/pkg/utils"
 
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/healthcheck"
 	utilsnamer "github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/namer"
@@ -90,12 +92,19 @@ func (b *BackendServiceSyncer) DeleteBackendServices(ports []ingressbe.ServicePo
 func (b *BackendServiceSyncer) deleteBackendService(port ingressbe.ServicePort) error {
 	name := b.namer.BeServiceName(port.Port)
 	glog.V(2).Infof("Deleting backend service %s", name)
-	if err := b.bsp.DeleteGlobalBackendService(name); err != nil {
-		glog.V(2).Infof("Error in deleting backend service %s: %s", name, err)
-		return err
+	err := b.bsp.DeleteGlobalBackendService(name)
+	if err != nil {
+		if utils.IsHTTPErrorCode(err, http.StatusNotFound) {
+			fmt.Println("Backend service", name, "does not exist. Nothing to delete")
+			return nil
+		} else {
+			fmt.Println("Error in deleting backend service", name, ":", err)
+			return err
+		}
+	} else {
+		glog.V(2).Infof("Successfully deleted backend service %s", name)
+		return nil
 	}
-	glog.V(2).Infof("Successfully deleted backend service %s", name)
-	return nil
 }
 
 // ensureBackendService ensures that the required backend service exists for the given port.

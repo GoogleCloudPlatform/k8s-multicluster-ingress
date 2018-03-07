@@ -107,32 +107,32 @@ func (s *ForwardingRuleSyncer) ensureForwardingRule(lbName, ipAddress, targetPro
 func (s *ForwardingRuleSyncer) DeleteForwardingRules() error {
 	var err error
 	name := s.namer.HttpForwardingRuleName()
-	fmt.Println("Deleting http forwarding rule", name)
+	fmt.Println("Deleting HTTP forwarding rule", name)
 	httpErr := s.frp.DeleteGlobalForwardingRule(name)
 	if httpErr != nil {
 		if utils.IsHTTPErrorCode(httpErr, http.StatusNotFound) {
-			fmt.Println("Http forwarding rule", name, "does not exist. Nothing to delete")
+			fmt.Println("HTTP forwarding rule", name, "does not exist. Nothing to delete")
 		} else {
-			httpErr := fmt.Errorf("error %s in deleting http forwarding rule %s", httpErr, name)
+			httpErr := fmt.Errorf("error %s in deleting HTTP forwarding rule %s", httpErr, name)
 			fmt.Println(httpErr)
 			err = multierror.Append(err, httpErr)
 		}
 	} else {
-		fmt.Println("Http forwarding rule", name, "deleted successfully")
+		fmt.Println("HTTP forwarding rule", name, "deleted successfully")
 	}
 	name = s.namer.HttpsForwardingRuleName()
-	fmt.Println("Deleting https forwarding rule", name)
+	fmt.Println("Deleting HTTPS forwarding rule", name)
 	httpsErr := s.frp.DeleteGlobalForwardingRule(name)
 	if httpsErr != nil {
 		if utils.IsHTTPErrorCode(httpsErr, http.StatusNotFound) {
-			fmt.Println("Https forwarding rule", name, "does not exist. Nothing to delete")
+			fmt.Println("HTTPS forwarding rule", name, "does not exist. Nothing to delete")
 		} else {
-			httpsErr := fmt.Errorf("error %s in deleting https forwarding rule %s", httpsErr, name)
+			httpsErr := fmt.Errorf("error %s in deleting HTTPS forwarding rule %s", httpsErr, name)
 			fmt.Println(httpsErr)
 			err = multierror.Append(err, httpsErr)
 		}
 	} else {
-		fmt.Println("Https forwarding rule", name, "deleted successfully")
+		fmt.Println("HTTPS forwarding rule", name, "deleted successfully")
 	}
 	return err
 }
