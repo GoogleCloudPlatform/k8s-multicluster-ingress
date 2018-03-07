@@ -22,6 +22,8 @@ You can try out kubemci using the [zone printer example](/examples/zone-printer)
 
 Follow the instructions as detailed [here](/examples/zone-printer/README.md).
 
+To create an HTTPS ingress, follow the instructions [here](/examples/zone-printer/https.md).
+
 ## More information
 
 We have a [video](https://www.youtube.com/watch?v=0_Yt_1yICfk) explaining what
