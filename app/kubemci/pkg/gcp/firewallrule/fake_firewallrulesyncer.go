@@ -64,6 +64,5 @@ func (h *FakeFirewallRuleSyncer) RemoveFromClusters(lbName string, removeIGLinks
 		}
 		v.IGLinks = newIGLinks
 	}
-	h.EnsuredFirewallRules = nil
 	return nil
 }

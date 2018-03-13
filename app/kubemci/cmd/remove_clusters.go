@@ -44,8 +44,10 @@ var (
 
 type removeClustersOptions struct {
 	// Name of the YAML file containing ingress spec.
+	// Required.
 	IngressFilename string
 	// Path to kubeconfig file.
+	// Required.
 	KubeconfigFilename string
 	// Names of the contexts to use from the kubeconfig file.
 	KubeContexts []string
@@ -59,7 +61,6 @@ type removeClustersOptions struct {
 	// value, then 'force' is a no-op.
 	ForceUpdate bool
 	// Name of the namespace for the ingress when none is provided (mismatch of option with spec causes an error).
-	// Optional.
 	Namespace string
 }
 
@@ -98,7 +99,7 @@ func validateRemoveClustersArgs(options *removeClustersOptions, args []string) e
 	if len(args) != 1 {
 		return fmt.Errorf("unexpected args: %v. Expected one arg as name of load balancer.", args)
 	}
-	// Verify that the required params are not missing.
+	// Verify that the required options are not missing.
 	if options.IngressFilename == "" {
 		return fmt.Errorf("unexpected missing argument ingress.")
 	}
@@ -145,9 +146,15 @@ func runRemoveClusters(options *removeClustersOptions, args []string) error {
 	}
 
 	// Delete ingress resource from clusters
-	err = ingress.NewIngressSyncer().DeleteIngress(&ing, clients)
-	if err != nil {
+	is := ingress.NewIngressSyncer()
+	if is == nil {
+		err = multierror.Append(err, fmt.Errorf("unexpected ingress syncer is nil"))
+		// No point in proceeding.
 		return err
+	}
+	isErr := is.DeleteIngress(&ing, clients)
+	if isErr != nil {
+		err = multierror.Append(err, isErr)
 	}
 	return err
 }

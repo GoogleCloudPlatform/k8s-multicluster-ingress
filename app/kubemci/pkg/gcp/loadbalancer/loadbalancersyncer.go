@@ -135,7 +135,7 @@ func (l *LoadBalancerSyncer) CreateLoadBalancer(ing *v1beta1.Ingress, forceUpdat
 	if portsErr != nil {
 		err = multierror.Append(err, portsErr)
 	}
-	// Can not really create any backend service without named portsand instance groups. No point continuing.
+	// Can not really create any backend service without named ports and instance groups. No point continuing.
 	if len(igs) == 0 {
 		err = multierror.Append(err, fmt.Errorf("No instance group found. Can not continue"))
 		return err
@@ -217,8 +217,8 @@ func (l *LoadBalancerSyncer) CreateLoadBalancer(ing *v1beta1.Ingress, forceUpdat
 }
 
 // DeleteLoadBalancer deletes the GCP resources associated with the L7 GCP load balancer for the given ingress.
+// TODO(nikhiljindal): Do not require the ingress yaml from users. Just the name should be enough. We can fetch ingress YAML from one of the clusters.
 func (l *LoadBalancerSyncer) DeleteLoadBalancer(ing *v1beta1.Ingress) error {
-	// TODO(nikhiljindal): Dont require the ingress yaml from users. Just the name should be enough. We can fetch ingress YAML from one of the clusters.
 	client, cErr := getAnyClient(l.clients)
 	if cErr != nil {
 		// No point in continuing without a client.
@@ -262,8 +262,8 @@ func (l *LoadBalancerSyncer) DeleteLoadBalancer(ing *v1beta1.Ingress) error {
 }
 
 // DeleteLoadBalancer deletes the GCP resources associated with the L7 GCP load balancer for the given ingress.
+// TODO(nikhiljindal): Do not require the ingress yaml from users. Just the name should be enough. We can fetch ingress YAML from one of the clusters.
 func (l *LoadBalancerSyncer) RemoveFromClusters(ing *v1beta1.Ingress, removeClients map[string]kubeclient.Interface, forceUpdate bool) error {
-	// TODO(nikhiljindal): Dont require the ingress yaml from users. Just the name should be enough. We can fetch ingress YAML from one of the clusters.
 	client, cErr := getAnyClient(l.clients)
 	if cErr != nil {
 		// No point in continuing without a client.
@@ -287,6 +287,8 @@ func (l *LoadBalancerSyncer) RemoveFromClusters(ing *v1beta1.Ingress, removeClie
 		// Aggregate errors and return all at the end.
 		err = multierror.Append(err, fwErr)
 	}
+
+	// Convert the map of instance groups to a flat array.
 	igsForBE := []string{}
 	for k := range removeIGLinks {
 		igsForBE = append(igsForBE, removeIGLinks[k]...)

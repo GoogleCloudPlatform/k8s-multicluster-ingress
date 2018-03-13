@@ -80,7 +80,7 @@ func TestCreateLoadBalancer(t *testing.T) {
 	lbc.ipp.ReserveGlobalAddress(ipAddress)
 	ing, err := setupLBCForCreateIng(lbc, nodePort, igName, igZone, zoneLink, ipAddress)
 	if err != nil {
-		t.Fatalf("%s", err)
+		t.Fatalf("unexpected error in test setup: %s", err)
 	}
 	if err := lbc.CreateLoadBalancer(ing, true /*forceUpdate*/, clusters); err != nil {
 		t.Fatalf("unexpected error %s", err)
@@ -294,7 +294,7 @@ func TestDeleteLoadBalancer(t *testing.T) {
 	lbc.ipp.ReserveGlobalAddress(ipAddress)
 	ing, err := setupLBCForCreateIng(lbc, nodePort, igName, igZone, zoneLink, ipAddress)
 	if err != nil {
-		t.Fatalf("%s", err)
+		t.Fatalf("unexpected error in test setup: %s", err)
 	}
 	if err := lbc.CreateLoadBalancer(ing, true /*forceUpdate*/, clusters); err != nil {
 		t.Fatalf("unexpected error %s", err)
@@ -345,6 +345,84 @@ func TestDeleteLoadBalancer(t *testing.T) {
 	if len(fhc.EnsuredHealthChecks) != 0 {
 		t.Errorf("unexpected health checks have not been deleted: %v", fhc.EnsuredHealthChecks)
 	}
+}
+
+func TestRemoveFromClusters(t *testing.T) {
+	lbName := "lb-name"
+	nodePort := int64(32211)
+	igName := "my-fake-ig"
+	igZone := "my-fake-zone"
+	zoneLink := fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/fake-project/zones/%s", igZone)
+	clusters := []string{"cluster1", "cluster2"}
+	lbc := newLoadBalancerSyncer(lbName)
+	ipAddress := &compute.Address{
+		Name:    "ipAddressName",
+		Address: "1.2.3.4",
+	}
+	// Reserve a global address. User is supposed to do this before calling CreateLoadBalancer.
+	lbc.ipp.ReserveGlobalAddress(ipAddress)
+	ing, err := setupLBCForCreateIng(lbc, nodePort, igName, igZone, zoneLink, ipAddress)
+	if err != nil {
+		t.Fatalf("unexpected error in test setup: %s", err)
+	}
+	if err := lbc.CreateLoadBalancer(ing, true /*forceUpdate*/, clusters); err != nil {
+		t.Fatalf("unexpected error %s", err)
+	}
+	fhc := lbc.hcs.(*healthcheck.FakeHealthCheckSyncer)
+	if len(fhc.EnsuredHealthChecks) == 0 {
+		t.Errorf("unexpected health checks not created")
+	}
+	fbs := lbc.bss.(*backendservice.FakeBackendServiceSyncer)
+	if len(fbs.EnsuredBackendServices) == 0 {
+		t.Errorf("unexpected backend services not created")
+	}
+	fum := lbc.ums.(*urlmap.FakeURLMapSyncer)
+	if len(fum.EnsuredURLMaps) == 0 {
+		t.Errorf("unexpected url maps not created")
+	}
+	ftp := lbc.tps.(*targetproxy.FakeTargetProxySyncer)
+	if len(ftp.EnsuredTargetProxies) == 0 {
+		t.Errorf("unexpected target proxies not created")
+	}
+	ffr := lbc.frs.(*forwardingrule.FakeForwardingRuleSyncer)
+	if len(ffr.EnsuredForwardingRules) == 0 {
+		t.Errorf("unexpected forwarding rules not created")
+	}
+	ffw := lbc.fws.(*firewallrule.FakeFirewallRuleSyncer)
+	if len(ffw.EnsuredFirewallRules) == 0 {
+		t.Errorf("unexpected firewall rules not created")
+	}
+	// Verify that the load balancer is spread to both clusters.
+	if err := verifyClusters(lbName, lbc.frs, clusters); err != nil {
+		t.Errorf("%s", err)
+	}
+
+	// Remove the load balancer from the first cluster and verify that the load balancer status is updated appropriately.
+	removeClients := map[string]kubeclient.Interface{
+		"cluster1": lbc.clients["cluster1"],
+	}
+	if err := lbc.RemoveFromClusters(ing, removeClients, false /*forceUpdate*/); err != nil {
+		t.Errorf("unexpected error in removing existing load balancer from clusters: %s", err)
+	}
+	if err := verifyClusters(lbName, lbc.frs, []string{"cluster2"}); err != nil {
+		t.Errorf("%s", err)
+	}
+
+	// Cleanup.
+	if err := lbc.DeleteLoadBalancer(ing); err != nil {
+		t.Fatalf("unexpected error in deleting load balancer: %s", err)
+	}
+}
+
+func verifyClusters(lbName string, frs forwardingrule.ForwardingRuleSyncerInterface, expectedClusters []string) error {
+	status, err := frs.GetLoadBalancerStatus(lbName)
+	if err != nil {
+		return fmt.Errorf("unexpected error in getting load balancer status: %s", err)
+	}
+	if !reflect.DeepEqual(status.Clusters, expectedClusters) {
+		return fmt.Errorf("unexpected list of clusters, expected: %v, got: %v", expectedClusters, status.Clusters)
+	}
+	return nil
 }
 
 func TestFormatLoadBalancersList(t *testing.T) {

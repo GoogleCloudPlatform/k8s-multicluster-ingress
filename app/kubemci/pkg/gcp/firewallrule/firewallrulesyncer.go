@@ -93,7 +93,7 @@ func (s *FirewallRuleSyncer) RemoveFromClusters(lbName string, removeIGLinks map
 	glog.V(5).Infof("Received instance groups: %v", removeIGLinks)
 	err := s.removeFromClusters(lbName, removeIGLinks)
 	if err != nil {
-		return fmt.Errorf("Error %s in removing clusters from firewall rule", err)
+		return fmt.Errorf("Error in removing clusters from firewall rule: %s", err)
 	}
 	return nil
 }
@@ -254,7 +254,8 @@ func (s *FirewallRuleSyncer) desiredFirewallRuleWithoutClusters(existingFW *comp
 	// rather than removing the ones for old clusters.
 	// But we do not want to change existing tags for clusters that are already working.
 	// Ideally network tags should only be appended to, so this should not be a problem.
-	// TODO(nikhiljindal): Fix this if it becomes a problem.
+	// TODO(nikhiljindal): Fix this if it becomes a problem:
+	// https://github.com/GoogleCloudPlatform/k8s-multicluster-ingress/issues/147
 	targetTags, err := s.getTargetTags(instances)
 	if err != nil {
 		return nil, err

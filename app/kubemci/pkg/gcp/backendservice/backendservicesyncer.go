@@ -270,6 +270,7 @@ func (b *BackendServiceSyncer) desiredBackendService(lbName string, port ingress
 	}
 }
 
+// desiredBackendServiceWithoutClusters returns the desired backend service after removing the given instance groups from the given existing backend service.
 func (b *BackendServiceSyncer) desiredBackendServiceWithoutClusters(existingBE *compute.BackendService, removeIGLinks []string) *compute.BackendService {
 	// Compute the backends to be removed.
 	removeBackends := desiredBackends(removeIGLinks)

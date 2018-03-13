@@ -207,7 +207,7 @@ func (s *ForwardingRuleSyncer) ListLoadBalancerStatuses() ([]status.LoadBalancer
 // See interface for comment.
 func (s *ForwardingRuleSyncer) RemoveClustersFromStatus(clusters []string) error {
 	// Update HTTPS status first and then HTTP.
-	// This ensures that get-status returns the correct status even if HTTPS is updated but updating HTTP fails.
+	// This ensures that get-status returns the old status until both HTTPS and HTTP forwarding rules are updated.
 	// This is because get-status reads from HTTP if it exists.
 	// Also note that it continues silently if either HTTP or HTTPS forwarding rules do not exist.
 	if err := s.removeClustersFromStatus("https", s.namer.HttpsForwardingRuleName(), clusters); err != nil {
@@ -216,7 +216,7 @@ func (s *ForwardingRuleSyncer) RemoveClustersFromStatus(clusters []string) error
 	return s.removeClustersFromStatus("http", s.namer.HttpForwardingRuleName(), clusters)
 }
 
-// ensureForwardingRule ensures a forwarding rule exists as per the given input parameters.
+// removeClustersFromStatus removes the given list of clusters from the existing forwarding rule with the given name.
 func (s *ForwardingRuleSyncer) removeClustersFromStatus(httpProtocol, name string, clusters []string) error {
 	fmt.Println("Removing clusters", clusters, "from", httpProtocol, "forwarding rule")
 	existingFR, err := s.frp.GetGlobalForwardingRule(name)

@@ -217,8 +217,8 @@ func TestRemoveFromClusters(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected nil error, actual: %v", err)
 	}
-	if len(be.Backends) != 1 {
-		t.Fatalf("expected the backend service to have 1 backend for ig: %s, actual: %v", ig2Link, be.Backends)
+	if len(be.Backends) != 1 || be.Backends[0].Group != ig1Link {
+		t.Fatalf("expected the backend service to have 1 backend for ig: %s, actual: %v", ig1Link, be.Backends)
 	}
 
 	// Cleanup
