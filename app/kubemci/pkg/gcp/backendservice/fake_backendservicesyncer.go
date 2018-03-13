@@ -61,3 +61,8 @@ func (h *FakeBackendServiceSyncer) DeleteBackendServices(ports []ingressbe.Servi
 	h.EnsuredBackendServices = nil
 	return nil
 }
+
+func (h *FakeBackendServiceSyncer) RemoveFromClusters(ports []ingressbe.ServicePort, removeIGLinks []string) error {
+	// TODO: Implement this.
+	return nil
+}

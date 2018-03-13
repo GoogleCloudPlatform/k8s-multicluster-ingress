@@ -204,6 +204,42 @@ func (s *ForwardingRuleSyncer) ListLoadBalancerStatuses() ([]status.LoadBalancer
 	return result, err
 }
 
+// See interface for comment.
+func (s *ForwardingRuleSyncer) RemoveClustersFromStatus(clusters []string) error {
+	// Update HTTPS status first and then HTTP.
+	// This ensures that get-status returns the correct status even if HTTPS is updated but updating HTTP fails.
+	// This is because get-status reads from HTTP if it exists.
+	// Also note that it continues silently if either HTTP or HTTPS forwarding rules do not exist.
+	if err := s.removeClustersFromStatus("https", s.namer.HttpsForwardingRuleName(), clusters); err != nil {
+		return fmt.Errorf("unexpected error in updating the https forwarding rule status: %s", err)
+	}
+	return s.removeClustersFromStatus("http", s.namer.HttpForwardingRuleName(), clusters)
+}
+
+// ensureForwardingRule ensures a forwarding rule exists as per the given input parameters.
+func (s *ForwardingRuleSyncer) removeClustersFromStatus(httpProtocol, name string, clusters []string) error {
+	fmt.Println("Removing clusters", clusters, "from", httpProtocol, "forwarding rule")
+	existingFR, err := s.frp.GetGlobalForwardingRule(name)
+	if err != nil {
+		// Ignore NotFound error.
+		if utils.IsHTTPErrorCode(err, http.StatusNotFound) {
+			fmt.Println(httpProtocol, "forwarding rule not found. Nothing to update. Continuing")
+			return nil
+		}
+		err := fmt.Errorf("error in fetching existing forwarding rule %s: %s", name, err)
+		fmt.Println(err)
+		return err
+	}
+	// Remove clusters from the forwardingrule
+	desiredFR, err := s.desiredForwardingRuleWithoutClusters(existingFR, clusters)
+	if err != nil {
+		fmt.Println("Error getting desired forwarding rule:", err)
+		return err
+	}
+	glog.V(5).Infof("Existing forwarding rule: %v\n, desired forwarding rule: %v\n", *existingFR, *desiredFR)
+	return s.updateForwardingRule(existingFR, desiredFR)
+}
+
 func (s *ForwardingRuleSyncer) updateForwardingRule(existingFR, desiredFR *compute.ForwardingRule) error {
 	name := desiredFR.Name
 	fmt.Println("Updating existing forwarding rule", name, "to match the desired state")
@@ -281,4 +317,30 @@ func (s *ForwardingRuleSyncer) desiredForwardingRule(lbName, ipAddress, targetPr
 		IPProtocol:          "TCP",
 		LoadBalancingScheme: "EXTERNAL",
 	}, nil
+}
+
+func (s *ForwardingRuleSyncer) desiredForwardingRuleWithoutClusters(existingFR *compute.ForwardingRule, removeClusters []string) (*compute.ForwardingRule, error) {
+	statusStr := existingFR.Description
+	status, err := status.FromString(statusStr)
+	if err != nil {
+		return nil, fmt.Errorf("error in parsing string %s: %s", statusStr, err)
+	}
+	removeMap := map[string]bool{}
+	for _, v := range removeClusters {
+		removeMap[v] = true
+	}
+	var newClusters []string
+	for _, v := range status.Clusters {
+		if !removeMap[v] {
+			newClusters = append(newClusters, v)
+		}
+	}
+	status.Clusters = newClusters
+	newDesc, err := status.ToString()
+	if err != nil {
+		return nil, fmt.Errorf("unexpected error in generating the description for forwarding rule: %s", err)
+	}
+	desiredFR := existingFR
+	desiredFR.Description = newDesc
+	return desiredFR, nil
 }

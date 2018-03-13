@@ -50,3 +50,20 @@ func (h *FakeFirewallRuleSyncer) DeleteFirewallRules() error {
 	h.EnsuredFirewallRules = nil
 	return nil
 }
+
+func (h *FakeFirewallRuleSyncer) RemoveFromClusters(lbName string, removeIGLinks map[string][]string) error {
+	for _, v := range h.EnsuredFirewallRules {
+		if v.LBName != lbName {
+			continue
+		}
+		newIGLinks := map[string][]string{}
+		for clusterName, igValues := range v.IGLinks {
+			if _, has := removeIGLinks[clusterName]; !has {
+				newIGLinks[clusterName] = igValues
+			}
+		}
+		v.IGLinks = newIGLinks
+	}
+	h.EnsuredFirewallRules = nil
+	return nil
+}

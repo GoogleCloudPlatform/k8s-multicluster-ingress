@@ -92,3 +92,8 @@ func (f *FakeForwardingRuleSyncer) ListLoadBalancerStatuses() ([]status.LoadBala
 	}
 	return ret, nil
 }
+
+func (f *FakeForwardingRuleSyncer) RemoveClustersFromStatus(clusters []string) error {
+	// TODO: Implement this.
+	return nil
+}

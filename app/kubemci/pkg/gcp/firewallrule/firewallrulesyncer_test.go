@@ -107,7 +107,7 @@ func TestEnsureFirewallRule(t *testing.T) {
 			allowed, _ := json.Marshal(fw.Allowed)
 			t.Errorf("unexpected allowed, expected only one port item with port %s, got: %s", expectedPort, allowed)
 		}
-		networkTag := instances.FakeInstance.Tags.Items[0]
+		networkTag := igLink
 		if len(fw.TargetTags) != 1 || fw.TargetTags[0] != networkTag {
 			t.Errorf("unexpected target tags in firewall rule, expected only on item for %s, got: %v", networkTag, fw.TargetTags)
 		}
@@ -152,5 +152,64 @@ func TestDeleteFirewallRule(t *testing.T) {
 	}
 	if _, err := fwp.GetFirewall(fwName); err == nil {
 		t.Errorf("unexpected nil error, expected NotFound")
+	}
+}
+
+func TestRemoveFromClusters(t *testing.T) {
+	lbName := "lb-name"
+	port := int64(32211)
+	kubeSvcName := "svc-name"
+	ig1Link := "https://www.googleapis.com/compute/v1/projects/abc/zones/def/instanceGroups/ig1"
+	ig2Link := "https://www.googleapis.com/compute/v1/projects/abc/zones/def/instanceGroups/ig2"
+	// Should create the firewall rule as expected.
+	fwp := ingressfw.NewFakeFirewallsProvider(false /* xpn */, false /* read only */)
+	ig := instances.NewFakeInstanceGetter()
+	namer := utilsnamer.NewNamer("mci1", lbName)
+	fwName := namer.FirewallRuleName()
+	fws := NewFirewallRuleSyncer(namer, fwp, ig)
+	// GET should return NotFound.
+	if _, err := fwp.GetFirewall(fwName); err == nil {
+		t.Fatalf("expected NotFound error, actual: nil")
+	}
+	// Create the firewall rule in 2 clusters.
+	igLinks := map[string][]string{
+		"cluster1": {ig1Link},
+		"cluster2": {ig2Link},
+	}
+	err := fws.EnsureFirewallRule(lbName, []ingressbe.ServicePort{
+		{
+			Port:     port,
+			Protocol: "HTTP",
+			SvcName:  types.NamespacedName{Name: kubeSvcName},
+		},
+	}, igLinks, false /*forceUpdate*/)
+	if err != nil {
+		t.Fatalf("expected no error in ensuring firewall rule, actual: %v", err)
+	}
+	// Verify that the created firewall rule is as expected.
+	fw, err := fwp.GetFirewall(fwName)
+	if err != nil {
+		t.Fatalf("expected nil error, actual: %v", err)
+	}
+	// Verify that the firewall rule should have 2 target tags, one for each cluster.
+	if len(fw.TargetTags) != 2 {
+		t.Fatalf("expected the ensured firewall rule to have 2 target tags [%s %s], actual: %q", ig1Link, ig2Link, fw.TargetTags)
+	}
+
+	// Verify that the target tag for the second cluster is removed after running RemoveFromCluster
+	if err := fws.RemoveFromClusters(lbName, map[string][]string{"cluster2": {ig2Link}}); err != nil {
+		t.Fatalf("unexpected error in removing cluster from existing firewall rule: %s", err)
+	}
+	fw, err = fwp.GetFirewall(fwName)
+	if err != nil {
+		t.Fatalf("expected nil error in fetching firewall rule, actual: %v", err)
+	}
+	if len(fw.TargetTags) != 1 || fw.TargetTags[0] != ig1Link {
+		t.Fatalf("expected the updated firewall rule to have just one target tag %s, actual: %q", ig1Link, fw.TargetTags)
+	}
+
+	// Cleanup
+	if err := fws.DeleteFirewallRules(); err != nil {
+		t.Fatalf("unexpected error in deleting firewall rules: %s", err)
 	}
 }

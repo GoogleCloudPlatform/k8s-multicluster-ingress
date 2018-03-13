@@ -25,4 +25,6 @@ type FirewallRuleSyncerInterface interface {
 	EnsureFirewallRule(lbName string, ports []ingressbe.ServicePort, igLinks map[string][]string, forceUpdate bool) error
 	// DeleteFirewallRules deletes all firewall rules that would have been created by EnsureFirewallRule.
 	DeleteFirewallRules() error
+	// RemoveFromClusters removes the clusters corresponding to the given instance groups from the firewall rule.
+	RemoveFromClusters(lbName string, removeIGLinks map[string][]string) error
 }

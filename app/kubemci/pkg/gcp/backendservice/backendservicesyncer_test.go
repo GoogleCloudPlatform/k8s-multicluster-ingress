@@ -166,3 +166,63 @@ func TestDeleteBackendService(t *testing.T) {
 		t.Errorf("unexpected nil error, expected NotFound")
 	}
 }
+
+func TestRemoveFromClusters(t *testing.T) {
+	lbName := "lb-name"
+	port := int64(32211)
+	portName := "portName"
+	ig1Link := "ig1Link"
+	ig2Link := "ig2Link"
+	hcLink := "hcLink"
+	kubeSvcName := "ingress-svc"
+	// Should create the backend service as expected.
+	bsp := ingressbe.NewFakeBackendServices(func(op int, be *compute.BackendService) error { return nil })
+	namer := utilsnamer.NewNamer("mci1", lbName)
+	beName := namer.BeServiceName(port)
+	bss := NewBackendServiceSyncer(namer, bsp)
+	ports := []ingressbe.ServicePort{
+		{
+			Port:     port,
+			Protocol: "HTTP",
+			SvcName:  types.NamespacedName{Name: kubeSvcName},
+		},
+	}
+	// Create the backend service for 2 clusters.
+	if _, err := bss.EnsureBackendService(lbName, ports, healthcheck.HealthChecksMap{
+		port: &compute.HealthCheck{
+			SelfLink: hcLink,
+		},
+	}, NamedPortsMap{
+		port: &compute.NamedPort{
+			Port: port,
+			Name: portName,
+		},
+	}, []string{ig1Link, ig2Link}, false /*forceUpdate*/); err != nil {
+		t.Fatalf("expected no error in ensuring backend service, actual: %v", err)
+	}
+	be, err := bsp.GetGlobalBackendService(beName)
+	if err != nil {
+		t.Fatalf("expected nil error, actual: %v", err)
+	}
+	// Verify that the backend has 2 backends, one for each cluster.
+	if len(be.Backends) != 2 {
+		t.Fatalf("expected the backend service to have 2 backends for igs [%s %s], actual: %v", ig1Link, ig2Link, be.Backends)
+	}
+
+	// Verify that the backend for the second cluster is removed after running RemoveFromClusters.
+	if err := bss.RemoveFromClusters(ports, []string{ig2Link}); err != nil {
+		t.Fatalf("unexpected error in removing from clusters: %s", err)
+	}
+	be, err = bsp.GetGlobalBackendService(beName)
+	if err != nil {
+		t.Fatalf("expected nil error, actual: %v", err)
+	}
+	if len(be.Backends) != 1 {
+		t.Fatalf("expected the backend service to have 1 backend for ig: %s, actual: %v", ig2Link, be.Backends)
+	}
+
+	// Cleanup
+	if err := bss.DeleteBackendServices(ports); err != nil {
+		t.Fatalf("unexpected error in deleting backend services: %s", err)
+	}
+}
