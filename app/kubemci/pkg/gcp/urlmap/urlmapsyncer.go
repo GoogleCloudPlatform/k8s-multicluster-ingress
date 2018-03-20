@@ -324,8 +324,8 @@ func (s *URLMapSyncer) ingToURLMap(ing *v1beta1.Ingress, beMap backendservice.Ba
 	var defaultBackend *compute.BackendService
 	if ing.Spec.Backend == nil {
 		// TODO(nikhiljindal): Be able to create a default backend service.
-		// For now, we require users to specify it and generate an error if its nil.
-		// We cant create a url map without a default service, so no point continuing.
+		// For now, we require users to specify it and generate an error if it's nil.
+		// We can't create a url map without a default service, so no point continuing.
 		err = multierror.Append(err, fmt.Errorf("unexpected: ing.spec.backend is nil. Multicluster ingress needs a user specified default backend"))
 		return nil, err
 	}
