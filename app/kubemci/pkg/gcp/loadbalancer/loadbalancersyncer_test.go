@@ -17,6 +17,7 @@ package loadbalancer
 import (
 	"encoding/json"
 	"fmt"
+	"math/rand"
 	"reflect"
 	"testing"
 
@@ -41,6 +42,7 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/status"
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/targetproxy"
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/urlmap"
+	"github.com/golang/glog"
 )
 
 func newLoadBalancerSyncer(lbName string) *LoadBalancerSyncer {
@@ -78,11 +80,11 @@ func TestCreateLoadBalancer(t *testing.T) {
 	}
 	// Reserve a global address. User is supposed to do this before calling CreateLoadBalancer.
 	lbc.ipp.ReserveGlobalAddress(ipAddress)
-	ing, err := setupLBCForCreateIng(lbc, nodePort, igName, igZone, zoneLink, ipAddress)
+	ing, err := setupLBCForCreateIng(lbc, nodePort, false /*rand_port*/, igName, igZone, zoneLink, ipAddress)
 	if err != nil {
 		t.Fatalf("unexpected error in test setup: %s", err)
 	}
-	if err := lbc.CreateLoadBalancer(ing, true /*forceUpdate*/, clusters); err != nil {
+	if err := lbc.CreateLoadBalancer(ing, true /*forceUpdate*/, true /*validate*/, clusters); err != nil {
 		t.Fatalf("unexpected error %s", err)
 	}
 	// Verify client actions.
@@ -90,34 +92,38 @@ func TestCreateLoadBalancer(t *testing.T) {
 	for k, v := range lbc.clients {
 		client := v.(*fake.Clientset)
 		actions := client.Actions()
-		if len(actions) == 1 {
-			// The action should have been to fetch the ingress.
-			getIngName := actions[0].(core.GetAction).GetName()
-			if getIngName != ing.Name {
-				t.Errorf("unexpected get for %s, expected: %s", getIngName, ing.Name)
-			}
-		} else if len(actions) == 2 {
-			// First action should have been to fetch the service and second one should have been to fetch the ingress.
-			fetchedSvc = true
-			getSvcName := actions[0].(core.GetAction).GetName()
-			if getSvcName != "my-svc" {
-				t.Errorf("unexpected get for %s, expected: my-svc", getSvcName)
-			}
-			getIngName := actions[1].(core.GetAction).GetName()
-			if getIngName != ing.Name {
-				t.Errorf("unexpected get for %s, expected: %s", getIngName, ing.Name)
-			}
+		// Validation (same for each cluster):
+		//   1x GET-Service for path=/foo.
+		//   1x GET-Service for default backend.
+		// Start of setup (using a random cluster's client):
+		//   1x GET-Service for default backend.
+		//   1x GET-Service for path=/foo.
+		// The last action should always be GET-Ingress, once for each cluster.
+		// This is how we get 3 actions for 1 cluster and 5 actions for the other.
+		fetchedSvc = fetchedSvc || len(actions) == 5
+		if !(len(actions) == 3 || len(actions) == 5) {
+			t.Errorf("Bad number of actions for cluster '%s'. Expected 3 or 5. Got %d: %v", k, len(actions), actions)
 		} else {
-			t.Errorf("unexpected number of actions for client for cluster %s: %v", k, actions)
+			for i := 0; i < len(actions)-1; i++ {
+				getSvcName := actions[i].(core.GetAction).GetName()
+				if getSvcName != "my-svc" {
+					t.Errorf("unexpected get for %s, expected: my-svc", getSvcName)
+				}
+			}
+			getIngName := actions[len(actions)-1].(core.GetAction).GetName()
+			if getIngName != ing.Name {
+				t.Errorf("unexpected get for %s, expected: %s", getIngName, ing.Name)
+			}
 		}
 	}
 	if !fetchedSvc {
-		t.Errorf("None of the client was used to fetch the service")
+		t.Errorf("None of the clients were used to fetch the service")
 	}
 	// Verify that the expected healthcheck was created.
 	fhc := lbc.hcs.(*healthcheck.FakeHealthCheckSyncer)
-	if len(fhc.EnsuredHealthChecks) != 1 {
-		t.Fatalf("unexpected number of health checks. expected: %d, got: %d", 1, len(fhc.EnsuredHealthChecks))
+	if len(fhc.EnsuredHealthChecks) != 2 {
+		t.Errorf("unexpected number of health checks. expected: 2, got: %d: %+v", len(fhc.EnsuredHealthChecks),
+			fhc.EnsuredHealthChecks)
 	}
 	hc := fhc.EnsuredHealthChecks[0]
 	if hc.LBName != lbName || hc.Port.Port != nodePort {
@@ -125,8 +131,8 @@ func TestCreateLoadBalancer(t *testing.T) {
 	}
 	// Verify that the expected backend service was created.
 	fbs := lbc.bss.(*backendservice.FakeBackendServiceSyncer)
-	if len(fbs.EnsuredBackendServices) != 1 {
-		t.Fatalf("unexpected number of backend services. expected: %d, got: %d", 1, len(fbs.EnsuredBackendServices))
+	if len(fbs.EnsuredBackendServices) != 2 {
+		t.Errorf("unexpected number of backend services. expected: 2, got: %d", len(fbs.EnsuredBackendServices))
 	}
 	bs := fbs.EnsuredBackendServices[0]
 	if bs.LBName != lbName {
@@ -196,7 +202,66 @@ func TestCreateLoadBalancer(t *testing.T) {
 	}
 }
 
-func setupLBCForCreateIng(lbc *LoadBalancerSyncer, nodePort int64, igName, igZone, zoneLink string, ipAddress *compute.Address) (*v1beta1.Ingress, error) {
+func TestCreateLoadBalancerBadNodePortsValidate(t *testing.T) {
+	lbName := "lb-name"
+	igName := "my-fake-ig"
+	igZone := "my-fake-zone"
+	zoneLink := fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/fake-project/zones/%s", igZone)
+	clusters := []string{"cluster1", "cluster2"}
+	lbc := newLoadBalancerSyncer(lbName)
+	ipAddress := &compute.Address{
+		Name:    "ipAddressName",
+		Address: "1.2.3.4",
+	}
+	// Reserve a global address. User is supposed to do this before calling CreateLoadBalancer.
+	lbc.ipp.ReserveGlobalAddress(ipAddress)
+	ing, err := setupLBCForCreateIng(lbc, -1 /*nodePort*/, true /*randPort*/, igName, igZone, zoneLink, ipAddress)
+	if err != nil {
+		t.Fatalf("%s", err)
+	}
+	if err := lbc.CreateLoadBalancer(ing, true /*forceUpdate*/, true /*validate*/, clusters); err == nil {
+		t.Errorf("want: a validation error while creating load balancer: got: nil")
+	}
+	// Verify client actions.
+	for k, v := range lbc.clients {
+		client := v.(*fake.Clientset)
+		actions := client.Actions()
+		if len(actions) != 2 {
+			t.Errorf("Bad number of actions for cluster '%s'. Expected 1. Got %d: %+v", k, len(actions), actions)
+		} else {
+			for _, action := range actions {
+				getSvcName := action.(core.GetAction).GetName()
+				if getSvcName != "my-svc" {
+					t.Errorf("unexpected GET for '%s', expected: my-svc", getSvcName)
+				}
+			}
+		}
+	}
+}
+
+func TestCreateLoadBalancerBadNodePortsNoValidate(t *testing.T) {
+	lbName := "lb-name"
+	igName := "my-fake-ig"
+	igZone := "my-fake-zone"
+	zoneLink := fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/fake-project/zones/%s", igZone)
+	clusters := []string{"cluster1", "cluster2"}
+	lbc := newLoadBalancerSyncer(lbName)
+	ipAddress := &compute.Address{
+		Name:    "ipAddressName",
+		Address: "1.2.3.4",
+	}
+	// Reserve a global address. User is supposed to do this before calling CreateLoadBalancer.
+	lbc.ipp.ReserveGlobalAddress(ipAddress)
+	ing, err := setupLBCForCreateIng(lbc, -1 /*nodePort*/, true /*randPort*/, igName, igZone, zoneLink, ipAddress)
+	if err != nil {
+		t.Fatalf("%s", err)
+	}
+	if err := lbc.CreateLoadBalancer(ing, true /*forceUpdate*/, false /*validate*/, clusters); err != nil {
+		t.Errorf("expected no error Creating Load Balancer. Got: %s", err)
+	}
+}
+
+func setupLBCForCreateIng(lbc *LoadBalancerSyncer, nodePort int64, randNodePort bool, igName, igZone, zoneLink string, ipAddress *compute.Address) (*v1beta1.Ingress, error) {
 	portName := "my-port-name"
 	// Create ingress with instance groups annotation.
 	annotationsValue := []struct {
@@ -239,12 +304,21 @@ func setupLBCForCreateIng(lbc *LoadBalancerSyncer, nodePort int64, igName, igZon
 					},
 				},
 			},
+			Backend: &v1beta1.IngressBackend{
+				ServiceName: "my-svc",
+				ServicePort: intstr.FromInt(80),
+			},
 		},
 	}
+
 	for _, c := range lbc.clients {
 		client := c.(*fake.Clientset)
 		// Add a reaction to return a fake service.
 		client.AddReactor("get", "services", func(action core.Action) (handled bool, ret runtime.Object, err error) {
+			if randNodePort {
+				nodePort = int64(rand.Int31n(1000) + 30000)
+				glog.Infof("Using a randomized NodePort: %d", nodePort)
+			}
 			ret = &v1.Service{
 				Spec: v1.ServiceSpec{
 					Ports: []v1.ServicePort{
@@ -292,11 +366,11 @@ func TestDeleteLoadBalancer(t *testing.T) {
 	}
 	// Reserve a global address. User is supposed to do this before calling CreateLoadBalancer.
 	lbc.ipp.ReserveGlobalAddress(ipAddress)
-	ing, err := setupLBCForCreateIng(lbc, nodePort, igName, igZone, zoneLink, ipAddress)
+	ing, err := setupLBCForCreateIng(lbc, nodePort, false /*randNodePort*/, igName, igZone, zoneLink, ipAddress)
 	if err != nil {
 		t.Fatalf("unexpected error in test setup: %s", err)
 	}
-	if err := lbc.CreateLoadBalancer(ing, true /*forceUpdate*/, clusters); err != nil {
+	if err := lbc.CreateLoadBalancer(ing, true /*forceUpdate*/, true /*validate*/, clusters); err != nil {
 		t.Fatalf("unexpected error %s", err)
 	}
 	fhc := lbc.hcs.(*healthcheck.FakeHealthCheckSyncer)
@@ -361,11 +435,11 @@ func TestRemoveFromClusters(t *testing.T) {
 	}
 	// Reserve a global address. User is supposed to do this before calling CreateLoadBalancer.
 	lbc.ipp.ReserveGlobalAddress(ipAddress)
-	ing, err := setupLBCForCreateIng(lbc, nodePort, igName, igZone, zoneLink, ipAddress)
+	ing, err := setupLBCForCreateIng(lbc, nodePort, false /*randNodePort*/, igName, igZone, zoneLink, ipAddress)
 	if err != nil {
 		t.Fatalf("unexpected error in test setup: %s", err)
 	}
-	if err := lbc.CreateLoadBalancer(ing, true /*forceUpdate*/, clusters); err != nil {
+	if err := lbc.CreateLoadBalancer(ing, true /*forceUpdate*/, true /*validate*/, clusters); err != nil {
 		t.Fatalf("unexpected error %s", err)
 	}
 	fhc := lbc.hcs.(*healthcheck.FakeHealthCheckSyncer)

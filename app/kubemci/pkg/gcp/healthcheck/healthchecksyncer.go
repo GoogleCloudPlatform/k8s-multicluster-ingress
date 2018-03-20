@@ -169,7 +169,7 @@ func getJsonIgnoreErr(v interface{}) string {
 }
 
 func (h *HealthCheckSyncer) ensureHealthCheck(lbName string, port ingressbe.ServicePort, path string, forceUpdate bool) (*compute.HealthCheck, error) {
-	fmt.Println("Ensuring health check for port:", port)
+	fmt.Printf("Ensuring health check for port: %+v\n", port)
 	desiredHC, err := h.desiredHealthCheck(lbName, port, path)
 	if err != nil {
 		return nil, fmt.Errorf("error %s in computing desired health check", err)
