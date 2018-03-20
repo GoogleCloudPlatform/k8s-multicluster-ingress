@@ -22,13 +22,17 @@ import (
 
 	"github.com/golang/glog"
 	multierror "github.com/hashicorp/go-multierror"
+	"k8s.io/api/core/v1"
 	api_v1 "k8s.io/api/core/v1"
+	"k8s.io/api/extensions/v1beta1"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	kubeclient "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/ingress-gce/pkg/annotations"
 	ingressbe "k8s.io/ingress-gce/pkg/backends"
 )
 
@@ -216,4 +220,54 @@ func ObjectMetaAndSpecEquivalent(a, b runtime.Object, ignoreAnnotationKeys map[s
 	specA := reflect.ValueOf(a).Elem().FieldByName("Spec").Interface()
 	specB := reflect.ValueOf(b).Elem().FieldByName("Spec").Interface()
 	return ObjectMetaEquivalent(objectMetaA, objectMetaB, ignoreAnnotationKeys) && reflect.DeepEqual(specA, specB)
+}
+
+// GetServiceNodePort takes an IngressBackend and returns a corresponding ServicePort
+func GetServiceNodePort(be v1beta1.IngressBackend, namespace string, client kubeclient.Interface) (ingressbe.ServicePort, error) {
+	svc, err := getSvc(be.ServiceName, namespace, client)
+	// Refactor this code to get serviceport from a given service and share it with kubernetes/ingress.
+	appProtocols, err := annotations.FromService(svc).ApplicationProtocols()
+	if err != nil {
+		return ingressbe.ServicePort{}, err
+	}
+
+	var port *v1.ServicePort
+PortLoop:
+	for _, p := range svc.Spec.Ports {
+		np := p
+		switch be.ServicePort.Type {
+		case intstr.Int:
+			if p.Port == be.ServicePort.IntVal {
+				port = &np
+				break PortLoop
+			}
+		default:
+			if p.Name == be.ServicePort.StrVal {
+				port = &np
+				break PortLoop
+			}
+		}
+	}
+
+	if port == nil {
+		return ingressbe.ServicePort{}, fmt.Errorf("could not find matching nodeport for backend %+v and service %s/%s. Looking for port %+v in %v", be, namespace, be.ServiceName, be.ServicePort, svc.Spec.Ports)
+	}
+
+	proto := annotations.ProtocolHTTP
+	if protoStr, exists := appProtocols[port.Name]; exists {
+		glog.V(2).Infof("service %s/%s: using protocol to %q", namespace, be.ServiceName, protoStr)
+		proto = annotations.AppProtocol(protoStr)
+	}
+
+	p := ingressbe.ServicePort{
+		NodePort: int64(port.NodePort),
+		Protocol: proto,
+		SvcName:  types.NamespacedName{Namespace: namespace, Name: be.ServiceName},
+		SvcPort:  be.ServicePort,
+	}
+	glog.Infof("Found ServicePort: %+v", p)
+	return p, nil
+}
+func getSvc(svcName, nsName string, client kubeclient.Interface) (*v1.Service, error) {
+	return client.CoreV1().Services(nsName).Get(svcName, meta_v1.GetOptions{})
 }

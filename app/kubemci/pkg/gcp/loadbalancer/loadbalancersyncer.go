@@ -24,11 +24,8 @@ import (
 
 	"github.com/golang/glog"
 	multierror "github.com/hashicorp/go-multierror"
-	"k8s.io/api/core/v1"
 	"k8s.io/api/extensions/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/intstr"
 	kubeclient "k8s.io/client-go/kubernetes"
 	"k8s.io/ingress-gce/pkg/annotations"
 	ingressbe "k8s.io/ingress-gce/pkg/backends"
@@ -49,6 +46,8 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/targetproxy"
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/urlmap"
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/utils"
+	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/kubeutils"
+	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/validations"
 )
 
 const (
@@ -108,12 +107,24 @@ func NewLoadBalancerSyncer(lbName string, clients map[string]kubeclient.Interfac
 
 // CreateLoadBalancer creates the GCP resources necessary for an L7 GCP load balancer corresponding to the given ingress.
 // clusters is the list of clusters that this load balancer is spread to.
-func (l *LoadBalancerSyncer) CreateLoadBalancer(ing *v1beta1.Ingress, forceUpdate bool, clusters []string) error {
+func (l *LoadBalancerSyncer) CreateLoadBalancer(ing *v1beta1.Ingress, forceUpdate, validate bool, clusters []string) error {
 	client, cErr := getAnyClient(l.clients)
 	if cErr != nil {
 		// No point in continuing without a client.
 		return cErr
 	}
+
+	if validate {
+
+		if err := validations.Validate(l.clients, ing); err != nil {
+			glog.Errorf("Validation failed: %s", err)
+			return err
+		}
+		glog.Infof("Validation passed.")
+	} else {
+		fmt.Println("Validation skipped. (Set --validate to enable.)")
+	}
+
 	ports := l.ingToNodePorts(ing, client)
 	ipAddr, err := l.getIPAddress(ing)
 	if err != nil {
@@ -492,7 +503,7 @@ func (l *LoadBalancerSyncer) getNamedPortsForIG(igUrl string) (backendservice.Na
 	fmt.Printf("Fetched instance group: %s/%s, got named ports: ", zone, name)
 	namedPorts := backendservice.NamedPortsMap{}
 	for _, np := range ig.NamedPorts {
-		fmt.Printf("port: %v ", np)
+		fmt.Printf("port: %+v ", np)
 		namedPorts[np.Port] = np
 	}
 	fmt.Printf("\n")
@@ -502,7 +513,7 @@ func (l *LoadBalancerSyncer) ingToNodePorts(ing *v1beta1.Ingress, client kubecli
 	var knownPorts []ingressbe.ServicePort
 	defaultBackend := ing.Spec.Backend
 	if defaultBackend != nil {
-		port, err := l.getServiceNodePort(*defaultBackend, ing.Namespace, client)
+		port, err := kubeutils.GetServiceNodePort(*defaultBackend, ing.Namespace, client)
 		if err != nil {
 			glog.Errorf("%v", err)
 		} else {
@@ -511,11 +522,11 @@ func (l *LoadBalancerSyncer) ingToNodePorts(ing *v1beta1.Ingress, client kubecli
 	}
 	for _, rule := range ing.Spec.Rules {
 		if rule.HTTP == nil {
-			glog.Errorf("ignoring non http Ingress rule")
+			glog.Warningf("ignoring non http Ingress rule: %v", rule)
 			continue
 		}
 		for _, path := range rule.HTTP.Paths {
-			port, err := l.getServiceNodePort(path.Backend, ing.Namespace, client)
+			port, err := kubeutils.GetServiceNodePort(path.Backend, ing.Namespace, client)
 			if err != nil {
 				glog.Errorf("%v", err)
 				continue
@@ -524,54 +535,6 @@ func (l *LoadBalancerSyncer) ingToNodePorts(ing *v1beta1.Ingress, client kubecli
 		}
 	}
 	return knownPorts
-}
-
-func (l *LoadBalancerSyncer) getServiceNodePort(be v1beta1.IngressBackend, namespace string, client kubeclient.Interface) (ingressbe.ServicePort, error) {
-	svc, err := getSvc(be.ServiceName, namespace, client)
-	// Refactor this code to get serviceport from a given service and share it with kubernetes/ingress.
-	appProtocols, err := annotations.FromService(svc).ApplicationProtocols()
-	if err != nil {
-		return ingressbe.ServicePort{}, err
-	}
-
-	var port *v1.ServicePort
-PortLoop:
-	for _, p := range svc.Spec.Ports {
-		np := p
-		switch be.ServicePort.Type {
-		case intstr.Int:
-			if p.Port == be.ServicePort.IntVal {
-				port = &np
-				break PortLoop
-			}
-		default:
-			if p.Name == be.ServicePort.StrVal {
-				port = &np
-				break PortLoop
-			}
-		}
-	}
-
-	if port == nil {
-		return ingressbe.ServicePort{}, fmt.Errorf("could not find matching nodeport for backend %+v and service %s/%s. Looking for port %+v in %v", be, namespace, be.ServiceName, be.ServicePort, svc.Spec.Ports)
-	}
-
-	proto := annotations.ProtocolHTTP
-	if protoStr, exists := appProtocols[port.Name]; exists {
-		proto = annotations.AppProtocol(protoStr)
-	}
-
-	p := ingressbe.ServicePort{
-		NodePort: int64(port.NodePort),
-		Protocol: proto,
-		SvcName:  types.NamespacedName{Namespace: namespace, Name: be.ServiceName},
-		SvcPort:  be.ServicePort,
-	}
-	return p, nil
-}
-
-func getSvc(svcName, nsName string, client kubeclient.Interface) (*v1.Service, error) {
-	return client.CoreV1().Services(nsName).Get(svcName, metav1.GetOptions{})
 }
 
 func getIng(ingName, nsName string, client kubeclient.Interface) (*v1beta1.Ingress, error) {
@@ -586,6 +549,7 @@ func getAnyClient(clients map[string]kubeclient.Interface) (kubeclient.Interface
 	}
 	// Return the client for any cluster.
 	for k := range clients {
+		glog.Infof("getAnyClient: using client for cluster %s", k)
 		return clients[k], nil
 	}
 	return nil, nil
