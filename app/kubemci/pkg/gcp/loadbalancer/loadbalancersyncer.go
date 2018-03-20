@@ -105,14 +105,85 @@ func NewLoadBalancerSyncer(lbName string, clients map[string]kubeclient.Interfac
 	}, nil
 }
 
+// ServicesNodePortsSame checks that for each backend/service, the services are
+// all listening on the same NodePort.
+func (l *LoadBalancerSyncer) ServicesNodePortsSame(clients map[string]kubeclient.Interface, ing *v1beta1.Ingress) error {
+	for _, rule := range ing.Spec.Rules {
+		if rule.HTTP == nil {
+			glog.Errorf("ignoring non http Ingress rule")
+			continue
+		}
+		for _, path := range rule.HTTP.Paths {
+			glog.Infof("Validating path:%s", path.Path)
+			if err := l.NodePortSameInAllClusters(path.Backend, ing.Namespace); err != nil {
+				return fmt.Errorf("NodePort validation error for service '%s/%s': %s", ing.Namespace, path.Backend.ServiceName, err)
+			}
+
+		}
+	}
+	glog.Infof("Checking default backend's nodeports.")
+
+	if ing.Spec.Backend != nil {
+		if err := l.NodePortSameInAllClusters(*ing.Spec.Backend, ing.Namespace); err != nil {
+			glog.Errorf("Node port mismatch on default service: %s", err)
+			return err
+		}
+		glog.Infof("Default backend's nodeports passed validation.")
+	} else {
+		return fmt.Errorf("Ingress Spec is missing default backend")
+	}
+	return nil
+}
+
+// NodePortSameInAllClusters checks that the given backend's service is running
+// on the same NodePort in all clusters (defined by l.Clients).
+func (l *LoadBalancerSyncer) NodePortSameInAllClusters(backend v1beta1.IngressBackend, namespace string) error {
+	var node_port int64 = -1
+	var first_cluster_name string
+	for client_name, client := range l.clients {
+		glog.Infof("Checking client/cluster: %s", client_name)
+
+		service_port, err := l.getServiceNodePort(backend, namespace, client)
+		if err != nil {
+			glog.Errorf("Could not get service NodePort in cluster %s: %s", client_name, err)
+			return err
+		}
+		glog.Infof("Service's servicePort: %+v", service_port)
+		// The NodePort is stored in 'Port' by getServiceNodePort.
+		cluster_node_port := service_port.Port
+
+		if node_port == -1 {
+			node_port = cluster_node_port
+			first_cluster_name = client_name
+			continue
+		}
+		if cluster_node_port != node_port {
+			return fmt.Errorf("some Services (e.g. in '%s') are on NodePort %v, but '%s' is on %v. All clusters must use same NodePort",
+				first_cluster_name, node_port, client_name, cluster_node_port)
+		}
+	}
+	return nil
+}
+
 // CreateLoadBalancer creates the GCP resources necessary for an L7 GCP load balancer corresponding to the given ingress.
 // clusters is the list of clusters that this load balancer is spread to.
-func (l *LoadBalancerSyncer) CreateLoadBalancer(ing *v1beta1.Ingress, forceUpdate bool, clusters []string) error {
+func (l *LoadBalancerSyncer) CreateLoadBalancer(ing *v1beta1.Ingress, forceUpdate, validate bool, clusters []string) error {
 	client, cErr := getAnyClient(l.clients)
 	if cErr != nil {
 		// No point in continuing without a client.
 		return cErr
 	}
+
+	if validate {
+		if err := l.ServicesNodePortsSame(l.clients, ing); err != nil {
+			glog.Errorf("Validation of service NodePorts failed: %s", err)
+			return err
+		}
+		glog.Infof("Validation of NodePorts passed.")
+	} else {
+		fmt.Println("Validation skipped. (Set --validate to enable.)")
+	}
+
 	ports := l.ingToNodePorts(ing, client)
 	ipAddr, err := l.getIPAddress(ing)
 	if err != nil {
@@ -455,7 +526,7 @@ func (l *LoadBalancerSyncer) getNamedPortsForIG(igUrl string) (backendservice.Na
 	fmt.Printf("Fetched instance group: %s/%s, got named ports: ", zone, name)
 	namedPorts := backendservice.NamedPortsMap{}
 	for _, np := range ig.NamedPorts {
-		fmt.Printf("port: %v ", np)
+		fmt.Printf("port: %+v ", np)
 		namedPorts[np.Port] = np
 	}
 	fmt.Printf("\n")
@@ -489,6 +560,7 @@ func (l *LoadBalancerSyncer) ingToNodePorts(ing *v1beta1.Ingress, client kubecli
 	return knownPorts
 }
 
+// getServiceNodePort takes an IngressBackend and returns a corresponding ServicePort
 func (l *LoadBalancerSyncer) getServiceNodePort(be v1beta1.IngressBackend, namespace string, client kubeclient.Interface) (ingressbe.ServicePort, error) {
 	svc, err := getSvc(be.ServiceName, namespace, client)
 	// Refactor this code to get serviceport from a given service and share it with kubernetes/ingress.
@@ -521,6 +593,7 @@ PortLoop:
 
 	proto := ingressutils.ProtocolHTTP
 	if protoStr, exists := appProtocols[port.Name]; exists {
+		glog.Infof("changing protocol to %q", protoStr)
 		proto = ingressutils.AppProtocol(protoStr)
 	}
 
@@ -530,6 +603,7 @@ PortLoop:
 		SvcName:  types.NamespacedName{Namespace: namespace, Name: be.ServiceName},
 		SvcPort:  be.ServicePort,
 	}
+	glog.Infof("Found ServicePort: %+v", p)
 	return p, nil
 }
 
@@ -549,6 +623,7 @@ func getAnyClient(clients map[string]kubeclient.Interface) (kubeclient.Interface
 	}
 	// Return the client for any cluster.
 	for k := range clients {
+		glog.Infof("getAnyClient: using client for cluster %s", k)
 		return clients[k], nil
 	}
 	return nil, nil
