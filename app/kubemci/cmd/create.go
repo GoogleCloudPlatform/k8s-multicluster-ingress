@@ -56,6 +56,8 @@ type CreateOptions struct {
 	// the resource does not exist, or is already the correct
 	// value, then 'force' is a no-op.
 	ForceUpdate bool
+	// Validation of Ingress spec and Kubernetes Services setup.
+	Validate bool
 	// Name of the namespace for the ingress when none is provided (mismatch of option with spec causes an error).
 	// Optional.
 	Namespace string
@@ -66,6 +68,8 @@ type CreateOptions struct {
 
 func NewCmdCreate(out, err io.Writer) *cobra.Command {
 	var options CreateOptions
+	// Enable validation by default.
+	options.Validate = true
 
 	cmd := &cobra.Command{
 		Use:   "create [lbname]",
@@ -95,6 +99,7 @@ func addCreateFlags(cmd *cobra.Command, options *CreateOptions) error {
 	// TODO(nikhiljindal): Add a short flag "-p" if it seems useful.
 	cmd.Flags().StringVarP(&options.GCPProject, "gcp-project", "", options.GCPProject, "[optional] name of the gcp project. Is fetched using gcloud config get-value project if unset here")
 	cmd.Flags().BoolVarP(&options.ForceUpdate, "force", "f", options.ForceUpdate, "[optional] overwrite existing settings if they are different")
+	cmd.Flags().BoolVarP(&options.Validate, "validate", "", options.Validate, "[optional] If enabled (default), do some validation checks and potentially return an error, before creating load balancer")
 	cmd.Flags().StringVarP(&options.Namespace, "namespace", "n", options.Namespace, "[optional] namespace for the ingress only if left unspecified by ingress spec")
 	cmd.Flags().StringVarP(&options.StaticIPName, "static-ip", "", options.StaticIPName, "[optional] Global Static IP name to use only if left unspecified by ingress spec")
 	return nil
@@ -154,5 +159,5 @@ func runCreate(options *CreateOptions, args []string) error {
 	if err != nil {
 		return err
 	}
-	return lbs.CreateLoadBalancer(&ing, options.ForceUpdate, clusters)
+	return lbs.CreateLoadBalancer(&ing, options.ForceUpdate, options.Validate, clusters)
 }
