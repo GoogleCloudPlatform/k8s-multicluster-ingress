@@ -61,3 +61,28 @@ func (h *FakeBackendServiceSyncer) DeleteBackendServices(ports []ingressbe.Servi
 	h.EnsuredBackendServices = nil
 	return nil
 }
+
+func (h *FakeBackendServiceSyncer) RemoveFromClusters(ports []ingressbe.ServicePort, removeIGLinks []string) error {
+	// Convert array to maps for easier lookups.
+	affectedPorts := make(map[int64]bool, len(ports))
+	for _, v := range ports {
+		affectedPorts[v.Port] = true
+	}
+	removeLinks := make(map[string]bool, len(removeIGLinks))
+	for _, v := range removeIGLinks {
+		removeLinks[v] = true
+	}
+	for _, v := range h.EnsuredBackendServices {
+		if _, has := affectedPorts[v.Port.Port]; !has {
+			continue
+		}
+		newIGLinks := []string{}
+		for _, ig := range v.IGLinks {
+			if _, has := removeLinks[ig]; !has {
+				newIGLinks = append(newIGLinks, ig)
+			}
+		}
+		v.IGLinks = newIGLinks
+	}
+	return nil
+}

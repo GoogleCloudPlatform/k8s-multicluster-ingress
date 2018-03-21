@@ -89,6 +89,38 @@ func (b *BackendServiceSyncer) DeleteBackendServices(ports []ingressbe.ServicePo
 	return nil
 }
 
+// See interface for comment.
+func (b *BackendServiceSyncer) RemoveFromClusters(ports []ingressbe.ServicePort, removeIGLinks []string) error {
+	fmt.Println("Removing backend services from clusters")
+	var err error
+	for _, p := range ports {
+		if beErr := b.removeFromClusters(p, removeIGLinks); beErr != nil {
+			beErr = fmt.Errorf("Error %s in removing backend service for port %v", beErr, p)
+			fmt.Printf("Error in removing backend service for port %v: %v. Continuing.\n", p, beErr)
+			// Try removing backend services for all ports and return all errors at once.
+			err = multierror.Append(err, beErr)
+			continue
+		}
+	}
+	return err
+}
+
+func (b *BackendServiceSyncer) removeFromClusters(port ingressbe.ServicePort, removeIGLinks []string) error {
+	name := b.namer.BeServiceName(port.Port)
+
+	existingBE, err := b.bsp.GetGlobalBackendService(name)
+	if err != nil {
+		err := fmt.Errorf("error in fetching existing backend service %s: %s", name, err)
+		fmt.Println(err)
+		return err
+	}
+	// Remove clusters from the backend service.
+	desiredBE := b.desiredBackendServiceWithoutClusters(existingBE, removeIGLinks)
+	glog.V(5).Infof("Existing backend service: %v\n, desired: %v\n", *existingBE, *desiredBE)
+	_, err = b.updateBackendService(desiredBE)
+	return err
+}
+
 func (b *BackendServiceSyncer) deleteBackendService(port ingressbe.ServicePort) error {
 	name := b.namer.BeServiceName(port.Port)
 	glog.V(2).Infof("Deleting backend service %s", name)
@@ -236,6 +268,25 @@ func (b *BackendServiceSyncer) desiredBackendService(lbName string, port ingress
 		SessionAffinity:     "NONE",
 		TimeoutSec:          30,
 	}
+}
+
+// desiredBackendServiceWithoutClusters returns the desired backend service after removing the given instance groups from the given existing backend service.
+func (b *BackendServiceSyncer) desiredBackendServiceWithoutClusters(existingBE *compute.BackendService, removeIGLinks []string) *compute.BackendService {
+	// Compute the backends to be removed.
+	removeBackends := desiredBackends(removeIGLinks)
+	removeBackendsMap := map[string]bool{}
+	for _, v := range removeBackends {
+		removeBackendsMap[v.Group] = true
+	}
+	var newBackends []*compute.Backend
+	for _, v := range existingBE.Backends {
+		if !removeBackendsMap[v.Group] {
+			newBackends = append(newBackends, v)
+		}
+	}
+	desiredBE := existingBE
+	desiredBE.Backends = newBackends
+	return desiredBE
 }
 
 func desiredBackends(igLinks []string) []*compute.Backend {

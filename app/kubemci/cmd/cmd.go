@@ -40,6 +40,7 @@ func NewCommand(in io.Reader, out, err io.Writer) *cobra.Command {
 		NewCmdGetStatus(out, err),
 		NewCmdGetVersion(out, err),
 		newCmdList(out, err),
+		newCmdRemoveClusters(out, err),
 	)
 	rootCmd.PersistentFlags().AddGoFlagSet(flag.CommandLine)
 	return rootCmd

@@ -87,6 +87,34 @@ func (s *FirewallRuleSyncer) DeleteFirewallRules() error {
 	}
 }
 
+// See interface comment.
+func (s *FirewallRuleSyncer) RemoveFromClusters(lbName string, removeIGLinks map[string][]string) error {
+	fmt.Println("Removing clusters from firewall rule")
+	glog.V(5).Infof("Received instance groups: %v", removeIGLinks)
+	err := s.removeFromClusters(lbName, removeIGLinks)
+	if err != nil {
+		return fmt.Errorf("Error in removing clusters from firewall rule: %s", err)
+	}
+	return nil
+}
+
+func (s *FirewallRuleSyncer) removeFromClusters(lbName string, removeIGLinks map[string][]string) error {
+	name := s.namer.FirewallRuleName()
+	existingFW, err := s.fwp.GetFirewall(name)
+	if err != nil {
+		err := fmt.Errorf("error in fetching existing firewall rule %s: %s", name, err)
+		fmt.Println(err)
+		return err
+	}
+	// Remove clusters from the firewall rule.
+	desiredFW, err := s.desiredFirewallRuleWithoutClusters(existingFW, removeIGLinks)
+	if err != nil {
+		return err
+	}
+	glog.V(5).Infof("Existing firewall rule: %v\n, desired firewall rule: %v\n", *existingFW, *desiredFW)
+	return s.updateFirewallRule(desiredFW)
+}
+
 // ensureFirewallRule ensures that the required firewall rule exists for the given ports.
 // Does nothing if it exists already, else creates a new one.
 func (s *FirewallRuleSyncer) ensureFirewallRule(lbName string, ports []ingressbe.ServicePort, igLinks map[string][]string, forceUpdate bool) error {
@@ -213,6 +241,46 @@ func (s *FirewallRuleSyncer) desiredFirewallRule(lbName string, ports []ingressb
 		Direction:  "INGRESS",
 		Network:    network,
 	}, nil
+}
+
+func (s *FirewallRuleSyncer) desiredFirewallRuleWithoutClusters(existingFW *compute.Firewall, removeIGLinks map[string][]string) (*compute.Firewall, error) {
+	// Compute the target tags that need to be removed for the given instance groups.
+	instances, err := s.getInstances(removeIGLinks)
+	if err != nil {
+		return nil, err
+	}
+	// This assumes that the ordering of target tags has not changed on these instances.
+	// A potential solution to that problem is to recompute the target tags for the existing clusters,
+	// rather than removing the ones for old clusters.
+	// But we do not want to change existing tags for clusters that are already working.
+	// Ideally network tags should only be appended to, so this should not be a problem.
+	// TODO(nikhiljindal): Fix this if it becomes a problem:
+	// https://github.com/GoogleCloudPlatform/k8s-multicluster-ingress/issues/147
+	targetTags, err := s.getTargetTags(instances)
+	if err != nil {
+		return nil, err
+	}
+	existingTargetTags := existingFW.TargetTags
+	glog.V(3).Infof("Removing target tags %q from existing target tags %q", targetTags, existingTargetTags)
+	// Compute target tags as existingTargetTags - targetTags.
+	// Note: This assumes that all target tags are unique and no two instances from different clusters share the same target tag.
+	// If that is false, then opening a firewall rule for instances in one cluster will open instances from other cluster as well.
+	// Similarly, removing one cluster will remove the other cluster as well.
+	removeTags := map[string]bool{}
+	for _, v := range targetTags {
+		removeTags[v] = true
+	}
+	var newTargetTags []string
+	for _, v := range existingTargetTags {
+		if !removeTags[v] {
+			newTargetTags = append(newTargetTags, v)
+		}
+	}
+	// Sort the tags to have a deterministic order.
+	sort.Strings(newTargetTags)
+	desiredFW := existingFW
+	desiredFW.TargetTags = newTargetTags
+	return desiredFW, nil
 }
 
 // Returns an array of instances, with an instance from each cluster.

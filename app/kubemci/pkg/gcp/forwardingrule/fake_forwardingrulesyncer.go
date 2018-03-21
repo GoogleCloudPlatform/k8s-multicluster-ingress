@@ -92,3 +92,20 @@ func (f *FakeForwardingRuleSyncer) ListLoadBalancerStatuses() ([]status.LoadBala
 	}
 	return ret, nil
 }
+
+func (f *FakeForwardingRuleSyncer) RemoveClustersFromStatus(clusters []string) error {
+	removeClusters := make(map[string]bool, len(clusters))
+	for _, c := range clusters {
+		removeClusters[c] = true
+	}
+	for i, fr := range f.EnsuredForwardingRules {
+		newClusters := []string{}
+		for _, c := range fr.Clusters {
+			if _, has := removeClusters[c]; !has {
+				newClusters = append(newClusters, c)
+			}
+		}
+		f.EnsuredForwardingRules[i].Clusters = newClusters
+	}
+	return nil
+}

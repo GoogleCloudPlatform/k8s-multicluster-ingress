@@ -127,10 +127,22 @@ func (l *LoadBalancerSyncer) CreateLoadBalancer(ing *v1beta1.Ingress, forceUpdat
 		fmt.Println(hcErr)
 		err = multierror.Append(err, hcErr)
 	}
-	igs, namedPorts, igErr := l.getIGsAndNamedPorts(ing)
-	// Cant really create any backend service without named ports. No point continuing.
+	igs, igErr := l.getIGs(ing, l.clients)
 	if igErr != nil {
-		return multierror.Append(err, igErr)
+		err = multierror.Append(err, igErr)
+	}
+	namedPorts, portsErr := l.getNamedPorts(igs)
+	if portsErr != nil {
+		err = multierror.Append(err, portsErr)
+	}
+	// Can not really create any backend service without named ports and instance groups. No point continuing.
+	if len(igs) == 0 {
+		err = multierror.Append(err, fmt.Errorf("No instance group found. Can not continue"))
+		return err
+	}
+	if len(namedPorts) == 0 {
+		err = multierror.Append(err, fmt.Errorf("No named ports found. Can not continue"))
+		return err
 	}
 	igsForBE := []string{}
 	for k := range igs {
@@ -205,8 +217,8 @@ func (l *LoadBalancerSyncer) CreateLoadBalancer(ing *v1beta1.Ingress, forceUpdat
 }
 
 // DeleteLoadBalancer deletes the GCP resources associated with the L7 GCP load balancer for the given ingress.
+// TODO(nikhiljindal): Do not require the ingress yaml from users. Just the name should be enough. We can fetch ingress YAML from one of the clusters.
 func (l *LoadBalancerSyncer) DeleteLoadBalancer(ing *v1beta1.Ingress) error {
-	// TODO(nikhiljindal): Dont require the ingress yaml from users. Just the name should be enough. We can fetch ingress YAML from one of the clusters.
 	client, cErr := getAnyClient(l.clients)
 	if cErr != nil {
 		// No point in continuing without a client.
@@ -246,6 +258,60 @@ func (l *LoadBalancerSyncer) DeleteLoadBalancer(ing *v1beta1.Ingress) error {
 		// Aggregate errors and return all at the end.
 		err = multierror.Append(err, hcErr)
 	}
+	return err
+}
+
+// DeleteLoadBalancer deletes the GCP resources associated with the L7 GCP load balancer for the given ingress.
+// TODO(nikhiljindal): Do not require the ingress yaml from users. Just the name should be enough. We can fetch ingress YAML from one of the clusters.
+func (l *LoadBalancerSyncer) RemoveFromClusters(ing *v1beta1.Ingress, removeClients map[string]kubeclient.Interface, forceUpdate bool) error {
+	client, cErr := getAnyClient(l.clients)
+	if cErr != nil {
+		// No point in continuing without a client.
+		return cErr
+	}
+	var err error
+	ports := l.ingToNodePorts(ing, client)
+	removeIGLinks, igErr := l.getIGs(ing, removeClients)
+	if igErr != nil {
+		return multierror.Append(err, igErr)
+	}
+	// Can not really update any resource without igs. No point continuing.
+	// Note: User can run into this if they are trying to remove their already deleted clusters.
+	// TODO: Allow them to proceed to clean up whatever they can by using --force.
+	if len(removeIGLinks) == 0 {
+		err := multierror.Append(err, fmt.Errorf("No instance group found. Can not continue"))
+		return err
+	}
+
+	if fwErr := l.fws.RemoveFromClusters(l.lbName, removeIGLinks); fwErr != nil {
+		// Aggregate errors and return all at the end.
+		err = multierror.Append(err, fwErr)
+	}
+
+	// Convert the map of instance groups to a flat array.
+	igsForBE := []string{}
+	for k := range removeIGLinks {
+		igsForBE = append(igsForBE, removeIGLinks[k]...)
+	}
+
+	if beErr := l.bss.RemoveFromClusters(ports, igsForBE); beErr != nil {
+		// Aggregate errors and return all at the end.
+		err = multierror.Append(err, beErr)
+	}
+
+	// Convert the client map to an array of cluster names.
+	removeClusters := make([]string, len(removeClients))
+	removeIndex := 0
+	for k := range removeClients {
+		removeClusters[removeIndex] = k
+		removeIndex++
+	}
+	// Update the forwarding rule status at the end.
+	if frErr := l.frs.RemoveClustersFromStatus(removeClusters); frErr != nil {
+		// Aggregate errors and return all at the end.
+		err = multierror.Append(err, frErr)
+	}
+
 	return err
 }
 
@@ -298,39 +364,42 @@ func (l *LoadBalancerSyncer) getIPAddress(ing *v1beta1.Ingress) (string, error) 
 	return ip.Address, nil
 }
 
-// Returns links to all instance groups and named ports on any one of them.
-// Note that it picks an instance group at random and returns the named ports for that instance group, assuming that the named ports are same on all instance groups.
-// Also note that this returns all named ports on the instance group and not just the ones relevant to the given ingress.
-func (l *LoadBalancerSyncer) getIGsAndNamedPorts(ing *v1beta1.Ingress) (map[string][]string, backendservice.NamedPortsMap, error) {
+// Returns links to all instance groups corresponding the given ingress for the given clients.
+func (l *LoadBalancerSyncer) getIGs(ing *v1beta1.Ingress, clients map[string]kubeclient.Interface) (map[string][]string, error) {
 	var err error
 	igs := make(map[string][]string, len(l.clients))
-	var igFromLastCluster string
 	// Get instance groups from all clusters.
-	for cluster, client := range l.clients {
-		igsFromCluster, getIGsErr := l.getIGs(ing, client, cluster)
+	for cluster, client := range clients {
+		igsFromCluster, getIGsErr := getIGsForCluster(ing, client, cluster)
 		if getIGsErr != nil {
 			err = multierror.Append(err, getIGsErr)
 			continue
 		}
 		igs[cluster] = igsFromCluster
-		igFromLastCluster = igsFromCluster[0]
 	}
-	if len(igs) == 0 {
-		err = multierror.Append(err, fmt.Errorf("Cannot fetch named ports since fetching instance groups failed"))
-		return nil, backendservice.NamedPortsMap{}, err
-	}
-	// Compute named ports for igs from the last cluster.
-	// We can compute it from any instance group, all are expected to have the same named ports.
-	namedPorts, namedPortsErr := l.getNamedPorts(igFromLastCluster)
-	if namedPortsErr != nil {
-		err = multierror.Append(err, namedPortsErr)
-	}
-	return igs, namedPorts, err
+	return igs, err
 }
 
-// Returns the instance groups corresponding to the given ingress.
-// It fetches the given ingress from all clusters and extracts the instance group annotations on them to get the list of instance groups.
-func (l *LoadBalancerSyncer) getIGs(ing *v1beta1.Ingress, client kubeclient.Interface, cluster string) ([]string, error) {
+// Returns named ports on an instance from the given list.
+// Note that it picks an instance group at random and returns the named ports for that instance group, assuming that the named ports are same on all instance groups.
+// Also note that this returns all named ports on the instance group and not just the ones relevant to the given ingress.
+func (l *LoadBalancerSyncer) getNamedPorts(igs map[string][]string) (backendservice.NamedPortsMap, error) {
+	if len(igs) == 0 {
+		return backendservice.NamedPortsMap{}, fmt.Errorf("Cannot fetch named ports since instance groups list is empty")
+	}
+
+	// Pick an IG at random.
+	var ig string
+	for _, v := range igs {
+		ig = v[0]
+		break
+	}
+	return l.getNamedPortsForIG(ig)
+}
+
+// Returns the instance groups corresponding to the given cluster.
+// It fetches the given ingress from the cluster and extracts the instance group annotations on it to get the list of instance groups.
+func getIGsForCluster(ing *v1beta1.Ingress, client kubeclient.Interface, cluster string) ([]string, error) {
 	fmt.Println("Determining instance groups for cluster", cluster)
 	key := annotations.InstanceGroupsAnnotationKey
 	// Keep trying until ingress gets the instance group annotation.
@@ -373,7 +442,7 @@ func (l *LoadBalancerSyncer) getIGs(ing *v1beta1.Ingress, client kubeclient.Inte
 	return nil, nil
 }
 
-func (l *LoadBalancerSyncer) getNamedPorts(igUrl string) (backendservice.NamedPortsMap, error) {
+func (l *LoadBalancerSyncer) getNamedPortsForIG(igUrl string) (backendservice.NamedPortsMap, error) {
 	zone, name, err := utils.GetZoneAndNameFromIGUrl(igUrl)
 	if err != nil {
 		return nil, err

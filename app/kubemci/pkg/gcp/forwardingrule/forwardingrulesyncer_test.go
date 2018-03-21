@@ -15,6 +15,7 @@
 package forwardingrule
 
 import (
+	"fmt"
 	"reflect"
 	"testing"
 
@@ -521,4 +522,95 @@ func TestGetLoadBalancerStatus(t *testing.T) {
 			}
 		}
 	}
+}
+
+// Tests that the Load Balancer status contains the expected data (mci metadata).
+func TestRemoveClustersFromStatus(t *testing.T) {
+	lbName := "lb-name"
+	ipAddr := "1.2.3.4"
+	tpLink := "fakeLink"
+	clusters := []string{"cluster1", "cluster2"}
+	// Should create the forwarding rule as expected.
+	frp := ingresslb.NewFakeLoadBalancers("" /*name*/, nil /*namer*/)
+	namer := utilsnamer.NewNamer("mci1", lbName)
+	frs := NewForwardingRuleSyncer(namer, frp)
+	testCases := []struct {
+		// Should the http forwarding rule be created.
+		http bool
+		// Should the https forwarding rule be created.
+		https     bool
+		shouldErr bool
+	}{
+		{
+			http:      true,
+			https:     false,
+			shouldErr: false,
+		},
+		{
+			http:      false,
+			https:     true,
+			shouldErr: false,
+		},
+		{
+			http:      true,
+			https:     true,
+			shouldErr: false,
+		},
+		{
+			http:      false,
+			https:     false,
+			shouldErr: true,
+		},
+	}
+	for i, c := range testCases {
+		glog.Infof("===============testing case: %d=================", i)
+		if c.http {
+			// Ensure http forwarding rule.
+			if err := frs.EnsureHttpForwardingRule(lbName, ipAddr, tpLink, clusters, false /*force*/); err != nil {
+				t.Errorf("expected no error in ensuring http forwarding rule, actual: %v", err)
+			}
+		}
+		if c.https {
+			// Ensure https forwarding rule.
+			if err := frs.EnsureHttpsForwardingRule(lbName, ipAddr, tpLink, clusters, false /*force*/); err != nil {
+				t.Errorf("expected no error in ensuring https forwarding rule, actual: %v", err)
+			}
+		}
+		if err := verifyClusters(lbName, frs, c.shouldErr, clusters); err != nil {
+			t.Errorf("%s", err)
+		}
+		// Update status to remove one cluster.
+		if err := frs.RemoveClustersFromStatus([]string{"cluster1"}); err != nil {
+			t.Errorf("unexpected error in updating status to remove clusters: %s", err)
+		}
+		// Verify that status description has only one cluster now.
+		if err := verifyClusters(lbName, frs, c.shouldErr, []string{"cluster2"}); err != nil {
+			t.Errorf("%s", err)
+		}
+
+		if !c.shouldErr {
+			// Delete the forwarding rules if we created at least one.
+			if c.http || c.https {
+				if err := frs.DeleteForwardingRules(); err != nil {
+					t.Errorf("unexpeted error in deleting forwarding rules: %s", err)
+				}
+			}
+		}
+	}
+}
+
+// verifyClusters verifies that the given load balancer has the expected clusters in status.
+// Returns error otherwise.
+func verifyClusters(lbName string, frs ForwardingRuleSyncerInterface, shouldErr bool, expectedClusters []string) error {
+	status, err := frs.GetLoadBalancerStatus(lbName)
+	if shouldErr != (err != nil) {
+		return fmt.Errorf("unexpected error in getting status description for load balancer %s, expected err != nil: %v, actual err: %s", lbName, shouldErr, err)
+	}
+	if !shouldErr && err != nil {
+		// Verify that status description has both the clusters
+		if !reflect.DeepEqual(status.Clusters, expectedClusters) {
+			return fmt.Errorf("unexpected list of clusters, expected: %v, got: %v", expectedClusters, status.Clusters)
+		}
+	}
+	return nil
 }

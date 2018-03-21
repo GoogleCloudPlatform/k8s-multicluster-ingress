@@ -1,4 +1,4 @@
-// Copyright 2017 Google Inc.
+// Copyright 2018 Google, Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -32,70 +32,74 @@ import (
 )
 
 var (
-	deleteShortDescription = "Delete a multicluster ingress."
-	deleteLongDescription  = `Delete a multicluster ingress.
+	removeClustersShortDesc = "Remove an existing multicluster ingress from some clusters."
+	removeClustersLongDesc  = `Remove an existing multicluster ingress from some clusters.
 
-	Takes an ingress spec and a list of clusters and deletes the multicluster ingress targetting those clusters.
-	`
+	Takes a load balancer name and a list of clusters and removes the existing multicluster ingress from those clusters.
+	If the clusters have already been deleted, you can run "kubemci create --force" with the updated cluster list to update the
+	load balancer to be restricted to those clusters. That will however not delete the ingress from old clusters (which is fine
+	if the clusters have been deleted already).
+`
 )
 
-type DeleteOptions struct {
+type removeClustersOptions struct {
 	// Name of the YAML file containing ingress spec.
+	// Required.
 	IngressFilename string
 	// Path to kubeconfig file.
+	// Required.
 	KubeconfigFilename string
 	// Names of the contexts to use from the kubeconfig file.
 	KubeContexts []string
 	// Name of the load balancer.
 	// Required.
 	LBName string
-	// Name of the GCP project in which the load balancer should be configured.
-	// Required
-	// TODO(nikhiljindal): This should be optional. Figure it out from gcloud settings.
+	// Name of the GCP project in which the load balancer is configured.
 	GCPProject string
+	// Overwrite values when they differ from what's requested. If
+	// the resource does not exist, or is already the correct
+	// value, then 'force' is a no-op.
+	ForceUpdate bool
 	// Name of the namespace for the ingress when none is provided (mismatch of option with spec causes an error).
-	// Optional.
 	Namespace string
 }
 
-func NewCmdDelete(out, err io.Writer) *cobra.Command {
-	var options DeleteOptions
-
+func newCmdRemoveClusters(out, err io.Writer) *cobra.Command {
+	var options removeClustersOptions
 	cmd := &cobra.Command{
-		Use:   "delete [lbname]",
-		Short: deleteShortDescription,
-		Long:  deleteLongDescription,
-		// TODO(nikhiljindal): Add an example.
+		Use:   "remove-clusters",
+		Short: removeClustersShortDesc,
+		Long:  removeClustersLongDesc,
 		Run: func(cmd *cobra.Command, args []string) {
-			if err := validateDeleteArgs(&options, args); err != nil {
+			if err := validateRemoveClustersArgs(&options, args); err != nil {
 				fmt.Println(err)
 				return
 			}
-			if err := runDelete(&options, args); err != nil {
-				fmt.Println("Error in deleting load balancer:", err)
+			if err := runRemoveClusters(&options, args); err != nil {
+				fmt.Println("Error removing clusters:", err)
+				return
 			}
 		},
 	}
-	addDeleteFlags(cmd, &options)
+	addRemoveClustersFlags(cmd, &options)
 	return cmd
 }
 
-func addDeleteFlags(cmd *cobra.Command, options *DeleteOptions) error {
+func addRemoveClustersFlags(cmd *cobra.Command, options *removeClustersOptions) error {
 	cmd.Flags().StringVarP(&options.IngressFilename, "ingress", "i", options.IngressFilename, "[required] filename containing ingress spec")
 	cmd.Flags().StringVarP(&options.KubeconfigFilename, "kubeconfig", "k", options.KubeconfigFilename, "[required] path to kubeconfig file")
-	cmd.Flags().StringSliceVar(&options.KubeContexts, "kubecontexts", options.KubeContexts, "[optional] contexts in the kubeconfig file to delete the ingress from")
-	// TODO(nikhiljindal): Add a short flag "-p" if it seems useful.
-	cmd.Flags().StringVarP(&options.GCPProject, "gcp-project", "", options.GCPProject, "[optional] name of the gcp project. Is fetched using gcloud config get-value project if unset here")
+	cmd.Flags().StringSliceVar(&options.KubeContexts, "kubecontexts", options.KubeContexts, "[optional] contexts in the kubeconfig file to remove the ingress from")
+	cmd.Flags().StringVarP(&options.GCPProject, "gcp-project", "", options.GCPProject, "[required] name of the gcp project")
+	cmd.Flags().BoolVarP(&options.ForceUpdate, "force", "f", options.ForceUpdate, "[optional] overwrite existing settings if they are different")
 	cmd.Flags().StringVarP(&options.Namespace, "namespace", "n", options.Namespace, "[optional] namespace for the ingress only if left unspecified by ingress spec")
-	// TODO Add a verbose flag that turns on glog logging.
 	return nil
 }
 
-func validateDeleteArgs(options *DeleteOptions, args []string) error {
+func validateRemoveClustersArgs(options *removeClustersOptions, args []string) error {
 	if len(args) != 1 {
 		return fmt.Errorf("unexpected args: %v. Expected one arg as name of load balancer.", args)
 	}
-	// Verify that the required params are not missing.
+	// Verify that the required options are not missing.
 	if options.IngressFilename == "" {
 		return fmt.Errorf("unexpected missing argument ingress.")
 	}
@@ -112,7 +116,8 @@ func validateDeleteArgs(options *DeleteOptions, args []string) error {
 	return nil
 }
 
-func runDelete(options *DeleteOptions, args []string) error {
+// runRemoveClusters removes the given load balancer from the given list of clusters.
+func runRemoveClusters(options *removeClustersOptions, args []string) error {
 	options.LBName = args[0]
 
 	// Unmarshal the YAML into ingress struct.
@@ -122,17 +127,12 @@ func runDelete(options *DeleteOptions, args []string) error {
 	}
 	cloudInterface, err := cloudinterface.NewGCECloudInterface(options.GCPProject)
 	if err != nil {
-		return fmt.Errorf("error in creating cloud interface: %s", err)
-	}
-
-	// Get clients for all clusters
-	clients, err := kubeutils.GetClients(options.KubeconfigFilename, options.KubeContexts)
-	if err != nil {
+		err := fmt.Errorf("error in creating cloud interface: %s", err)
+		fmt.Println(err)
 		return err
 	}
-
-	// Delete ingress resource in clusters
-	err = ingress.NewIngressSyncer().DeleteIngress(&ing, clients)
+	// Get clients for all clusters
+	clients, err := kubeutils.GetClients(options.KubeconfigFilename, options.KubeContexts)
 	if err != nil {
 		return err
 	}
@@ -141,8 +141,20 @@ func runDelete(options *DeleteOptions, args []string) error {
 	if err != nil {
 		return err
 	}
-	if delErr := lbs.DeleteLoadBalancer(&ing); delErr != nil {
+	if delErr := lbs.RemoveFromClusters(&ing, clients, options.ForceUpdate); delErr != nil {
 		err = multierror.Append(err, delErr)
+	}
+
+	// Delete ingress resource from clusters
+	is := ingress.NewIngressSyncer()
+	if is == nil {
+		err = multierror.Append(err, fmt.Errorf("unexpected ingress syncer is nil"))
+		// No point in proceeding.
+		return err
+	}
+	isErr := is.DeleteIngress(&ing, clients)
+	if isErr != nil {
+		err = multierror.Append(err, isErr)
 	}
 	return err
 }

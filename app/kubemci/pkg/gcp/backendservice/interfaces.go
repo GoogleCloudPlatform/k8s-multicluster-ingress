@@ -37,4 +37,6 @@ type BackendServiceSyncerInterface interface {
 	EnsureBackendService(lbName string, ports []ingressbe.ServicePort, hcMap healthcheck.HealthChecksMap, npMap NamedPortsMap, igLinks []string, forceUpdate bool) (BackendServicesMap, error)
 	// DeleteBackendServices deletes all backend services that would have been created by EnsureBackendService.
 	DeleteBackendServices(ports []ingressbe.ServicePort) error
+	// RemoveFromClusters removes the clusters corresponding to the given removeIGLinks from the existing backend services corresponding to the given ports.
+	RemoveFromClusters(ports []ingressbe.ServicePort, removeIGLinks []string) error
 }

@@ -31,8 +31,11 @@ type ForwardingRuleSyncerInterface interface {
 	// DeleteForwardingRules deletes the forwarding rules that
 	// EnsureHttpForwardingRule and EnsureHttpsForwardingRule would have created.
 	DeleteForwardingRules() error
+
 	// GetLoadBalancerStatus returns the struct describing the status of the given load balancer.
 	GetLoadBalancerStatus(lbName string) (*status.LoadBalancerStatus, error)
 	// ListLoadBalancerStatuses returns status of all MCI ingresses (load balancers).
 	ListLoadBalancerStatuses() ([]status.LoadBalancerStatus, error)
+	// RemoveClustersFromStatus removes the given clusters from the LoadBalancerStatus.
+	RemoveClustersFromStatus(clusters []string) error
 }
