@@ -182,9 +182,6 @@ func TestCreateLoadBalancer(t *testing.T) {
 	if fr.LBName != lbName {
 		t.Errorf("unexpected lbname in forwarding rule. expected: %s, got: %s", lbName, fr.LBName)
 	}
-	if !reflect.DeepEqual(fr.Clusters, clusters) {
-		t.Errorf("unexpected clusters in forwarding rule. expected: %v, got: %v", clusters, fr.Clusters)
-	}
 	// Verify that the expected firewall rule was created.
 	ffw := lbc.fws.(*firewallrule.FakeFirewallRuleSyncer)
 	if len(ffw.EnsuredFirewallRules) != 1 {
@@ -392,6 +389,12 @@ func TestRemoveFromClusters(t *testing.T) {
 	if len(ffw.EnsuredFirewallRules) == 0 {
 		t.Errorf("unexpected firewall rules not created")
 	}
+	// Add status to the forwarding rule to simulate old forwarding rule which has status.
+	// TODO: This should not be required once lbc.RemoveFromClusters can update url map status:
+	// https://github.com/GoogleCloudPlatform/k8s-multicluster-ingress/pull/151
+	typedFRS := lbc.frs.(*forwardingrule.FakeForwardingRuleSyncer)
+	typedFRS.AddStatus(lbName, &status.LoadBalancerStatus{Clusters: clusters})
+
 	// Verify that the load balancer is spread to both clusters.
 	if err := verifyClusters(lbName, lbc.frs, clusters); err != nil {
 		t.Errorf("%s", err)

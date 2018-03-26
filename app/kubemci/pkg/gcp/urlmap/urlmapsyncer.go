@@ -20,6 +20,8 @@ import (
 	"fmt"
 	"net/http"
 	"reflect"
+	"sort"
+	"strings"
 
 	compute "google.golang.org/api/compute/v1"
 	"google.golang.org/api/googleapi"
@@ -33,6 +35,7 @@ import (
 
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/backendservice"
 	utilsnamer "github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/namer"
+	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/status"
 )
 
 const (
@@ -60,10 +63,10 @@ func NewURLMapSyncer(namer *utilsnamer.Namer, ump ingresslb.LoadBalancers) URLMa
 var _ URLMapSyncerInterface = &URLMapSyncer{}
 
 // See interfaces.go comment.
-func (s *URLMapSyncer) EnsureURLMap(lbName string, ing *v1beta1.Ingress, beMap backendservice.BackendServicesMap, forceUpdate bool) (string, error) {
+func (s *URLMapSyncer) EnsureURLMap(lbName, ipAddress string, clusters []string, ing *v1beta1.Ingress, beMap backendservice.BackendServicesMap, forceUpdate bool) (string, error) {
 	fmt.Println("Ensuring url map")
 	var err error
-	desiredUM, err := s.desiredURLMap(lbName, ing, beMap)
+	desiredUM, err := s.desiredURLMap(lbName, ipAddress, clusters, ing, beMap)
 	if err != nil {
 		return "", fmt.Errorf("error %s in computing desired url map", err)
 	}
@@ -117,6 +120,55 @@ func (s *URLMapSyncer) DeleteURLMap() error {
 	}
 }
 
+func (s *URLMapSyncer) GetLoadBalancerStatus(lbName string) (*status.LoadBalancerStatus, error) {
+	// Fetch the url map.
+	name := s.namer.URLMapName()
+	um, err := s.ump.GetUrlMap(name)
+	if err == nil {
+		return getStatus(um)
+	}
+	if utils.IsHTTPErrorCode(err, http.StatusNotFound) {
+		// Preserve StatusNotFound and return the error as is.
+		return nil, err
+	}
+	return nil, fmt.Errorf("error in fetching url map: %s. Cannot determine status without url map", err)
+}
+
+func getStatus(um *compute.UrlMap) (*status.LoadBalancerStatus, error) {
+	status, err := status.FromString(um.Description)
+	if err != nil {
+		return nil, fmt.Errorf("error in parsing url map description %s. Cannot determine status without it.", err)
+	}
+	return status, nil
+}
+
+// ListLoadBalancerStatuses returns a list of load balancer status from load balancers that have the status stored on their url maps.
+// It ignores the load balancers that dont have status on their url map.
+// Returns an error if listing url maps fails.
+func (s *URLMapSyncer) ListLoadBalancerStatuses() ([]status.LoadBalancerStatus, error) {
+	var maps []*compute.UrlMap
+	var err error
+	result := []status.LoadBalancerStatus{}
+	if maps, err = s.ump.ListUrlMaps(); err != nil {
+		err = fmt.Errorf("Error getting url maps: %s", err)
+		glog.V(2).Infof("%s\n", err)
+		return result, err
+	}
+	glog.V(5).Infof("maps: %+v", maps)
+	for _, item := range maps {
+		if strings.HasPrefix(item.Name, "mci1") {
+			lbStatus, decodeErr := status.FromString(item.Description)
+			if decodeErr != nil {
+				// Assume that forwarding rule has the right status for this MCI.
+				glog.V(3).Infof("Error decoding load balancer status on url map %s: %s\nAssuming status is stored on forwarding rule. Ignoring the error and continuing.", item.Name, decodeErr)
+				continue
+			}
+			result = append(result, *lbStatus)
+		}
+	}
+	return result, nil
+}
+
 func (s *URLMapSyncer) updateURLMap(desiredUM *compute.UrlMap) (string, error) {
 	name := desiredUM.Name
 	fmt.Println("Updating existing url map", name, "to match the desired state")
@@ -166,11 +218,16 @@ func urlMapMatches(desiredUM, existingUM compute.UrlMap) bool {
 	return equal
 }
 
-func (s *URLMapSyncer) desiredURLMap(lbName string, ing *v1beta1.Ingress, beMap backendservice.BackendServicesMap) (*compute.UrlMap, error) {
+func (s *URLMapSyncer) desiredURLMap(lbName, ipAddress string, clusters []string, ing *v1beta1.Ingress, beMap backendservice.BackendServicesMap) (*compute.UrlMap, error) {
+	desc, err := desiredStatusString(lbName, "URL map", ipAddress, clusters)
+	if err != nil {
+		return nil, err
+	}
+
 	// Compute the desired url map.
 	um := &compute.UrlMap{
 		Name:        s.namer.URLMapName(),
-		Description: fmt.Sprintf("URL map for kubernetes multicluster loadbalancer %s", lbName),
+		Description: desc,
 	}
 	gceMap, err := s.ingToURLMap(ing, beMap)
 	if err != nil {
@@ -210,6 +267,23 @@ func (s *URLMapSyncer) desiredURLMap(lbName string, ing *v1beta1.Ingress, beMap 
 		um.PathMatchers = append(um.PathMatchers, pathMatcher)
 	}
 	return um, nil
+}
+
+// desiredStatusString returns the expected LoadBalancerStatus converted to string that can be stored as description based on the given input parameters.
+func desiredStatusString(lbName, resourceName, ipAddress string, clusters []string) (string, error) {
+	// Sort the clusters so we get a deterministic order.
+	sort.Strings(clusters)
+	status := status.LoadBalancerStatus{
+		Description:      fmt.Sprintf("%s for kubernetes multicluster loadbalancer %s", resourceName, lbName),
+		LoadBalancerName: lbName,
+		Clusters:         clusters,
+		IPAddress:        ipAddress,
+	}
+	desc, err := status.ToString()
+	if err != nil {
+		return "", fmt.Errorf("unexpected error in converting status to string: %s", err)
+	}
+	return desc, nil
 }
 
 // ingToURLMap converts an ingress to GCEURLMap (nested map of subdomain: url-regex: gce backend).

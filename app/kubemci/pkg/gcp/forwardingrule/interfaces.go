@@ -21,20 +21,19 @@ import (
 // ForwardingRuleSyncerInterface is an interface to manage GCP forwarding rules.
 type ForwardingRuleSyncerInterface interface {
 	// EnsureHttpForwardingRule ensures that the required http forwarding rule exists.
-	// clusters is the list of clusters across which the load balancer is spread.
 	// Will only change an existing rule if forceUpdate = True.
-	EnsureHttpForwardingRule(lbName, ipAddress, targetProxyLink string, clusters []string, forceUpdate bool) error
+	EnsureHttpForwardingRule(lbName, ipAddress, targetProxyLink string, forceUpdate bool) error
 	// EnsureHttpsForwardingRule ensures that the required https forwarding rule exists.
-	// clusters is the list of clusters across which the load balancer is spread.
 	// Will only change an existing rule if forceUpdate = True.
-	EnsureHttpsForwardingRule(lbName, ipAddress, targetProxyLink string, clusters []string, forceUpdate bool) error
+	EnsureHttpsForwardingRule(lbName, ipAddress, targetProxyLink string, forceUpdate bool) error
 	// DeleteForwardingRules deletes the forwarding rules that
 	// EnsureHttpForwardingRule and EnsureHttpsForwardingRule would have created.
 	DeleteForwardingRules() error
 
-	// GetLoadBalancerStatus returns the struct describing the status of the given load balancer.
+	// GetLoadBalancerStatus returns the status of the given load balancer if it is stored on the forwarding rule.
+	// Returns an error with http.StatusNotFound if forwarding rule does not exist.
 	GetLoadBalancerStatus(lbName string) (*status.LoadBalancerStatus, error)
-	// ListLoadBalancerStatuses returns status of all MCI ingresses (load balancers).
+	// ListLoadBalancerStatuses returns status of all MCI ingresses (load balancers) that have statuses stored on forwarding rules.
 	ListLoadBalancerStatuses() ([]status.LoadBalancerStatus, error)
 	// RemoveClustersFromStatus removes the given clusters from the LoadBalancerStatus.
 	RemoveClustersFromStatus(clusters []string) error
