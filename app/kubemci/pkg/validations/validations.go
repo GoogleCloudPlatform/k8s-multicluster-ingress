@@ -16,6 +16,8 @@ package validations
 
 import (
 	"fmt"
+	"regexp"
+	"strconv"
 
 	kubeclient "k8s.io/client-go/kubernetes"
 
@@ -52,7 +54,7 @@ func servicesNodePortsSame(clients map[string]kubeclient.Interface, ing *v1beta1
 	if ing.Spec.Backend != nil {
 		if err := nodePortSameInAllClusters(*ing.Spec.Backend, ing.Namespace, clients); err != nil {
 			multiErr = multierror.Append(multiErr,
-				fmt.Errorf("nodePort validation error for default backend service '%s/%s': %s", *ing.Spec.Backend, ing.Namespace, err))
+				fmt.Errorf("nodePort validation error for default backend service '%s/%v': %s", ing.Namespace, *ing.Spec.Backend, err))
 		}
 		glog.V(1).Infof("Default backend's nodeports passed validation.")
 	} else {
@@ -72,7 +74,7 @@ func nodePortSameInAllClusters(backend v1beta1.IngressBackend, namespace string,
 
 		servicePort, err := kubeutils.GetServiceNodePort(backend, namespace, client)
 		if err != nil {
-			return fmt.Errorf("Could not get service NodePort in cluster %s: %s", clientName, err)
+			return fmt.Errorf("could not get service NodePort in cluster %s: %s", clientName, err)
 		}
 		glog.V(2).Infof("cluster %s: Service's servicePort: %+v", clientName, servicePort)
 		clusterNodePort := servicePort.NodePort
@@ -88,4 +90,80 @@ func nodePortSameInAllClusters(backend v1beta1.IngressBackend, namespace string,
 		}
 	}
 	return nil
+}
+
+func ServerVersionsNewEnough(clients map[string]kubeclient.Interface) error {
+	for key := range clients {
+		glog.Infof("Checking client %s", key)
+		discoveryClient := clients[key].Discovery()
+		if discoveryClient == nil {
+			return fmt.Errorf("no discovery client in %s client: %+v", key, clients[key])
+		}
+		ver, err := discoveryClient.ServerVersion()
+		if err != nil {
+			return fmt.Errorf("could not get discovery client to lookup server version: %s", err)
+		}
+		glog.Infof("ServerVersion: %+v", ver)
+		major, minor, patch, err := parseVersion(ver.GitVersion)
+		if err != nil {
+			return err
+		}
+		if newEnough := serverVersionNewEnough(major, minor, patch); !newEnough {
+			return fmt.Errorf("Cluster %s (ver %d.%d.%d) is not running a supported kubernetes version. Need >= 1.8.1 and not 1.10.0.\n",
+				key, major, minor, patch)
+		}
+
+	}
+	return nil
+}
+
+func serverVersionNewEnough(major, minor, patch uint64) bool {
+	if major == 1 && minor == 10 && patch == 0 {
+		return false
+	}
+
+	if major > 1 {
+		return true
+	} else if major < 1 {
+		return false
+	}
+	// Minor version
+	if minor > 8 {
+		return true
+	} else if minor < 8 {
+		return false
+	}
+	// Patch version
+	if patch >= 1 {
+		return true
+	}
+	return false
+}
+
+func parseVersion(version string) (uint64, uint64, uint64, error) {
+	// Example string we're matching: v1.9.3-gke.0
+	re := regexp.MustCompile("^v([0-9]*).([0-9]*).([0-9]*)")
+	matches := re.FindStringSubmatch(version)
+	glog.V(4).Infof("version string matches: %v\n", matches)
+
+	if len(matches) < 3 {
+		return 0, 0, 0, fmt.Errorf("did not find 3 components to version number %s", version)
+	}
+	// Major version
+	major, err := strconv.ParseUint(matches[1], 10 /*base*/, 32 /*bitSize*/)
+	if err != nil {
+		return 0, 0, 0, err
+	}
+	// Minor version
+	minor, err := strconv.ParseUint(matches[2], 10 /*base*/, 32 /*bitSize*/)
+	if err != nil {
+		return 0, 0, 0, err
+	}
+	// Patch version
+	patch, err := strconv.ParseUint(matches[3], 10 /*bases*/, 32 /*bitSize*/)
+	if err != nil {
+		return 0, 0, 0, err
+	}
+	glog.V(2).Infof("Got version: major:", major, "minor:", minor, "patch:", patch)
+	return major, minor, patch, nil
 }
