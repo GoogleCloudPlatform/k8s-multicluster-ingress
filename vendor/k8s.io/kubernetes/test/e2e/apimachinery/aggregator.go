@@ -35,10 +35,13 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/apiserver/pkg/authentication/user"
 	"k8s.io/client-go/discovery"
+	clientset "k8s.io/client-go/kubernetes"
 	apiregistrationv1beta1 "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1beta1"
+	aggregatorclient "k8s.io/kube-aggregator/pkg/client/clientset_generated/clientset"
 	rbacapi "k8s.io/kubernetes/pkg/apis/rbac"
 	utilversion "k8s.io/kubernetes/pkg/util/version"
 	"k8s.io/kubernetes/test/e2e/framework"
+	imageutils "k8s.io/kubernetes/test/utils/image"
 	samplev1alpha1 "k8s.io/sample-apiserver/pkg/apis/wardle/v1alpha1"
 
 	. "github.com/onsi/ginkgo"
@@ -47,9 +50,27 @@ import (
 var serverAggregatorVersion = utilversion.MustParseSemantic("v1.7.0")
 
 var _ = SIGDescribe("Aggregator", func() {
+	var ns string
+	var c clientset.Interface
+	var aggrclient *aggregatorclient.Clientset
+
+	// BeforeEachs run in LIFO order, AfterEachs run in FIFO order.
+	// We want cleanTest to happen before the namespace cleanup AfterEach
+	// inserted by NewDefaultFramework, so we put this AfterEach in front
+	// of NewDefaultFramework.
+	AfterEach(func() {
+		cleanTest(c, aggrclient, ns)
+	})
+
 	f := framework.NewDefaultFramework("aggregator")
-	framework.AddCleanupAction(func() {
-		cleanTest(f)
+
+	// We want namespace initialization BeforeEach inserted by
+	// NewDefaultFramework to happen before this, so we put this BeforeEach
+	// after NewDefaultFramework.
+	BeforeEach(func() {
+		c = f.ClientSet
+		ns = f.Namespace.Name
+		aggrclient = f.AggregatorClient
 	})
 
 	It("Should be able to support the 1.7 Sample API Server using the current Aggregator", func() {
@@ -58,17 +79,14 @@ var _ = SIGDescribe("Aggregator", func() {
 		framework.SkipUnlessProviderIs("gce", "gke")
 
 		// Testing a 1.7 version of the sample-apiserver
-		TestSampleAPIServer(f, "gcr.io/kubernetes-e2e-test-images/k8s-aggregator-sample-apiserver-amd64:1.7v2")
+		TestSampleAPIServer(f, imageutils.GetE2EImage(imageutils.APIServer))
 	})
 })
 
-func cleanTest(f *framework.Framework) {
+func cleanTest(client clientset.Interface, aggrclient *aggregatorclient.Clientset, namespace string) {
 	// delete the APIService first to avoid causing discovery errors
-	aggrclient := f.AggregatorClient
 	_ = aggrclient.ApiregistrationV1beta1().APIServices().Delete("v1alpha1.wardle.k8s.io", nil)
 
-	namespace := f.Namespace.Name
-	client := f.ClientSet
 	_ = client.ExtensionsV1beta1().Deployments(namespace).Delete("sample-apiserver", nil)
 	_ = client.CoreV1().Secrets(namespace).Delete("sample-apiserver-secret", nil)
 	_ = client.CoreV1().Services(namespace).Delete("sample-api", nil)
@@ -115,7 +133,7 @@ func TestSampleAPIServer(f *framework.Framework, image string) {
 
 	// kubectl create -f deploy.yaml
 	deploymentName := "sample-apiserver-deployment"
-	etcdImage := "quay.io/coreos/etcd:v3.1.10"
+	etcdImage := "quay.io/coreos/etcd:v3.1.12"
 	podLabels := map[string]string{"app": "sample-apiserver", "apiserver": "true"}
 	replicas := int32(1)
 	zero := int64(0)
@@ -273,6 +291,13 @@ func TestSampleAPIServer(f *framework.Framework, image string) {
 	})
 	framework.ExpectNoError(err, "creating role binding %s:sample-apiserver to access configMap", namespace)
 
+	// Wait for the extension apiserver to be up and healthy
+	// kubectl get deployments -n <aggregated-api-namespace> && status == Running
+	// NOTE: aggregated apis should generally be set up in there own namespace (<aggregated-api-namespace>). As the test framework
+	// is setting up a new namespace, we are just using that.
+	err = framework.WaitForDeploymentComplete(client, deployment)
+	framework.ExpectNoError(err, "deploying extension apiserver in namespace %s", namespace)
+
 	// kubectl create -f apiservice.yaml
 	_, err = aggrclient.ApiregistrationV1beta1().APIServices().Create(&apiregistrationv1beta1.APIService{
 		ObjectMeta: metav1.ObjectMeta{Name: "v1alpha1.wardle.k8s.io"},
@@ -290,13 +315,6 @@ func TestSampleAPIServer(f *framework.Framework, image string) {
 	})
 	framework.ExpectNoError(err, "creating apiservice %s with namespace %s", "v1alpha1.wardle.k8s.io", namespace)
 
-	// Wait for the extension apiserver to be up and healthy
-	// kubectl get deployments -n <aggregated-api-namespace> && status == Running
-	// NOTE: aggregated apis should generally be set up in there own namespace (<aggregated-api-namespace>). As the test framework
-	// is setting up a new namespace, we are just using that.
-	err = framework.WaitForDeploymentComplete(client, deployment)
-
-	// We seem to need to do additional waiting until the extension api service is actually up.
 	err = wait.Poll(100*time.Millisecond, 30*time.Second, func() (bool, error) {
 		request := restClient.Get().AbsPath("/apis/wardle.k8s.io/v1alpha1/namespaces/default/flunders")
 		request.SetHeader("Accept", "application/json")
@@ -305,6 +323,9 @@ func TestSampleAPIServer(f *framework.Framework, image string) {
 			status, ok := err.(*apierrs.StatusError)
 			if !ok {
 				return false, err
+			}
+			if status.Status().Code == 503 {
+				return false, nil
 			}
 			if status.Status().Code == 404 && strings.HasPrefix(err.Error(), "the server could not find the requested resource") {
 				return false, nil
@@ -415,7 +436,7 @@ func TestSampleAPIServer(f *framework.Framework, image string) {
 		framework.Failf("failed to get back the correct deleted flunders list %v from the dynamic client", unstructuredList)
 	}
 
-	cleanTest(f)
+	cleanTest(client, aggrclient, namespace)
 }
 
 func validateErrorWithDebugInfo(f *framework.Framework, err error, pods *v1.PodList, msg string, fields ...interface{}) {

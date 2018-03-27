@@ -77,12 +77,15 @@ var _ = SIGDescribe("Job", func() {
 		// Worst case analysis: 15 failures, each taking 1 minute to
 		// run due to some slowness, 1 in 2^15 chance of happening,
 		// causing test flake.  Should be very rare.
-		job := framework.NewTestJob("randomlySucceedOrFail", "rand-non-local", v1.RestartPolicyNever, parallelism, completions, nil, 999)
+		// With the introduction of backoff limit and high failure rate this
+		// is hitting its timeout, the 3 is a reasonable that should make this
+		// test less flaky, for now.
+		job := framework.NewTestJob("randomlySucceedOrFail", "rand-non-local", v1.RestartPolicyNever, parallelism, 3, nil, 999)
 		job, err := framework.CreateJob(f.ClientSet, f.Namespace.Name, job)
 		Expect(err).NotTo(HaveOccurred())
 
 		By("Ensuring job reaches completions")
-		err = framework.WaitForJobFinish(f.ClientSet, f.Namespace.Name, job.Name, completions)
+		err = framework.WaitForJobFinish(f.ClientSet, f.Namespace.Name, job.Name, *job.Spec.Completions)
 		Expect(err).NotTo(HaveOccurred())
 	})
 
@@ -108,7 +111,7 @@ var _ = SIGDescribe("Job", func() {
 		Expect(err).NotTo(HaveOccurred())
 
 		By("delete a job")
-		reaper, err := kubectl.ReaperFor(batchinternal.Kind("Job"), f.InternalClientset)
+		reaper, err := kubectl.ReaperFor(batchinternal.Kind("Job"), f.InternalClientset, f.ScalesGetter)
 		Expect(err).NotTo(HaveOccurred())
 		timeout := 1 * time.Minute
 		err = reaper.Stop(f.Namespace.Name, job.Name, timeout, metav1.NewDeleteOptions(0))

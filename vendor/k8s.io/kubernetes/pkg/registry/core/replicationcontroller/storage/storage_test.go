@@ -28,6 +28,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/diff"
 	genericapirequest "k8s.io/apiserver/pkg/endpoints/request"
 	"k8s.io/apiserver/pkg/registry/generic"
+	genericregistrytest "k8s.io/apiserver/pkg/registry/generic/testing"
 	"k8s.io/apiserver/pkg/registry/rest"
 	etcdtesting "k8s.io/apiserver/pkg/storage/etcd/testing"
 	"k8s.io/kubernetes/pkg/apis/autoscaling"
@@ -98,7 +99,7 @@ func TestCreate(t *testing.T) {
 	storage, server := newStorage(t)
 	defer server.Terminate(t)
 	defer storage.Controller.Store.DestroyFunc()
-	test := registrytest.New(t, storage.Controller.Store)
+	test := genericregistrytest.New(t, storage.Controller.Store)
 	controller := validNewController()
 	controller.ObjectMeta = metav1.ObjectMeta{}
 	test.TestCreate(
@@ -119,7 +120,7 @@ func TestUpdate(t *testing.T) {
 	storage, server := newStorage(t)
 	defer server.Terminate(t)
 	defer storage.Controller.Store.DestroyFunc()
-	test := registrytest.New(t, storage.Controller.Store)
+	test := genericregistrytest.New(t, storage.Controller.Store)
 	test.TestUpdate(
 		// valid
 		validNewController(),
@@ -147,7 +148,7 @@ func TestDelete(t *testing.T) {
 	storage, server := newStorage(t)
 	defer server.Terminate(t)
 	defer storage.Controller.Store.DestroyFunc()
-	test := registrytest.New(t, storage.Controller.Store)
+	test := genericregistrytest.New(t, storage.Controller.Store)
 	test.TestDelete(validNewController())
 }
 
@@ -173,8 +174,7 @@ func TestGenerationNumber(t *testing.T) {
 
 	// Updates to spec should increment the generation number
 	controller.Spec.Replicas += 1
-	storage.Controller.Update(ctx, controller.Name, rest.DefaultUpdatedObjectInfo(controller), rest.ValidateAllObjectFunc, rest.ValidateAllObjectUpdateFunc)
-	if err != nil {
+	if _, _, err := storage.Controller.Update(ctx, controller.Name, rest.DefaultUpdatedObjectInfo(controller), rest.ValidateAllObjectFunc, rest.ValidateAllObjectUpdateFunc); err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
 	ctrl, err = storage.Controller.Get(ctx, rc.Name, &metav1.GetOptions{})
@@ -188,8 +188,7 @@ func TestGenerationNumber(t *testing.T) {
 
 	// Updates to status should not increment either spec or status generation numbers
 	controller.Status.Replicas += 1
-	storage.Controller.Update(ctx, controller.Name, rest.DefaultUpdatedObjectInfo(controller), rest.ValidateAllObjectFunc, rest.ValidateAllObjectUpdateFunc)
-	if err != nil {
+	if _, _, err := storage.Controller.Update(ctx, controller.Name, rest.DefaultUpdatedObjectInfo(controller), rest.ValidateAllObjectFunc, rest.ValidateAllObjectUpdateFunc); err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
 	ctrl, err = storage.Controller.Get(ctx, rc.Name, &metav1.GetOptions{})
@@ -206,7 +205,7 @@ func TestGet(t *testing.T) {
 	storage, server := newStorage(t)
 	defer server.Terminate(t)
 	defer storage.Controller.Store.DestroyFunc()
-	test := registrytest.New(t, storage.Controller.Store)
+	test := genericregistrytest.New(t, storage.Controller.Store)
 	test.TestGet(validNewController())
 }
 
@@ -214,7 +213,7 @@ func TestList(t *testing.T) {
 	storage, server := newStorage(t)
 	defer server.Terminate(t)
 	defer storage.Controller.Store.DestroyFunc()
-	test := registrytest.New(t, storage.Controller.Store)
+	test := genericregistrytest.New(t, storage.Controller.Store)
 	test.TestList(validNewController())
 }
 
@@ -222,7 +221,7 @@ func TestWatch(t *testing.T) {
 	storage, server := newStorage(t)
 	defer server.Terminate(t)
 	defer storage.Controller.Store.DestroyFunc()
-	test := registrytest.New(t, storage.Controller.Store)
+	test := genericregistrytest.New(t, storage.Controller.Store)
 	test.TestWatch(
 		validController,
 		// matching labels
@@ -240,7 +239,7 @@ func TestWatch(t *testing.T) {
 			{"metadata.name": "foo"},
 			{"status.replicas": "0", "metadata.name": "foo"},
 		},
-		// not matchin fields
+		// not matching fields
 		[]fields.Set{
 			{"status.replicas": "10"},
 			{"metadata.name": "bar"},

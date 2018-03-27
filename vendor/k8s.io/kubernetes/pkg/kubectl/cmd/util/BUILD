@@ -1,8 +1,4 @@
-load(
-    "@io_bazel_rules_go//go:def.bzl",
-    "go_library",
-    "go_test",
-)
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
     name = "go_default_library",
@@ -18,9 +14,7 @@ go_library(
         "shortcut_restmapper.go",
     ],
     importpath = "k8s.io/kubernetes/pkg/kubectl/cmd/util",
-    visibility = [
-        "//build/visible_to:pkg_kubectl_cmd_util_CONSUMERS",
-    ],
+    visibility = ["//build/visible_to:pkg_kubectl_cmd_util_CONSUMERS"],
     deps = [
         "//pkg/api/legacyscheme:go_default_library",
         "//pkg/apis/apps:go_default_library",
@@ -30,15 +24,16 @@ go_library(
         "//pkg/apis/extensions:go_default_library",
         "//pkg/client/clientset_generated/internalclientset:go_default_library",
         "//pkg/client/clientset_generated/internalclientset/typed/core/internalversion:go_default_library",
-        "//pkg/client/unversioned:go_default_library",
         "//pkg/controller:go_default_library",
         "//pkg/kubectl:go_default_library",
+        "//pkg/kubectl/categories:go_default_library",
         "//pkg/kubectl/cmd/templates:go_default_library",
         "//pkg/kubectl/cmd/util/openapi:go_default_library",
         "//pkg/kubectl/cmd/util/openapi/validation:go_default_library",
         "//pkg/kubectl/plugins:go_default_library",
         "//pkg/kubectl/resource:go_default_library",
         "//pkg/kubectl/scheme:go_default_library",
+        "//pkg/kubectl/util/transport:go_default_library",
         "//pkg/kubectl/validation:go_default_library",
         "//pkg/printers:go_default_library",
         "//pkg/printers/internalversion:go_default_library",
@@ -52,6 +47,7 @@ go_library(
         "//vendor/k8s.io/api/apps/v1beta1:go_default_library",
         "//vendor/k8s.io/api/apps/v1beta2:go_default_library",
         "//vendor/k8s.io/api/batch/v1:go_default_library",
+        "//vendor/k8s.io/api/batch/v1beta1:go_default_library",
         "//vendor/k8s.io/api/batch/v2alpha1:go_default_library",
         "//vendor/k8s.io/api/core/v1:go_default_library",
         "//vendor/k8s.io/api/extensions/v1beta1:go_default_library",
@@ -75,6 +71,7 @@ go_library(
         "//vendor/k8s.io/client-go/dynamic:go_default_library",
         "//vendor/k8s.io/client-go/kubernetes:go_default_library",
         "//vendor/k8s.io/client-go/rest:go_default_library",
+        "//vendor/k8s.io/client-go/scale:go_default_library",
         "//vendor/k8s.io/client-go/tools/clientcmd:go_default_library",
         "//vendor/k8s.io/client-go/util/homedir:go_default_library",
         "//vendor/k8s.io/utils/exec:go_default_library",
@@ -90,14 +87,7 @@ go_test(
         "helpers_test.go",
         "shortcut_restmapper_test.go",
     ],
-    data = [
-        "//api/swagger-spec",
-    ],
-    importpath = "k8s.io/kubernetes/pkg/kubectl/cmd/util",
-    library = ":go_default_library",
-    visibility = [
-        "//build/visible_to:COMMON_testing",
-    ],
+    embed = [":go_default_library"],
     deps = [
         "//pkg/api/legacyscheme:go_default_library",
         "//pkg/api/testapi:go_default_library",
@@ -110,6 +100,7 @@ go_test(
         "//pkg/client/clientset_generated/internalclientset/fake:go_default_library",
         "//pkg/controller:go_default_library",
         "//pkg/kubectl:go_default_library",
+        "//pkg/kubectl/categories:go_default_library",
         "//pkg/kubectl/resource:go_default_library",
         "//vendor/github.com/googleapis/gnostic/OpenAPIv2:go_default_library",
         "//vendor/github.com/stretchr/testify/assert:go_default_library",
@@ -141,6 +132,7 @@ filegroup(
     name = "package-srcs",
     srcs = glob(["**"]),
     tags = ["automanaged"],
+    visibility = ["//visibility:private"],
 )
 
 filegroup(

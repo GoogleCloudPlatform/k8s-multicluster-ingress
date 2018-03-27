@@ -22,7 +22,6 @@ import (
 
 	"github.com/spf13/cobra"
 	"k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
@@ -37,10 +36,7 @@ import (
 type ImageOptions struct {
 	resource.FilenameOptions
 
-	Mapper       meta.RESTMapper
 	Infos        []*resource.Info
-	Encoder      runtime.Encoder
-	Decoder      runtime.Decoder
 	Selector     string
 	Out          io.Writer
 	Err          io.Writer
@@ -54,7 +50,6 @@ type ImageOptions struct {
 	Cmd          *cobra.Command
 	ResolveImage func(in string) (string, error)
 
-	PrintObject            func(cmd *cobra.Command, isLocal bool, mapper meta.RESTMapper, obj runtime.Object, out io.Writer) error
 	UpdatePodSpecForObject func(obj runtime.Object, fn func(*v1.PodSpec) error) (bool, error)
 	Resources              []string
 	ContainerImages        map[string]string
@@ -91,7 +86,8 @@ func NewCmdImage(f cmdutil.Factory, out, err io.Writer) *cobra.Command {
 	}
 
 	cmd := &cobra.Command{
-		Use:     "image (-f FILENAME | TYPE NAME) CONTAINER_NAME_1=CONTAINER_IMAGE_1 ... CONTAINER_NAME_N=CONTAINER_IMAGE_N",
+		Use: "image (-f FILENAME | TYPE NAME) CONTAINER_NAME_1=CONTAINER_IMAGE_1 ... CONTAINER_NAME_N=CONTAINER_IMAGE_N",
+		DisableFlagsInUseLine: true,
 		Short:   i18n.T("Update image of a pod template"),
 		Long:    image_long,
 		Example: image_example,
@@ -105,9 +101,9 @@ func NewCmdImage(f cmdutil.Factory, out, err io.Writer) *cobra.Command {
 	cmdutil.AddPrinterFlags(cmd)
 	usage := "identifying the resource to get from a server."
 	cmdutil.AddFilenameOptionFlags(cmd, &options.FilenameOptions, usage)
-	cmd.Flags().BoolVar(&options.All, "all", false, "Select all resources, including uninitialized ones, in the namespace of the specified resource types")
-	cmd.Flags().StringVarP(&options.Selector, "selector", "l", "", "Selector (label query) to filter on, not including uninitialized ones, supports '=', '==', and '!='.(e.g. -l key1=value1,key2=value2)")
-	cmd.Flags().BoolVar(&options.Local, "local", false, "If true, set image will NOT contact api-server but run locally.")
+	cmd.Flags().BoolVar(&options.All, "all", options.All, "Select all resources, including uninitialized ones, in the namespace of the specified resource types")
+	cmd.Flags().StringVarP(&options.Selector, "selector", "l", options.Selector, "Selector (label query) to filter on, not including uninitialized ones, supports '=', '==', and '!='.(e.g. -l key1=value1,key2=value2)")
+	cmd.Flags().BoolVar(&options.Local, "local", options.Local, "If true, set image will NOT contact api-server but run locally.")
 	cmdutil.AddRecordFlag(cmd)
 	cmdutil.AddDryRunFlag(cmd)
 	cmdutil.AddIncludeUninitializedFlag(cmd)
@@ -115,15 +111,10 @@ func NewCmdImage(f cmdutil.Factory, out, err io.Writer) *cobra.Command {
 }
 
 func (o *ImageOptions) Complete(f cmdutil.Factory, cmd *cobra.Command, args []string) error {
-	o.Mapper, _ = f.Object()
 	o.UpdatePodSpecForObject = f.UpdatePodSpecForObject
-	o.Encoder = f.JSONEncoder()
-	o.Decoder = f.Decoder(true)
 	o.ShortOutput = cmdutil.GetFlagString(cmd, "output") == "name"
 	o.Record = cmdutil.GetRecordFlag(cmd)
 	o.ChangeCause = f.Command(cmd, false)
-	o.PrintObject = f.PrintObject
-	o.Local = cmdutil.GetFlagBool(cmd, "local")
 	o.DryRun = cmdutil.GetDryRunFlag(cmd)
 	o.Output = cmdutil.GetFlagString(cmd, "output")
 	o.ResolveImage = f.ResolveImage
@@ -141,26 +132,25 @@ func (o *ImageOptions) Complete(f cmdutil.Factory, cmd *cobra.Command, args []st
 
 	includeUninitialized := cmdutil.ShouldIncludeUninitialized(cmd, false)
 	builder := f.NewBuilder().
+		Internal().
+		LocalParam(o.Local).
 		ContinueOnError().
 		NamespaceParam(cmdNamespace).DefaultNamespace().
 		FilenameParam(enforceNamespace, &o.FilenameOptions).
 		IncludeUninitialized(includeUninitialized).
 		Flatten()
 
-	if o.Local {
+	if !o.Local {
+		builder.LabelSelectorParam(o.Selector).
+			ResourceTypeOrNameArgs(o.All, o.Resources...).
+			Latest()
+	} else {
 		// if a --local flag was provided, and a resource was specified in the form
 		// <resource>/<name>, fail immediately as --local cannot query the api server
 		// for the specified resource.
 		if len(o.Resources) > 0 {
 			return resource.LocalResourceError
 		}
-
-		builder = builder.Local(f.ClientForMapping)
-	} else {
-		builder = builder.
-			LabelSelectorParam(o.Selector).
-			ResourceTypeOrNameArgs(o.All, o.Resources...).
-			Latest()
 	}
 
 	o.Infos, err = builder.Do().Infos()
@@ -173,6 +163,9 @@ func (o *ImageOptions) Complete(f cmdutil.Factory, cmd *cobra.Command, args []st
 
 func (o *ImageOptions) Validate() error {
 	errors := []error{}
+	if o.All && len(o.Selector) > 0 {
+		errors = append(errors, fmt.Errorf("cannot set --all and --selector at the same time"))
+	}
 	if len(o.Resources) < 1 && cmdutil.IsFilenameSliceEmpty(o.Filenames) {
 		errors = append(errors, fmt.Errorf("one or more resources must be specified as <resource> <name> or <resource>/<name>"))
 	}
@@ -187,9 +180,10 @@ func (o *ImageOptions) Validate() error {
 func (o *ImageOptions) Run() error {
 	allErrs := []error{}
 
-	patches := CalculatePatches(o.Infos, o.Encoder, func(info *resource.Info) ([]byte, error) {
+	patches := CalculatePatches(o.Infos, cmdutil.InternalVersionJSONEncoder(), func(info *resource.Info) ([]byte, error) {
 		transformed := false
-		_, err := o.UpdatePodSpecForObject(info.VersionedObject, func(spec *v1.PodSpec) error {
+		info.Object = info.AsVersioned()
+		_, err := o.UpdatePodSpecForObject(info.Object, func(spec *v1.PodSpec) error {
 			for name, image := range o.ContainerImages {
 				var (
 					containerFound bool
@@ -226,7 +220,7 @@ func (o *ImageOptions) Run() error {
 			return nil
 		})
 		if transformed && err == nil {
-			return runtime.Encode(o.Encoder, info.VersionedObject)
+			return runtime.Encode(cmdutil.InternalVersionJSONEncoder(), info.Object)
 		}
 		return nil, err
 	})
@@ -243,8 +237,8 @@ func (o *ImageOptions) Run() error {
 			continue
 		}
 
-		if o.PrintObject != nil && (o.Local || o.DryRun) {
-			if err := o.PrintObject(o.Cmd, o.Local, o.Mapper, patch.Info.VersionedObject, o.Out); err != nil {
+		if o.Local || o.DryRun {
+			if err := cmdutil.PrintObject(o.Cmd, patch.Info.AsVersioned(), o.Out); err != nil {
 				return err
 			}
 			continue
@@ -270,16 +264,12 @@ func (o *ImageOptions) Run() error {
 		info.Refresh(obj, true)
 
 		if len(o.Output) > 0 {
-			versionedObject, err := patch.Info.Mapping.ConvertToVersion(obj, patch.Info.Mapping.GroupVersionKind.GroupVersion())
-			if err != nil {
-				return err
-			}
-			if err := o.PrintObject(o.Cmd, o.Local, o.Mapper, versionedObject, o.Out); err != nil {
+			if err := cmdutil.PrintObject(o.Cmd, info.AsVersioned(), o.Out); err != nil {
 				return err
 			}
 			continue
 		}
-		cmdutil.PrintSuccess(o.Mapper, o.ShortOutput, o.Out, info.Mapping.Resource, info.Name, o.DryRun, "image updated")
+		cmdutil.PrintSuccess(o.ShortOutput, o.Out, info.Object, o.DryRun, "image updated")
 	}
 	return utilerrors.NewAggregate(allErrs)
 }

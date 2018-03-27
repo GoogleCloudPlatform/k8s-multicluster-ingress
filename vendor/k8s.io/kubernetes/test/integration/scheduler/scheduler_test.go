@@ -26,14 +26,13 @@ import (
 
 	"k8s.io/api/core/v1"
 	policy "k8s.io/api/policy/v1beta1"
-	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/diff"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/wait"
-	utilfeature "k8s.io/apiserver/pkg/util/feature"
 	"k8s.io/client-go/informers"
 	clientset "k8s.io/client-go/kubernetes"
 	clientv1core "k8s.io/client-go/kubernetes/typed/core/v1"
@@ -41,20 +40,17 @@ import (
 	restclient "k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
+	schedulerapp "k8s.io/kubernetes/cmd/kube-scheduler/app"
 	"k8s.io/kubernetes/pkg/api/legacyscheme"
 	"k8s.io/kubernetes/pkg/api/testapi"
 	"k8s.io/kubernetes/pkg/apis/componentconfig"
-	"k8s.io/kubernetes/pkg/features"
-	schedulerapp "k8s.io/kubernetes/plugin/cmd/kube-scheduler/app"
-	"k8s.io/kubernetes/plugin/pkg/scheduler"
-	"k8s.io/kubernetes/plugin/pkg/scheduler/algorithm"
-	_ "k8s.io/kubernetes/plugin/pkg/scheduler/algorithmprovider"
-	schedulerapi "k8s.io/kubernetes/plugin/pkg/scheduler/api"
-	"k8s.io/kubernetes/plugin/pkg/scheduler/core"
-	"k8s.io/kubernetes/plugin/pkg/scheduler/factory"
-	"k8s.io/kubernetes/plugin/pkg/scheduler/schedulercache"
+	"k8s.io/kubernetes/pkg/scheduler"
+	"k8s.io/kubernetes/pkg/scheduler/algorithm"
+	_ "k8s.io/kubernetes/pkg/scheduler/algorithmprovider"
+	schedulerapi "k8s.io/kubernetes/pkg/scheduler/api"
+	"k8s.io/kubernetes/pkg/scheduler/factory"
+	"k8s.io/kubernetes/pkg/scheduler/schedulercache"
 	"k8s.io/kubernetes/test/integration/framework"
-	testutils "k8s.io/kubernetes/test/utils"
 )
 
 const enableEquivalenceCache = true
@@ -102,69 +98,128 @@ func TestSchedulerCreationFromConfigMap(t *testing.T) {
 	factory.RegisterPriorityFunction("PriorityOne", PriorityOne, 1)
 	factory.RegisterPriorityFunction("PriorityTwo", PriorityTwo, 1)
 
-	// Add a ConfigMap object.
-	configPolicyName := "scheduler-custom-policy-config"
-	policyConfigMap := v1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{Namespace: metav1.NamespaceSystem, Name: configPolicyName},
-		Data: map[string]string{
-			componentconfig.SchedulerPolicyConfigMapKey: `{
-			"kind" : "Policy",
-			"apiVersion" : "v1",
-			"predicates" : [
-				{"name" : "PredicateOne"},
-				{"name" : "PredicateTwo"}
-			],
-			"priorities" : [
-				{"name" : "PriorityOne", "weight" : 1},
-				{"name" : "PriorityTwo", "weight" : 5}
-			]
+	for i, test := range []struct {
+		policy               string
+		expectedPredicates   sets.String
+		expectedPrioritizers sets.String
+	}{
+		{
+			policy: `{
+				"kind" : "Policy",
+				"apiVersion" : "v1",
+				"predicates" : [
+					{"name" : "PredicateOne"},
+					{"name" : "PredicateTwo"}
+				],
+				"priorities" : [
+					{"name" : "PriorityOne", "weight" : 1},
+					{"name" : "PriorityTwo", "weight" : 5}
+				]
 			}`,
+			expectedPredicates: sets.NewString(
+				"CheckNodeCondition", // mandatory predicate
+				"PredicateOne",
+				"PredicateTwo",
+			),
+			expectedPrioritizers: sets.NewString(
+				"PriorityOne",
+				"PriorityTwo",
+			),
 		},
-	}
+		{
+			policy: `{
+				"kind" : "Policy",
+				"apiVersion" : "v1"
+			}`,
+			expectedPredicates: sets.NewString(
+				"CheckNodeCondition", // mandatory predicate
+				"CheckNodeDiskPressure",
+				"CheckNodeMemoryPressure",
+				"CheckVolumeBinding",
+				"GeneralPredicates",
+				"MatchInterPodAffinity",
+				"MaxAzureDiskVolumeCount",
+				"MaxEBSVolumeCount",
+				"MaxGCEPDVolumeCount",
+				"NoDiskConflict",
+				"NoVolumeZoneConflict",
+				"PodToleratesNodeTaints",
+			),
+			expectedPrioritizers: sets.NewString(
+				"BalancedResourceAllocation",
+				"InterPodAffinityPriority",
+				"LeastRequestedPriority",
+				"NodeAffinityPriority",
+				"NodePreferAvoidPodsPriority",
+				"SelectorSpreadPriority",
+				"TaintTolerationPriority",
+			),
+		},
+		{
+			policy: `{
+				"kind" : "Policy",
+				"apiVersion" : "v1",
+				"predicates" : [],
+				"priorities" : []
+			}`,
+			expectedPredicates: sets.NewString(
+				"CheckNodeCondition", // mandatory predicate
+			),
+			expectedPrioritizers: sets.NewString(),
+		},
+	} {
+		// Add a ConfigMap object.
+		configPolicyName := fmt.Sprintf("scheduler-custom-policy-config-%d", i)
+		policyConfigMap := v1.ConfigMap{
+			ObjectMeta: metav1.ObjectMeta{Namespace: metav1.NamespaceSystem, Name: configPolicyName},
+			Data:       map[string]string{componentconfig.SchedulerPolicyConfigMapKey: test.policy},
+		}
 
-	policyConfigMap.APIVersion = testapi.Groups[v1.GroupName].GroupVersion().String()
-	clientSet.CoreV1().ConfigMaps(metav1.NamespaceSystem).Create(&policyConfigMap)
+		policyConfigMap.APIVersion = testapi.Groups[v1.GroupName].GroupVersion().String()
+		clientSet.CoreV1().ConfigMaps(metav1.NamespaceSystem).Create(&policyConfigMap)
 
-	eventBroadcaster := record.NewBroadcaster()
-	eventBroadcaster.StartRecordingToSink(&clientv1core.EventSinkImpl{Interface: clientv1core.New(clientSet.CoreV1().RESTClient()).Events("")})
+		eventBroadcaster := record.NewBroadcaster()
+		eventBroadcaster.StartRecordingToSink(&clientv1core.EventSinkImpl{Interface: clientv1core.New(clientSet.CoreV1().RESTClient()).Events("")})
 
-	ss := &schedulerapp.SchedulerServer{
-		SchedulerName: v1.DefaultSchedulerName,
-		AlgorithmSource: componentconfig.SchedulerAlgorithmSource{
-			Policy: &componentconfig.SchedulerPolicySource{
-				ConfigMap: &componentconfig.SchedulerPolicyConfigMapSource{
-					Namespace: policyConfigMap.Namespace,
-					Name:      policyConfigMap.Name,
+		ss := &schedulerapp.SchedulerServer{
+			SchedulerName: v1.DefaultSchedulerName,
+			AlgorithmSource: componentconfig.SchedulerAlgorithmSource{
+				Policy: &componentconfig.SchedulerPolicySource{
+					ConfigMap: &componentconfig.SchedulerPolicyConfigMapSource{
+						Namespace: policyConfigMap.Namespace,
+						Name:      policyConfigMap.Name,
+					},
 				},
 			},
-		},
-		HardPodAffinitySymmetricWeight: v1.DefaultHardPodAffinitySymmetricWeight,
-		Client:          clientSet,
-		InformerFactory: informerFactory,
-		PodInformer:     factory.NewPodInformer(clientSet, 0, v1.DefaultSchedulerName),
-		EventClient:     clientSet.CoreV1(),
-		Recorder:        eventBroadcaster.NewRecorder(legacyscheme.Scheme, v1.EventSource{Component: v1.DefaultSchedulerName}),
-		Broadcaster:     eventBroadcaster,
-	}
+			HardPodAffinitySymmetricWeight: v1.DefaultHardPodAffinitySymmetricWeight,
+			Client:          clientSet,
+			InformerFactory: informerFactory,
+			PodInformer:     factory.NewPodInformer(clientSet, 0, v1.DefaultSchedulerName),
+			EventClient:     clientSet.CoreV1(),
+			Recorder:        eventBroadcaster.NewRecorder(legacyscheme.Scheme, v1.EventSource{Component: v1.DefaultSchedulerName}),
+			Broadcaster:     eventBroadcaster,
+		}
 
-	config, err := ss.SchedulerConfig()
-	if err != nil {
-		t.Fatalf("couldn't make scheduler config: %v", err)
-	}
+		config, err := ss.SchedulerConfig()
+		if err != nil {
+			t.Fatalf("couldn't make scheduler config: %v", err)
+		}
 
-	// Verify that the config is applied correctly.
-	schedPredicates := config.Algorithm.Predicates()
-	schedPrioritizers := config.Algorithm.Prioritizers()
-	// Includes one mandatory predicates.
-	if len(schedPredicates) != 3 || len(schedPrioritizers) != 2 {
-		t.Errorf("Unexpected number of predicates or priority functions. Number of predicates: %v, number of prioritizers: %v", len(schedPredicates), len(schedPrioritizers))
-	}
-	// Check a predicate and a priority function.
-	if schedPredicates["PredicateTwo"] == nil {
-		t.Errorf("Expected to have a PodFitsHostPorts predicate.")
-	}
-	if schedPrioritizers[1].Function == nil || schedPrioritizers[1].Weight != 5 {
-		t.Errorf("Unexpected prioritizer: func: %v, weight: %v", schedPrioritizers[1].Function, schedPrioritizers[1].Weight)
+		// Verify that the config is applied correctly.
+		schedPredicates := sets.NewString()
+		for k := range config.Algorithm.Predicates() {
+			schedPredicates.Insert(k)
+		}
+		schedPrioritizers := sets.NewString()
+		for _, p := range config.Algorithm.Prioritizers() {
+			schedPrioritizers.Insert(p.Name)
+		}
+		if !schedPredicates.Equal(test.expectedPredicates) {
+			t.Errorf("Expected predicates %v, got %v", test.expectedPredicates, schedPredicates)
+		}
+		if !schedPrioritizers.Equal(test.expectedPrioritizers) {
+			t.Errorf("Expected priority functions %v, got %v", test.expectedPrioritizers, schedPrioritizers)
+		}
 	}
 }
 
@@ -474,6 +529,7 @@ func TestMultiScheduler(t *testing.T) {
 		informerFactory2.Apps().V1beta1().StatefulSets(),
 		informerFactory2.Core().V1().Services(),
 		informerFactory2.Policy().V1beta1().PodDisruptionBudgets(),
+		informerFactory2.Storage().V1().StorageClasses(),
 		v1.DefaultHardPodAffinitySymmetricWeight,
 		enableEquivalenceCache,
 	)
@@ -616,254 +672,6 @@ func TestAllocatable(t *testing.T) {
 		t.Errorf("Test allocatable awareness: %s Pod got scheduled unexpectedly, %v", testAllocPod2.Name, err)
 	} else {
 		t.Logf("Test allocatable awareness: %s Pod not scheduled as expected", testAllocPod2.Name)
-	}
-}
-
-// TestPreemption tests a few preemption scenarios.
-func TestPreemption(t *testing.T) {
-	// Enable PodPriority feature gate.
-	utilfeature.DefaultFeatureGate.Set(fmt.Sprintf("%s=true", features.PodPriority))
-	// Initialize scheduler.
-	context := initTest(t, "preemption")
-	defer cleanupTest(t, context)
-	cs := context.clientSet
-
-	lowPriority, mediumPriority, highPriority := int32(100), int32(200), int32(300)
-	defaultPodRes := &v1.ResourceRequirements{Requests: v1.ResourceList{
-		v1.ResourceCPU:    *resource.NewMilliQuantity(100, resource.DecimalSI),
-		v1.ResourceMemory: *resource.NewQuantity(100, resource.BinarySI)},
-	}
-
-	tests := []struct {
-		description         string
-		existingPods        []*v1.Pod
-		pod                 *v1.Pod
-		preemptedPodIndexes map[int]struct{}
-	}{
-		{
-			description: "basic pod preemption",
-			existingPods: []*v1.Pod{
-				initPausePod(context.clientSet, &pausePodConfig{
-					Name:      "victim-pod",
-					Namespace: context.ns.Name,
-					Priority:  &lowPriority,
-					Resources: &v1.ResourceRequirements{Requests: v1.ResourceList{
-						v1.ResourceCPU:    *resource.NewMilliQuantity(400, resource.DecimalSI),
-						v1.ResourceMemory: *resource.NewQuantity(200, resource.BinarySI)},
-					},
-				}),
-			},
-			pod: initPausePod(cs, &pausePodConfig{
-				Name:      "preemptor-pod",
-				Namespace: context.ns.Name,
-				Priority:  &highPriority,
-				Resources: &v1.ResourceRequirements{Requests: v1.ResourceList{
-					v1.ResourceCPU:    *resource.NewMilliQuantity(300, resource.DecimalSI),
-					v1.ResourceMemory: *resource.NewQuantity(200, resource.BinarySI)},
-				},
-			}),
-			preemptedPodIndexes: map[int]struct{}{0: {}},
-		},
-		{
-			description: "preemption is performed to satisfy anti-affinity",
-			existingPods: []*v1.Pod{
-				initPausePod(cs, &pausePodConfig{
-					Name: "pod-0", Namespace: context.ns.Name,
-					Priority:  &mediumPriority,
-					Labels:    map[string]string{"pod": "p0"},
-					Resources: defaultPodRes,
-				}),
-				initPausePod(cs, &pausePodConfig{
-					Name: "pod-1", Namespace: context.ns.Name,
-					Priority:  &lowPriority,
-					Labels:    map[string]string{"pod": "p1"},
-					Resources: defaultPodRes,
-					Affinity: &v1.Affinity{
-						PodAntiAffinity: &v1.PodAntiAffinity{
-							RequiredDuringSchedulingIgnoredDuringExecution: []v1.PodAffinityTerm{
-								{
-									LabelSelector: &metav1.LabelSelector{
-										MatchExpressions: []metav1.LabelSelectorRequirement{
-											{
-												Key:      "pod",
-												Operator: metav1.LabelSelectorOpIn,
-												Values:   []string{"preemptor"},
-											},
-										},
-									},
-									TopologyKey: "node",
-								},
-							},
-						},
-					},
-				}),
-			},
-			// A higher priority pod with anti-affinity.
-			pod: initPausePod(cs, &pausePodConfig{
-				Name:      "preemptor-pod",
-				Namespace: context.ns.Name,
-				Priority:  &highPriority,
-				Labels:    map[string]string{"pod": "preemptor"},
-				Resources: defaultPodRes,
-				Affinity: &v1.Affinity{
-					PodAntiAffinity: &v1.PodAntiAffinity{
-						RequiredDuringSchedulingIgnoredDuringExecution: []v1.PodAffinityTerm{
-							{
-								LabelSelector: &metav1.LabelSelector{
-									MatchExpressions: []metav1.LabelSelectorRequirement{
-										{
-											Key:      "pod",
-											Operator: metav1.LabelSelectorOpIn,
-											Values:   []string{"p0"},
-										},
-									},
-								},
-								TopologyKey: "node",
-							},
-						},
-					},
-				},
-			}),
-			preemptedPodIndexes: map[int]struct{}{0: {}, 1: {}},
-		},
-		{
-			// This is similar to the previous case only pod-1 is high priority.
-			description: "preemption is not performed when anti-affinity is not satisfied",
-			existingPods: []*v1.Pod{
-				initPausePod(cs, &pausePodConfig{
-					Name: "pod-0", Namespace: context.ns.Name,
-					Priority:  &mediumPriority,
-					Labels:    map[string]string{"pod": "p0"},
-					Resources: defaultPodRes,
-				}),
-				initPausePod(cs, &pausePodConfig{
-					Name: "pod-1", Namespace: context.ns.Name,
-					Priority:  &highPriority,
-					Labels:    map[string]string{"pod": "p1"},
-					Resources: defaultPodRes,
-					Affinity: &v1.Affinity{
-						PodAntiAffinity: &v1.PodAntiAffinity{
-							RequiredDuringSchedulingIgnoredDuringExecution: []v1.PodAffinityTerm{
-								{
-									LabelSelector: &metav1.LabelSelector{
-										MatchExpressions: []metav1.LabelSelectorRequirement{
-											{
-												Key:      "pod",
-												Operator: metav1.LabelSelectorOpIn,
-												Values:   []string{"preemptor"},
-											},
-										},
-									},
-									TopologyKey: "node",
-								},
-							},
-						},
-					},
-				}),
-			},
-			// A higher priority pod with anti-affinity.
-			pod: initPausePod(cs, &pausePodConfig{
-				Name:      "preemptor-pod",
-				Namespace: context.ns.Name,
-				Priority:  &highPriority,
-				Labels:    map[string]string{"pod": "preemptor"},
-				Resources: defaultPodRes,
-				Affinity: &v1.Affinity{
-					PodAntiAffinity: &v1.PodAntiAffinity{
-						RequiredDuringSchedulingIgnoredDuringExecution: []v1.PodAffinityTerm{
-							{
-								LabelSelector: &metav1.LabelSelector{
-									MatchExpressions: []metav1.LabelSelectorRequirement{
-										{
-											Key:      "pod",
-											Operator: metav1.LabelSelectorOpIn,
-											Values:   []string{"p0"},
-										},
-									},
-								},
-								TopologyKey: "node",
-							},
-						},
-					},
-				},
-			}),
-			preemptedPodIndexes: map[int]struct{}{},
-		},
-	}
-
-	// Create a node with some resources and a label.
-	nodeRes := &v1.ResourceList{
-		v1.ResourcePods:   *resource.NewQuantity(32, resource.DecimalSI),
-		v1.ResourceCPU:    *resource.NewMilliQuantity(500, resource.DecimalSI),
-		v1.ResourceMemory: *resource.NewQuantity(500, resource.BinarySI),
-	}
-	node, err := createNode(context.clientSet, "node1", nodeRes)
-	if err != nil {
-		t.Fatalf("Error creating nodes: %v", err)
-	}
-	nodeLabels := map[string]string{"node": node.Name}
-	if err = testutils.AddLabelsToNode(context.clientSet, node.Name, nodeLabels); err != nil {
-		t.Fatalf("Cannot add labels to node: %v", err)
-	}
-	if err = waitForNodeLabels(context.clientSet, node.Name, nodeLabels); err != nil {
-		t.Fatalf("Adding labels to node didn't succeed: %v", err)
-	}
-
-	for _, test := range tests {
-		pods := make([]*v1.Pod, len(test.existingPods))
-		// Create and run existingPods.
-		for i, p := range test.existingPods {
-			pods[i], err = runPausePod(cs, p)
-			if err != nil {
-				t.Fatalf("Test [%v]: Error running pause pod: %v", test.description, err)
-			}
-		}
-		// Create the "pod".
-		preemptor, err := createPausePod(cs, test.pod)
-		if err != nil {
-			t.Errorf("Error while creating high priority pod: %v", err)
-		}
-		// Wait for preemption of pods and make sure the other ones are not preempted.
-		for i, p := range pods {
-			if _, found := test.preemptedPodIndexes[i]; found {
-				if err = wait.Poll(time.Second, wait.ForeverTestTimeout, podIsGettingEvicted(cs, p.Namespace, p.Name)); err != nil {
-					t.Errorf("Test [%v]: Pod %v is not getting evicted.", test.description, p.Name)
-				}
-			} else {
-				if p.DeletionTimestamp != nil {
-					t.Errorf("Test [%v]: Didn't expect pod %v to get preempted.", test.description, p.Name)
-				}
-			}
-		}
-		// Also check that the preemptor pod gets the annotation for nominated node name.
-		if len(test.preemptedPodIndexes) > 0 {
-			if err = wait.Poll(time.Second, wait.ForeverTestTimeout, func() (bool, error) {
-				pod, err := context.clientSet.CoreV1().Pods(context.ns.Name).Get("preemptor-pod", metav1.GetOptions{})
-				if err != nil {
-					t.Errorf("Test [%v]: error getting pod: %v", test.description, err)
-				}
-				annot, found := pod.Annotations[core.NominatedNodeAnnotationKey]
-				if found && len(annot) > 0 {
-					return true, nil
-				}
-				return false, err
-			}); err != nil {
-				t.Errorf("Test [%v]: Pod annotation did not get set.", test.description)
-			}
-		}
-
-		// Cleanup
-		pods = append(pods, preemptor)
-		for _, p := range pods {
-			err = cs.CoreV1().Pods(p.Namespace).Delete(p.Name, metav1.NewDeleteOptions(0))
-			if err != nil && !errors.IsNotFound(err) {
-				t.Errorf("Test [%v]: error, %v, while deleting pod during test.", test.description, err)
-			}
-			err = wait.Poll(time.Second, wait.ForeverTestTimeout, podDeleted(cs, p.Namespace, p.Name))
-			if err != nil {
-				t.Errorf("Test [%v]: error, %v, while waiting for pod to get deleted.", test.description, err)
-			}
-		}
 	}
 }
 

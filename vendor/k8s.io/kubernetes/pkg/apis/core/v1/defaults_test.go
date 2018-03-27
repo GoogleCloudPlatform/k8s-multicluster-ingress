@@ -26,8 +26,10 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	utilfeature "k8s.io/apiserver/pkg/util/feature"
 	"k8s.io/kubernetes/pkg/api/legacyscheme"
 	corev1 "k8s.io/kubernetes/pkg/apis/core/v1"
+	utilpointer "k8s.io/kubernetes/pkg/util/pointer"
 
 	// enforce that all types are installed
 	_ "k8s.io/kubernetes/pkg/api/testapi"
@@ -163,12 +165,6 @@ func TestSetDefaultReplicationController(t *testing.T) {
 	}
 }
 
-func newInt(val int32) *int32 {
-	p := new(int32)
-	*p = val
-	return p
-}
-
 func TestSetDefaultReplicationControllerReplicas(t *testing.T) {
 	tests := []struct {
 		rc             v1.ReplicationController
@@ -191,7 +187,7 @@ func TestSetDefaultReplicationControllerReplicas(t *testing.T) {
 		{
 			rc: v1.ReplicationController{
 				Spec: v1.ReplicationControllerSpec{
-					Replicas: newInt(0),
+					Replicas: utilpointer.Int32Ptr(0),
 					Template: &v1.PodTemplateSpec{
 						ObjectMeta: metav1.ObjectMeta{
 							Labels: map[string]string{
@@ -206,7 +202,7 @@ func TestSetDefaultReplicationControllerReplicas(t *testing.T) {
 		{
 			rc: v1.ReplicationController{
 				Spec: v1.ReplicationControllerSpec{
-					Replicas: newInt(3),
+					Replicas: utilpointer.Int32Ptr(3),
 					Template: &v1.PodTemplateSpec{
 						ObjectMeta: metav1.ObjectMeta{
 							Labels: map[string]string{
@@ -817,6 +813,33 @@ func TestSetDefaultPersistentVolume(t *testing.T) {
 	if pv2.Spec.PersistentVolumeReclaimPolicy != v1.PersistentVolumeReclaimRetain {
 		t.Errorf("Expected pv reclaim policy %v, got %v", v1.PersistentVolumeReclaimRetain, pv2.Spec.PersistentVolumeReclaimPolicy)
 	}
+
+	// When feature gate is disabled, field should not be defaulted
+	defaultMode := v1.PersistentVolumeFilesystem
+	outputMode := pv2.Spec.VolumeMode
+	if outputMode != nil {
+		t.Errorf("Expected VolumeMode to not be defaulted, got: %+v", outputMode)
+	}
+
+	// When feature gate is enabled, field should be defaulted
+	err := utilfeature.DefaultFeatureGate.Set("BlockVolume=true")
+	if err != nil {
+		t.Fatalf("Failed to enable feature gate for BlockVolume: %v", err)
+	}
+	obj3 := roundTrip(t, runtime.Object(pv)).(*v1.PersistentVolume)
+	outputMode3 := obj3.Spec.VolumeMode
+
+	if outputMode3 == nil {
+		t.Errorf("Expected VolumeMode to be defaulted to: %+v, got: nil", defaultMode)
+	} else if *outputMode3 != defaultMode {
+		t.Errorf("Expected VolumeMode to be defaulted to: %+v, got: %+v", defaultMode, outputMode3)
+	}
+
+	err = utilfeature.DefaultFeatureGate.Set("BlockVolume=false")
+	if err != nil {
+		t.Fatalf("Failed to disable feature gate for BlockVolume: %v", err)
+	}
+
 }
 
 func TestSetDefaultPersistentVolumeClaim(t *testing.T) {
@@ -826,6 +849,32 @@ func TestSetDefaultPersistentVolumeClaim(t *testing.T) {
 
 	if pvc2.Status.Phase != v1.ClaimPending {
 		t.Errorf("Expected claim phase %v, got %v", v1.ClaimPending, pvc2.Status.Phase)
+	}
+
+	// When feature gate is disabled, field should not be defaulted
+	defaultMode := v1.PersistentVolumeFilesystem
+	outputMode := pvc2.Spec.VolumeMode
+	if outputMode != nil {
+		t.Errorf("Expected VolumeMode to not be defaulted, got: %+v", outputMode)
+	}
+
+	// When feature gate is enabled, field should be defaulted
+	err := utilfeature.DefaultFeatureGate.Set("BlockVolume=true")
+	if err != nil {
+		t.Fatalf("Failed to enable feature gate for BlockVolume: %v", err)
+	}
+	obj3 := roundTrip(t, runtime.Object(pvc)).(*v1.PersistentVolumeClaim)
+	outputMode3 := obj3.Spec.VolumeMode
+
+	if outputMode3 == nil {
+		t.Errorf("Expected VolumeMode to be defaulted to: %+v, got: nil", defaultMode)
+	} else if *outputMode3 != defaultMode {
+		t.Errorf("Expected VolumeMode to be defaulted to: %+v, got: %+v", defaultMode, outputMode3)
+	}
+
+	err = utilfeature.DefaultFeatureGate.Set("BlockVolume=false")
+	if err != nil {
+		t.Fatalf("Failed to disable feature gate for BlockVolume: %v", err)
 	}
 }
 
@@ -1220,7 +1269,7 @@ func TestDefaultRequestIsNotSetForReplicationController(t *testing.T) {
 	}
 	rc := &v1.ReplicationController{
 		Spec: v1.ReplicationControllerSpec{
-			Replicas: newInt(3),
+			Replicas: utilpointer.Int32Ptr(3),
 			Template: &v1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: map[string]string{

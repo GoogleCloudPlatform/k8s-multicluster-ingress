@@ -17,6 +17,7 @@ limitations under the License.
 package aws
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"reflect"
@@ -32,6 +33,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 	"k8s.io/apimachinery/pkg/types"
 	kubeletapis "k8s.io/kubernetes/pkg/kubelet/apis"
 )
@@ -80,6 +82,29 @@ func (m *MockedFakeELB) expectDescribeLoadBalancers(loadBalancerName string) {
 	m.On("DescribeLoadBalancers", &elb.DescribeLoadBalancersInput{LoadBalancerNames: []*string{aws.String(loadBalancerName)}}).Return(&elb.DescribeLoadBalancersOutput{
 		LoadBalancerDescriptions: []*elb.LoadBalancerDescription{{}},
 	})
+}
+
+func (m *MockedFakeELB) AddTags(input *elb.AddTagsInput) (*elb.AddTagsOutput, error) {
+	args := m.Called(input)
+	return args.Get(0).(*elb.AddTagsOutput), nil
+}
+
+func (m *MockedFakeELB) ConfigureHealthCheck(input *elb.ConfigureHealthCheckInput) (*elb.ConfigureHealthCheckOutput, error) {
+	args := m.Called(input)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*elb.ConfigureHealthCheckOutput), args.Error(1)
+}
+
+func (m *MockedFakeELB) expectConfigureHealthCheck(loadBalancerName *string, expectedHC *elb.HealthCheck, returnErr error) {
+	expected := &elb.ConfigureHealthCheckInput{HealthCheck: expectedHC, LoadBalancerName: loadBalancerName}
+	call := m.On("ConfigureHealthCheck", expected)
+	if returnErr != nil {
+		call.Return(nil, returnErr)
+	} else {
+		call.Return(&elb.ConfigureHealthCheckOutput{}, nil)
+	}
 }
 
 func TestReadAWSCloudConfig(t *testing.T) {
@@ -135,7 +160,10 @@ func TestReadAWSCloudConfig(t *testing.T) {
 		if test.aws != nil {
 			metadata, _ = test.aws.Metadata()
 		}
-		cfg, err := readAWSCloudConfig(test.reader, metadata)
+		cfg, err := readAWSCloudConfig(test.reader)
+		if err == nil {
+			err = updateConfigZone(cfg, metadata)
+		}
 		if test.expectError {
 			if err == nil {
 				t.Errorf("Should error for case %s (cfg=%v)", test.name, cfg)
@@ -188,7 +216,11 @@ func TestNewAWSCloud(t *testing.T) {
 
 	for _, test := range tests {
 		t.Logf("Running test case %s", test.name)
-		c, err := newAWSCloud(test.reader, test.awsServices)
+		cfg, err := readAWSCloudConfig(test.reader)
+		var c *Cloud
+		if err == nil {
+			c, err = newAWSCloud(*cfg, test.awsServices)
+		}
 		if test.expectError {
 			if err == nil {
 				t.Errorf("Should error for case %s", test.name)
@@ -208,7 +240,7 @@ func mockInstancesResp(selfInstance *ec2.Instance, instances []*ec2.Instance) (*
 	awsServices := newMockedFakeAWSServices(TestClusterId)
 	awsServices.instances = instances
 	awsServices.selfInstance = selfInstance
-	awsCloud, err := newAWSCloud(nil, awsServices)
+	awsCloud, err := newAWSCloud(CloudConfig{}, awsServices)
 	if err != nil {
 		panic(err)
 	}
@@ -217,7 +249,7 @@ func mockInstancesResp(selfInstance *ec2.Instance, instances []*ec2.Instance) (*
 
 func mockAvailabilityZone(availabilityZone string) *Cloud {
 	awsServices := newMockedFakeAWSServices(TestClusterId).WithAz(availabilityZone)
-	awsCloud, err := newAWSCloud(nil, awsServices)
+	awsCloud, err := newAWSCloud(CloudConfig{}, awsServices)
 	if err != nil {
 		panic(err)
 	}
@@ -240,6 +272,12 @@ func TestNodeAddresses(t *testing.T) {
 	var instance1 ec2.Instance
 	var instance2 ec2.Instance
 
+	// ClusterID needs to be set
+	var tag ec2.Tag
+	tag.Key = aws.String(TagNameKubernetesClusterLegacy)
+	tag.Value = aws.String(TestClusterId)
+	tags := []*ec2.Tag{&tag}
+
 	//0
 	instance0.InstanceId = aws.String("i-0")
 	instance0.PrivateDnsName = aws.String("instance-same.ec2.internal")
@@ -258,6 +296,7 @@ func TestNodeAddresses(t *testing.T) {
 	}
 	instance0.InstanceType = aws.String("c3.large")
 	instance0.Placement = &ec2.Placement{AvailabilityZone: aws.String("us-east-1a")}
+	instance0.Tags = tags
 	state0 := ec2.InstanceState{
 		Name: aws.String("running"),
 	}
@@ -269,6 +308,7 @@ func TestNodeAddresses(t *testing.T) {
 	instance1.PrivateIpAddress = aws.String("192.168.0.2")
 	instance1.InstanceType = aws.String("c3.large")
 	instance1.Placement = &ec2.Placement{AvailabilityZone: aws.String("us-east-1a")}
+	instance1.Tags = tags
 	state1 := ec2.InstanceState{
 		Name: aws.String("running"),
 	}
@@ -281,6 +321,7 @@ func TestNodeAddresses(t *testing.T) {
 	instance2.PublicIpAddress = aws.String("1.2.3.4")
 	instance2.InstanceType = aws.String("c3.large")
 	instance2.Placement = &ec2.Placement{AvailabilityZone: aws.String("us-east-1a")}
+	instance2.Tags = tags
 	state2 := ec2.InstanceState{
 		Name: aws.String("running"),
 	}
@@ -289,13 +330,13 @@ func TestNodeAddresses(t *testing.T) {
 	instances := []*ec2.Instance{&instance0, &instance1, &instance2}
 
 	aws1, _ := mockInstancesResp(&instance0, []*ec2.Instance{&instance0})
-	_, err1 := aws1.NodeAddresses("instance-mismatch.ec2.internal")
+	_, err1 := aws1.NodeAddresses(context.TODO(), "instance-mismatch.ec2.internal")
 	if err1 == nil {
 		t.Errorf("Should error when no instance found")
 	}
 
 	aws2, _ := mockInstancesResp(&instance2, instances)
-	_, err2 := aws2.NodeAddresses("instance-same.ec2.internal")
+	_, err2 := aws2.NodeAddresses(context.TODO(), "instance-same.ec2.internal")
 	if err2 == nil {
 		t.Errorf("Should error when multiple instances found")
 	}
@@ -303,7 +344,7 @@ func TestNodeAddresses(t *testing.T) {
 	aws3, _ := mockInstancesResp(&instance0, instances[0:1])
 	// change node name so it uses the instance instead of metadata
 	aws3.selfAWSInstance.nodeName = "foo"
-	addrs3, err3 := aws3.NodeAddresses("instance-same.ec2.internal")
+	addrs3, err3 := aws3.NodeAddresses(context.TODO(), "instance-same.ec2.internal")
 	if err3 != nil {
 		t.Errorf("Should not error when instance found")
 	}
@@ -319,12 +360,19 @@ func TestNodeAddresses(t *testing.T) {
 func TestNodeAddressesWithMetadata(t *testing.T) {
 	var instance ec2.Instance
 
+	// ClusterID needs to be set
+	var tag ec2.Tag
+	tag.Key = aws.String(TagNameKubernetesClusterLegacy)
+	tag.Value = aws.String(TestClusterId)
+	tags := []*ec2.Tag{&tag}
+
 	instanceName := "instance.ec2.internal"
 	instance.InstanceId = aws.String("i-0")
 	instance.PrivateDnsName = &instanceName
 	instance.PublicIpAddress = aws.String("2.3.4.5")
 	instance.InstanceType = aws.String("c3.large")
 	instance.Placement = &ec2.Placement{AvailabilityZone: aws.String("us-east-1a")}
+	instance.Tags = tags
 	state := ec2.InstanceState{
 		Name: aws.String("running"),
 	}
@@ -335,7 +383,7 @@ func TestNodeAddressesWithMetadata(t *testing.T) {
 
 	awsServices.networkInterfacesMacs = []string{"0a:26:89:f3:9c:f6", "0a:77:64:c4:6a:48"}
 	awsServices.networkInterfacesPrivateIPs = [][]string{{"192.168.0.1"}, {"192.168.0.2"}}
-	addrs, err := awsCloud.NodeAddresses("")
+	addrs, err := awsCloud.NodeAddresses(context.TODO(), "")
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
@@ -350,7 +398,7 @@ func TestGetRegion(t *testing.T) {
 	if !ok {
 		t.Fatalf("Unexpected missing zones impl")
 	}
-	zone, err := zones.GetZone()
+	zone, err := zones.GetZone(context.TODO())
 	if err != nil {
 		t.Fatalf("unexpected error %v", err)
 	}
@@ -364,7 +412,7 @@ func TestGetRegion(t *testing.T) {
 
 func TestFindVPCID(t *testing.T) {
 	awsServices := newMockedFakeAWSServices(TestClusterId)
-	c, err := newAWSCloud(strings.NewReader("[global]"), awsServices)
+	c, err := newAWSCloud(CloudConfig{}, awsServices)
 	if err != nil {
 		t.Errorf("Error building aws cloud: %v", err)
 		return
@@ -438,7 +486,7 @@ func constructRouteTable(subnetID string, public bool) *ec2.RouteTable {
 
 func TestSubnetIDsinVPC(t *testing.T) {
 	awsServices := newMockedFakeAWSServices(TestClusterId)
-	c, err := newAWSCloud(strings.NewReader("[global]"), awsServices)
+	c, err := newAWSCloud(CloudConfig{}, awsServices)
 	if err != nil {
 		t.Errorf("Error building aws cloud: %v", err)
 		return
@@ -773,7 +821,7 @@ func TestFindInstanceByNodeNameExcludesTerminatedInstances(t *testing.T) {
 	instances := []*ec2.Instance{&terminatedInstance, &runningInstance}
 	awsServices.instances = append(awsServices.instances, instances...)
 
-	c, err := newAWSCloud(strings.NewReader("[global]"), awsServices)
+	c, err := newAWSCloud(CloudConfig{}, awsServices)
 	if err != nil {
 		t.Errorf("Error building aws cloud: %v", err)
 		return
@@ -793,7 +841,7 @@ func TestFindInstanceByNodeNameExcludesTerminatedInstances(t *testing.T) {
 
 func TestGetInstanceByNodeNameBatching(t *testing.T) {
 	awsServices := newMockedFakeAWSServices(TestClusterId)
-	c, err := newAWSCloud(strings.NewReader("[global]"), awsServices)
+	c, err := newAWSCloud(CloudConfig{}, awsServices)
 	assert.Nil(t, err, "Error building aws cloud: %v", err)
 	var tag ec2.Tag
 	tag.Key = aws.String(TagNameKubernetesClusterPrefix + TestClusterId)
@@ -820,7 +868,7 @@ func TestGetInstanceByNodeNameBatching(t *testing.T) {
 
 func TestGetVolumeLabels(t *testing.T) {
 	awsServices := newMockedFakeAWSServices(TestClusterId)
-	c, err := newAWSCloud(strings.NewReader("[global]"), awsServices)
+	c, err := newAWSCloud(CloudConfig{}, awsServices)
 	assert.Nil(t, err, "Error building aws cloud: %v", err)
 	volumeId := awsVolumeID("vol-VolumeId")
 	expectedVolumeRequest := &ec2.DescribeVolumesInput{VolumeIds: []*string{volumeId.awsString()}}
@@ -842,34 +890,34 @@ func TestGetVolumeLabels(t *testing.T) {
 
 func TestDescribeLoadBalancerOnDelete(t *testing.T) {
 	awsServices := newMockedFakeAWSServices(TestClusterId)
-	c, _ := newAWSCloud(strings.NewReader("[global]"), awsServices)
+	c, _ := newAWSCloud(CloudConfig{}, awsServices)
 	awsServices.elb.(*MockedFakeELB).expectDescribeLoadBalancers("aid")
 
-	c.EnsureLoadBalancerDeleted(TestClusterName, &v1.Service{ObjectMeta: metav1.ObjectMeta{Name: "myservice", UID: "id"}})
+	c.EnsureLoadBalancerDeleted(context.TODO(), TestClusterName, &v1.Service{ObjectMeta: metav1.ObjectMeta{Name: "myservice", UID: "id"}})
 }
 
 func TestDescribeLoadBalancerOnUpdate(t *testing.T) {
 	awsServices := newMockedFakeAWSServices(TestClusterId)
-	c, _ := newAWSCloud(strings.NewReader("[global]"), awsServices)
+	c, _ := newAWSCloud(CloudConfig{}, awsServices)
 	awsServices.elb.(*MockedFakeELB).expectDescribeLoadBalancers("aid")
 
-	c.UpdateLoadBalancer(TestClusterName, &v1.Service{ObjectMeta: metav1.ObjectMeta{Name: "myservice", UID: "id"}}, []*v1.Node{})
+	c.UpdateLoadBalancer(context.TODO(), TestClusterName, &v1.Service{ObjectMeta: metav1.ObjectMeta{Name: "myservice", UID: "id"}}, []*v1.Node{})
 }
 
 func TestDescribeLoadBalancerOnGet(t *testing.T) {
 	awsServices := newMockedFakeAWSServices(TestClusterId)
-	c, _ := newAWSCloud(strings.NewReader("[global]"), awsServices)
+	c, _ := newAWSCloud(CloudConfig{}, awsServices)
 	awsServices.elb.(*MockedFakeELB).expectDescribeLoadBalancers("aid")
 
-	c.GetLoadBalancer(TestClusterName, &v1.Service{ObjectMeta: metav1.ObjectMeta{Name: "myservice", UID: "id"}})
+	c.GetLoadBalancer(context.TODO(), TestClusterName, &v1.Service{ObjectMeta: metav1.ObjectMeta{Name: "myservice", UID: "id"}})
 }
 
 func TestDescribeLoadBalancerOnEnsure(t *testing.T) {
 	awsServices := newMockedFakeAWSServices(TestClusterId)
-	c, _ := newAWSCloud(strings.NewReader("[global]"), awsServices)
+	c, _ := newAWSCloud(CloudConfig{}, awsServices)
 	awsServices.elb.(*MockedFakeELB).expectDescribeLoadBalancers("aid")
 
-	c.EnsureLoadBalancer(TestClusterName, &v1.Service{ObjectMeta: metav1.ObjectMeta{Name: "myservice", UID: "id"}}, []*v1.Node{})
+	c.EnsureLoadBalancer(context.TODO(), TestClusterName, &v1.Service{ObjectMeta: metav1.ObjectMeta{Name: "myservice", UID: "id"}}, []*v1.Node{})
 }
 
 func TestBuildListener(t *testing.T) {
@@ -1098,21 +1146,22 @@ func TestGetLoadBalancerAdditionalTags(t *testing.T) {
 
 func TestLBExtraSecurityGroupsAnnotation(t *testing.T) {
 	awsServices := newMockedFakeAWSServices(TestClusterId)
-	c, _ := newAWSCloud(strings.NewReader("[global]"), awsServices)
+	c, _ := newAWSCloud(CloudConfig{}, awsServices)
 
-	sg1 := "sg-000001"
-	sg2 := "sg-000002"
+	sg1 := map[string]string{ServiceAnnotationLoadBalancerExtraSecurityGroups: "sg-000001"}
+	sg2 := map[string]string{ServiceAnnotationLoadBalancerExtraSecurityGroups: "sg-000002"}
+	sg3 := map[string]string{ServiceAnnotationLoadBalancerExtraSecurityGroups: "sg-000001, sg-000002"}
 
 	tests := []struct {
 		name string
 
-		extraSGsAnnotation string
-		expectedSGs        []string
+		annotations map[string]string
+		expectedSGs []string
 	}{
-		{"No extra SG annotation", "", []string{}},
-		{"Empty extra SGs specified", ", ,,", []string{}},
-		{"SG specified", sg1, []string{sg1}},
-		{"Multiple SGs specified", fmt.Sprintf("%s, %s", sg1, sg2), []string{sg1, sg2}},
+		{"No extra SG annotation", map[string]string{}, []string{}},
+		{"Empty extra SGs specified", map[string]string{ServiceAnnotationLoadBalancerExtraSecurityGroups: ", ,,"}, []string{}},
+		{"SG specified", sg1, []string{sg1[ServiceAnnotationLoadBalancerExtraSecurityGroups]}},
+		{"Multiple SGs specified", sg3, []string{sg1[ServiceAnnotationLoadBalancerExtraSecurityGroups], sg2[ServiceAnnotationLoadBalancerExtraSecurityGroups]}},
 	}
 
 	awsServices.ec2.(*MockedFakeEC2).expectDescribeSecurityGroups(TestClusterId, "k8s-elb-aid", "cluster.test")
@@ -1121,13 +1170,153 @@ func TestLBExtraSecurityGroupsAnnotation(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			serviceName := types.NamespacedName{Namespace: "default", Name: "myservice"}
 
-			sgList, err := c.buildELBSecurityGroupList(serviceName, "aid", test.extraSGsAnnotation)
+			sgList, err := c.buildELBSecurityGroupList(serviceName, "aid", test.annotations)
 			assert.NoError(t, err, "buildELBSecurityGroupList failed")
 			extraSGs := sgList[1:]
 			assert.True(t, sets.NewString(test.expectedSGs...).Equal(sets.NewString(extraSGs...)),
 				"Security Groups expected=%q , returned=%q", test.expectedSGs, extraSGs)
 		})
 	}
+}
+
+// Test that we can add a load balancer tag
+func TestAddLoadBalancerTags(t *testing.T) {
+	loadBalancerName := "test-elb"
+	awsServices := newMockedFakeAWSServices(TestClusterId)
+	c, _ := newAWSCloud(CloudConfig{}, awsServices)
+
+	want := make(map[string]string)
+	want["tag1"] = "val1"
+
+	expectedAddTagsRequest := &elb.AddTagsInput{
+		LoadBalancerNames: []*string{&loadBalancerName},
+		Tags: []*elb.Tag{
+			{
+				Key:   aws.String("tag1"),
+				Value: aws.String("val1"),
+			},
+		},
+	}
+	awsServices.elb.(*MockedFakeELB).On("AddTags", expectedAddTagsRequest).Return(&elb.AddTagsOutput{})
+
+	err := c.addLoadBalancerTags(loadBalancerName, want)
+	assert.Nil(t, err, "Error adding load balancer tags: %v", err)
+	awsServices.elb.(*MockedFakeELB).AssertExpectations(t)
+}
+
+func TestEnsureLoadBalancerHealthCheck(t *testing.T) {
+
+	tests := []struct {
+		name                string
+		annotations         map[string]string
+		overriddenFieldName string
+		overriddenValue     int64
+	}{
+		{"falls back to HC defaults", map[string]string{}, "", int64(0)},
+		{"healthy threshold override", map[string]string{ServiceAnnotationLoadBalancerHCHealthyThreshold: "7"}, "HealthyThreshold", int64(7)},
+		{"unhealthy threshold override", map[string]string{ServiceAnnotationLoadBalancerHCUnhealthyThreshold: "7"}, "UnhealthyThreshold", int64(7)},
+		{"timeout override", map[string]string{ServiceAnnotationLoadBalancerHCTimeout: "7"}, "Timeout", int64(7)},
+		{"interval override", map[string]string{ServiceAnnotationLoadBalancerHCInterval: "7"}, "Interval", int64(7)},
+	}
+	lbName := "myLB"
+	// this HC will always differ from the expected HC and thus it is expected an
+	// API call will be made to update it
+	currentHC := &elb.HealthCheck{}
+	elbDesc := &elb.LoadBalancerDescription{LoadBalancerName: &lbName, HealthCheck: currentHC}
+	defaultHealthyThreshold := int64(2)
+	defaultUnhealthyThreshold := int64(6)
+	defaultTimeout := int64(5)
+	defaultInterval := int64(10)
+	protocol, path, port := "tcp", "", int32(8080)
+	target := "tcp:8080"
+	defaultHC := &elb.HealthCheck{
+		HealthyThreshold:   &defaultHealthyThreshold,
+		UnhealthyThreshold: &defaultUnhealthyThreshold,
+		Timeout:            &defaultTimeout,
+		Interval:           &defaultInterval,
+		Target:             &target,
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			awsServices := newMockedFakeAWSServices(TestClusterId)
+			c, err := newAWSCloud(CloudConfig{}, awsServices)
+			assert.Nil(t, err, "Error building aws cloud: %v", err)
+			expectedHC := *defaultHC
+			if test.overriddenFieldName != "" { // cater for test case with no overrides
+				value := reflect.ValueOf(&test.overriddenValue)
+				reflect.ValueOf(&expectedHC).Elem().FieldByName(test.overriddenFieldName).Set(value)
+			}
+			awsServices.elb.(*MockedFakeELB).expectConfigureHealthCheck(&lbName, &expectedHC, nil)
+
+			err = c.ensureLoadBalancerHealthCheck(elbDesc, protocol, port, path, test.annotations)
+
+			require.Nil(t, err)
+			awsServices.elb.(*MockedFakeELB).AssertExpectations(t)
+		})
+	}
+
+	t.Run("does not make an API call if the current health check is the same", func(t *testing.T) {
+		awsServices := newMockedFakeAWSServices(TestClusterId)
+		c, err := newAWSCloud(CloudConfig{}, awsServices)
+		assert.Nil(t, err, "Error building aws cloud: %v", err)
+		expectedHC := *defaultHC
+		timeout := int64(3)
+		expectedHC.Timeout = &timeout
+		annotations := map[string]string{ServiceAnnotationLoadBalancerHCTimeout: "3"}
+		var currentHC elb.HealthCheck
+		currentHC = expectedHC
+
+		// NOTE no call expectations are set on the ELB mock
+		// test default HC
+		elbDesc := &elb.LoadBalancerDescription{LoadBalancerName: &lbName, HealthCheck: defaultHC}
+		err = c.ensureLoadBalancerHealthCheck(elbDesc, protocol, port, path, map[string]string{})
+		assert.Nil(t, err)
+		// test HC with override
+		elbDesc = &elb.LoadBalancerDescription{LoadBalancerName: &lbName, HealthCheck: &currentHC}
+		err = c.ensureLoadBalancerHealthCheck(elbDesc, protocol, port, path, annotations)
+		assert.Nil(t, err)
+	})
+
+	t.Run("validates resulting expected health check before making an API call", func(t *testing.T) {
+		awsServices := newMockedFakeAWSServices(TestClusterId)
+		c, err := newAWSCloud(CloudConfig{}, awsServices)
+		assert.Nil(t, err, "Error building aws cloud: %v", err)
+		expectedHC := *defaultHC
+		invalidThreshold := int64(1)
+		expectedHC.HealthyThreshold = &invalidThreshold
+		require.Error(t, expectedHC.Validate()) // confirm test precondition
+		annotations := map[string]string{ServiceAnnotationLoadBalancerHCTimeout: "1"}
+
+		// NOTE no call expectations are set on the ELB mock
+		err = c.ensureLoadBalancerHealthCheck(elbDesc, protocol, port, path, annotations)
+
+		require.Error(t, err)
+	})
+
+	t.Run("handles invalid override values", func(t *testing.T) {
+		awsServices := newMockedFakeAWSServices(TestClusterId)
+		c, err := newAWSCloud(CloudConfig{}, awsServices)
+		assert.Nil(t, err, "Error building aws cloud: %v", err)
+		annotations := map[string]string{ServiceAnnotationLoadBalancerHCTimeout: "3.3"}
+
+		// NOTE no call expectations are set on the ELB mock
+		err = c.ensureLoadBalancerHealthCheck(elbDesc, protocol, port, path, annotations)
+
+		require.Error(t, err)
+	})
+
+	t.Run("returns error when updating the health check fails", func(t *testing.T) {
+		awsServices := newMockedFakeAWSServices(TestClusterId)
+		c, err := newAWSCloud(CloudConfig{}, awsServices)
+		assert.Nil(t, err, "Error building aws cloud: %v", err)
+		returnErr := fmt.Errorf("throttling error")
+		awsServices.elb.(*MockedFakeELB).expectConfigureHealthCheck(&lbName, defaultHC, returnErr)
+
+		err = c.ensureLoadBalancerHealthCheck(elbDesc, protocol, port, path, map[string]string{})
+
+		require.Error(t, err)
+		awsServices.elb.(*MockedFakeELB).AssertExpectations(t)
+	})
 }
 
 func newMockedFakeAWSServices(id string) *FakeAWSServices {

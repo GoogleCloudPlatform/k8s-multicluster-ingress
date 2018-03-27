@@ -32,9 +32,11 @@ go_library(
 
 go_test(
     name = "go_default_test",
-    srcs = ["taint_test.go"],
-    importpath = "k8s.io/kubernetes/pkg/apis/core",
-    library = ":go_default_library",
+    srcs = [
+        "taint_test.go",
+        "toleration_test.go",
+    ],
+    embed = [":go_default_library"],
 )
 
 filegroup(
@@ -51,6 +53,7 @@ filegroup(
         "//pkg/apis/core/fuzzer:all-srcs",
         "//pkg/apis/core/helper:all-srcs",
         "//pkg/apis/core/install:all-srcs",
+        "//pkg/apis/core/pods:all-srcs",
         "//pkg/apis/core/v1:all-srcs",
         "//pkg/apis/core/validation:all-srcs",
     ],

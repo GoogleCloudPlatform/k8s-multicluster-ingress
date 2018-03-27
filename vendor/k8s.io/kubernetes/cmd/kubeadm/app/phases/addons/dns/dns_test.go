@@ -17,12 +17,16 @@ limitations under the License.
 package dns
 
 import (
+	"strings"
 	"testing"
 
+	"k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	clientsetfake "k8s.io/client-go/kubernetes/fake"
 	core "k8s.io/client-go/testing"
+	kubeadmconstants "k8s.io/kubernetes/cmd/kubeadm/app/constants"
 	kubeadmutil "k8s.io/kubernetes/cmd/kubeadm/app/util"
 	api "k8s.io/kubernetes/pkg/apis/core"
 )
@@ -91,13 +95,13 @@ func TestCompileManifests(t *testing.T) {
 	}{
 		{
 			manifest: v180AndAboveKubeDNSDeployment,
-			data: struct{ ImageRepository, Arch, Version, DNSBindAddr, DNSDomain, DNSProbeType, MasterTaintKey string }{
+			data: struct{ ImageRepository, Arch, Version, DNSBindAddr, DNSProbeAddr, DNSDomain, MasterTaintKey string }{
 				ImageRepository: "foo",
 				Arch:            "foo",
 				Version:         "foo",
 				DNSBindAddr:     "foo",
+				DNSProbeAddr:    "foo",
 				DNSDomain:       "foo",
-				DNSProbeType:    "foo",
 				MasterTaintKey:  "foo",
 			},
 			expected: true,
@@ -126,9 +130,11 @@ func TestCompileManifests(t *testing.T) {
 		},
 		{
 			manifest: CoreDNSConfigMap,
-			data: struct{ DNSDomain, ServiceCIDR string }{
-				DNSDomain:   "foo",
-				ServiceCIDR: "foo",
+			data: struct{ DNSDomain, Federation, UpstreamNameserver, StubDomain string }{
+				DNSDomain:          "foo",
+				Federation:         "foo",
+				UpstreamNameserver: "foo",
+				StubDomain:         "foo",
 			},
 			expected: true,
 		},
@@ -141,6 +147,271 @@ func TestCompileManifests(t *testing.T) {
 				rt.expected,
 				(actual == nil),
 			)
+		}
+	}
+}
+
+func TestGetDNSIP(t *testing.T) {
+	var tests = []struct {
+		svcSubnet, expectedDNSIP string
+	}{
+		{
+			svcSubnet:     "10.96.0.0/12",
+			expectedDNSIP: "10.96.0.10",
+		},
+		{
+			svcSubnet:     "10.87.116.64/26",
+			expectedDNSIP: "10.87.116.74",
+		},
+	}
+	for _, rt := range tests {
+		dnsIP, err := kubeadmconstants.GetDNSIP(rt.svcSubnet)
+		if err != nil {
+			t.Fatalf("couldn't get dnsIP : %v", err)
+		}
+
+		actualDNSIP := dnsIP.String()
+		if actualDNSIP != rt.expectedDNSIP {
+			t.Errorf(
+				"failed GetDNSIP\n\texpected: %s\n\t  actual: %s",
+				rt.expectedDNSIP,
+				actualDNSIP,
+			)
+		}
+	}
+}
+
+func TestTranslateStubDomainKubeDNSToCoreDNS(t *testing.T) {
+	testCases := []struct {
+		configMap *v1.ConfigMap
+		expectOne string
+		expectTwo string
+	}{
+		{
+			configMap: &v1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "kube-dns",
+					Namespace: "kube-system",
+				},
+				Data: map[string]string{
+					"stubDomains":         `{"foo.com" : ["1.2.3.4:5300","3.3.3.3"], "my.cluster.local" : ["2.3.4.5"]}`,
+					"upstreamNameservers": `["8.8.8.8", "8.8.4.4"]`,
+				},
+			},
+
+			expectOne: `
+    foo.com:53 {
+       errors
+       cache 30
+       proxy . 1.2.3.4:5300 3.3.3.3
+    }
+    
+    my.cluster.local:53 {
+       errors
+       cache 30
+       proxy . 2.3.4.5
+    }`,
+			expectTwo: `
+    my.cluster.local:53 {
+       errors
+       cache 30
+       proxy . 2.3.4.5
+    }
+    
+    foo.com:53 {
+       errors
+       cache 30
+       proxy . 1.2.3.4:5300 3.3.3.3
+    }`,
+		},
+		{
+			configMap: &v1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "kubedns",
+					Namespace: "kube-system",
+				},
+			},
+
+			expectOne: "",
+		},
+		{
+			configMap: &v1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "kube-dns",
+					Namespace: "kube-system",
+				},
+				Data: map[string]string{
+					"stubDomains":         `{"foo.com" : ["1.2.3.4:5300"], "my.cluster.local" : ["2.3.4.5"]}`,
+					"upstreamNameservers": `["8.8.8.8", "8.8.4.4"]`,
+				},
+			},
+
+			expectOne: `
+    foo.com:53 {
+       errors
+       cache 30
+       proxy . 1.2.3.4:5300
+    }
+    
+    my.cluster.local:53 {
+       errors
+       cache 30
+       proxy . 2.3.4.5
+    }`,
+			expectTwo: `
+    my.cluster.local:53 {
+       errors
+       cache 30
+       proxy . 2.3.4.5
+    }
+    
+    foo.com:53 {
+       errors
+       cache 30
+       proxy . 1.2.3.4:5300
+    }`,
+		},
+		{
+			configMap: &v1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "kube-dns",
+					Namespace: "kube-system",
+				},
+				Data: map[string]string{
+					"upstreamNameservers": `["8.8.8.8", "8.8.4.4"]`,
+				},
+			},
+
+			expectOne: "",
+		},
+	}
+	for _, testCase := range testCases {
+		out, err := translateStubDomainOfKubeDNSToProxyCoreDNS(kubeDNSStubDomain, testCase.configMap)
+		if err != nil {
+			t.Errorf("unexpected error: %v", err)
+		}
+		if !strings.Contains(out, testCase.expectOne) && !strings.Contains(out, testCase.expectTwo) {
+			t.Errorf("expected to find %q or %q in output: %q", testCase.expectOne, testCase.expectTwo, out)
+		}
+	}
+}
+
+func TestTranslateUpstreamKubeDNSToCoreDNS(t *testing.T) {
+	testCases := []struct {
+		configMap *v1.ConfigMap
+		expect    string
+	}{
+		{
+			configMap: &v1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "kube-dns",
+					Namespace: "kube-system",
+				},
+			},
+
+			expect: "/etc/resolv.conf",
+		},
+		{
+			configMap: &v1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "kubedns",
+					Namespace: "kube-system",
+				},
+				Data: map[string]string{
+					"stubDomains":         ` {"foo.com" : ["1.2.3.4:5300"], "my.cluster.local" : ["2.3.4.5"]}`,
+					"upstreamNameservers": `["8.8.8.8", "8.8.4.4", "4.4.4.4"]`,
+				},
+			},
+
+			expect: "8.8.8.8 8.8.4.4 4.4.4.4",
+		},
+		{
+			configMap: &v1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "kubedns",
+					Namespace: "kube-system",
+				},
+				Data: map[string]string{
+					"upstreamNameservers": `["8.8.8.8", "8.8.4.4"]`,
+				},
+			},
+
+			expect: "8.8.8.8 8.8.4.4",
+		},
+	}
+	for _, testCase := range testCases {
+		out, err := translateUpstreamNameServerOfKubeDNSToUpstreamProxyCoreDNS(kubeDNSUpstreamNameservers, testCase.configMap)
+		if err != nil {
+			t.Errorf("unexpected error: %v", err)
+		}
+		if !strings.Contains(out, testCase.expect) {
+			t.Errorf("expected to find %q in output: %q", testCase.expect, out)
+		}
+	}
+}
+
+func TestTranslateFederationKubeDNSToCoreDNS(t *testing.T) {
+	testCases := []struct {
+		configMap *v1.ConfigMap
+		expectOne string
+		expectTwo string
+	}{
+		{
+			configMap: &v1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "kube-dns",
+					Namespace: "kube-system",
+				},
+				Data: map[string]string{
+					"federations":         `{"foo" : "foo.feddomain.com", "bar" : "bar.feddomain.com"}`,
+					"stubDomains":         `{"foo.com" : ["1.2.3.4:5300","3.3.3.3"], "my.cluster.local" : ["2.3.4.5"]}`,
+					"upstreamNameservers": `["8.8.8.8", "8.8.4.4"]`,
+				},
+			},
+
+			expectOne: `
+        federation cluster.local {
+           foo foo.feddomain.com
+           bar bar.feddomain.com
+        }`,
+			expectTwo: `
+        federation cluster.local {
+           bar bar.feddomain.com
+           foo foo.feddomain.com
+        }`,
+		},
+		{
+			configMap: &v1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "kubedns",
+					Namespace: "kube-system",
+				},
+			},
+
+			expectOne: "",
+		},
+		{
+			configMap: &v1.ConfigMap{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "kube-dns",
+					Namespace: "kube-system",
+				},
+				Data: map[string]string{
+					"stubDomains":         `{"foo.com" : ["1.2.3.4:5300"], "my.cluster.local" : ["2.3.4.5"]}`,
+					"upstreamNameservers": `["8.8.8.8", "8.8.4.4"]`,
+				},
+			},
+
+			expectOne: "",
+		},
+	}
+	for _, testCase := range testCases {
+		out, err := translateFederationsofKubeDNSToCoreDNS(kubeDNSFederation, "cluster.local", testCase.configMap)
+		if err != nil {
+			t.Errorf("unexpected error: %v", err)
+		}
+		if !strings.Contains(out, testCase.expectOne) && !strings.Contains(out, testCase.expectTwo) {
+			t.Errorf("expected to find %q or %q in output: %q", testCase.expectOne, testCase.expectTwo, out)
 		}
 	}
 }

@@ -27,23 +27,44 @@ import (
 
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
-	"k8s.io/apimachinery/pkg/conversion/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/json"
 	"k8s.io/apimachinery/pkg/util/mergepatch"
+	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/strategicpatch"
 	"k8s.io/apiserver/pkg/admission"
 	"k8s.io/apiserver/pkg/audit"
+	"k8s.io/apiserver/pkg/endpoints/handlers/negotiation"
 	"k8s.io/apiserver/pkg/endpoints/request"
 	"k8s.io/apiserver/pkg/registry/rest"
+	utiltrace "k8s.io/apiserver/pkg/util/trace"
 )
 
 // PatchResource returns a function that will handle a resource patch
 // TODO: Eventually PatchResource should just use GuaranteedUpdate and this routine should be a bit cleaner
-func PatchResource(r rest.Patcher, scope RequestScope, admit admission.Interface, converter runtime.ObjectConvertor) http.HandlerFunc {
+func PatchResource(r rest.Patcher, scope RequestScope, admit admission.Interface, converter runtime.ObjectConvertor, patchTypes []string) http.HandlerFunc {
 	return func(w http.ResponseWriter, req *http.Request) {
+		// For performance tracking purposes.
+		trace := utiltrace.New("Patch " + req.URL.Path)
+		defer trace.LogIfLong(500 * time.Millisecond)
+
+		// Do this first, otherwise name extraction can fail for unrecognized content types
+		// TODO: handle this in negotiation
+		contentType := req.Header.Get("Content-Type")
+		// Remove "; charset=" if included in header.
+		if idx := strings.Index(contentType, ";"); idx > 0 {
+			contentType = contentType[:idx]
+		}
+		patchType := types.PatchType(contentType)
+
+		// Ensure the patchType is one we support
+		if !sets.NewString(patchTypes...).Has(contentType) {
+			scope.err(negotiation.NewUnsupportedMediaTypeError(patchTypes), w, req)
+			return
+		}
+
 		// TODO: we either want to remove timeout or document it (if we
 		// document, move timeout out of this function and declare it in
 		// api_installer)
@@ -64,14 +85,6 @@ func PatchResource(r rest.Patcher, scope RequestScope, admit admission.Interface
 			return
 		}
 
-		// TODO: handle this in negotiation
-		contentType := req.Header.Get("Content-Type")
-		// Remove "; charset=" if included in header.
-		if idx := strings.Index(contentType, ";"); idx > 0 {
-			contentType = contentType[:idx]
-		}
-		patchType := types.PatchType(contentType)
-
 		patchJS, err := readBody(req)
 		if err != nil {
 			scope.err(err, w, req)
@@ -80,6 +93,7 @@ func PatchResource(r rest.Patcher, scope RequestScope, admit admission.Interface
 
 		ae := request.AuditEventFrom(ctx)
 		audit.LogRequestPatch(ae, patchJS)
+		trace.Step("Recorded the audit event")
 
 		s, ok := runtime.SerializerInfoForMediaType(scope.Serializer.SupportedMediaTypes(), runtime.ContentTypeJSON)
 		if !ok {
@@ -111,11 +125,12 @@ func PatchResource(r rest.Patcher, scope RequestScope, admit admission.Interface
 			name,
 			patchType,
 			patchJS,
-			scope.Namer, scope.Creater, scope.Defaulter, scope.UnsafeConvertor, scope.Kind, scope.Resource, codec)
+			scope.Namer, scope.Creater, scope.Defaulter, scope.UnsafeConvertor, scope.Kind, scope.Resource, codec, trace)
 		if err != nil {
 			scope.err(err, w, req)
 			return
 		}
+		trace.Step("Object stored in database")
 
 		requestInfo, ok := request.RequestInfoFrom(ctx)
 		if !ok {
@@ -126,6 +141,7 @@ func PatchResource(r rest.Patcher, scope RequestScope, admit admission.Interface
 			scope.err(err, w, req)
 			return
 		}
+		trace.Step("Self-link added")
 
 		transformResponseObject(ctx, scope, req, w, http.StatusOK, result)
 	}
@@ -152,6 +168,7 @@ func patchResource(
 	kind schema.GroupVersionKind,
 	resource schema.GroupVersionResource,
 	codec runtime.Codec,
+	trace *utiltrace.Trace,
 ) (runtime.Object, error) {
 
 	namespace := request.NamespaceValue(ctx)
@@ -169,6 +186,7 @@ func patchResource(
 	// and is given the currently persisted object as input.
 	applyPatch := func(_ request.Context, _, currentObject runtime.Object) (runtime.Object, error) {
 		// Make sure we actually have a persisted currentObject
+		trace.Step("About to apply patch")
 		if hasUID, err := hasUID(currentObject); err != nil {
 			return nil, err
 		} else if !hasUID {
@@ -232,7 +250,7 @@ func patchResource(
 					return nil, err
 				}
 				// Capture the original object map and patch for possible retries.
-				originalMap, err := unstructured.DefaultConverter.ToUnstructured(currentVersionedObject)
+				originalMap, err := runtime.DefaultUnstructuredConverter.ToUnstructured(currentVersionedObject)
 				if err != nil {
 					return nil, err
 				}
@@ -278,7 +296,7 @@ func patchResource(
 			if err != nil {
 				return nil, err
 			}
-			currentObjMap, err := unstructured.DefaultConverter.ToUnstructured(currentVersionedObject)
+			currentObjMap, err := runtime.DefaultUnstructuredConverter.ToUnstructured(currentVersionedObject)
 			if err != nil {
 				return nil, err
 			}
@@ -352,6 +370,7 @@ func patchResource(
 	// applyAdmission is called every time GuaranteedUpdate asks for the updated object,
 	// and is given the currently persisted object and the patched object as input.
 	applyAdmission := func(ctx request.Context, patchedObject runtime.Object, currentObject runtime.Object) (runtime.Object, error) {
+		trace.Step("About to check admission control")
 		return patchedObject, updateMutation(patchedObject, currentObject)
 	}
 	updatedObjectInfo := rest.DefaultUpdatedObjectInfo(nil, applyPatch, applyAdmission)
@@ -425,7 +444,7 @@ func strategicPatchObject(
 	objToUpdate runtime.Object,
 	versionedObj runtime.Object,
 ) error {
-	originalObjMap, err := unstructured.DefaultConverter.ToUnstructured(originalObject)
+	originalObjMap, err := runtime.DefaultUnstructuredConverter.ToUnstructured(originalObject)
 	if err != nil {
 		return err
 	}
@@ -458,7 +477,7 @@ func applyPatchToObject(
 	}
 
 	// Rather than serialize the patched map to JSON, then decode it to an object, we go directly from a map to an object
-	if err := unstructured.DefaultConverter.FromUnstructured(patchedObjMap, objToUpdate); err != nil {
+	if err := runtime.DefaultUnstructuredConverter.FromUnstructured(patchedObjMap, objToUpdate); err != nil {
 		return err
 	}
 	// Decoding from JSON to a versioned object would apply defaults, so we do the same here

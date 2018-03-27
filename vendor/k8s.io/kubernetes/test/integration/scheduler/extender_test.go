@@ -38,18 +38,19 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/kubernetes/pkg/api/legacyscheme"
 	"k8s.io/kubernetes/pkg/api/testapi"
-	"k8s.io/kubernetes/plugin/pkg/scheduler"
-	_ "k8s.io/kubernetes/plugin/pkg/scheduler/algorithmprovider"
-	schedulerapi "k8s.io/kubernetes/plugin/pkg/scheduler/api"
-	"k8s.io/kubernetes/plugin/pkg/scheduler/factory"
+	"k8s.io/kubernetes/pkg/scheduler"
+	_ "k8s.io/kubernetes/pkg/scheduler/algorithmprovider"
+	schedulerapi "k8s.io/kubernetes/pkg/scheduler/api"
+	"k8s.io/kubernetes/pkg/scheduler/factory"
 	e2e "k8s.io/kubernetes/test/e2e/framework"
 	"k8s.io/kubernetes/test/integration/framework"
 )
 
 const (
-	filter     = "filter"
-	prioritize = "prioritize"
-	bind       = "bind"
+	filter               = "filter"
+	prioritize           = "prioritize"
+	bind                 = "bind"
+	extendedResourceName = "foo.com/bar"
 )
 
 type fitPredicate func(pod *v1.Pod, node *v1.Node) (bool, error)
@@ -129,7 +130,7 @@ func (e *Extender) filterUsingNodeCache(args *schedulerapi.ExtenderArgs) (*sched
 	for _, nodeName := range *args.NodeNames {
 		fits := true
 		for _, predicate := range e.predicates {
-			fit, err := predicate(&args.Pod,
+			fit, err := predicate(args.Pod,
 				&v1.Node{ObjectMeta: metav1.ObjectMeta{Name: nodeName}})
 			if err != nil {
 				return &schedulerapi.ExtenderFilterResult{
@@ -168,7 +169,7 @@ func (e *Extender) Filter(args *schedulerapi.ExtenderArgs) (*schedulerapi.Extend
 		for _, node := range args.Nodes.Items {
 			fits := true
 			for _, predicate := range e.predicates {
-				fit, err := predicate(&args.Pod, &node)
+				fit, err := predicate(args.Pod, &node)
 				if err != nil {
 					return &schedulerapi.ExtenderFilterResult{
 						Nodes:       &v1.NodeList{},
@@ -216,7 +217,7 @@ func (e *Extender) Prioritize(args *schedulerapi.ExtenderArgs) (*schedulerapi.Ho
 			continue
 		}
 		priorityFunc := prioritizer.function
-		prioritizedList, err := priorityFunc(&args.Pod, nodes)
+		prioritizedList, err := priorityFunc(args.Pod, nodes)
 		if err != nil {
 			return &schedulerapi.HostPriorityList{}, err
 		}
@@ -334,7 +335,7 @@ func TestSchedulerExtender(t *testing.T) {
 				FilterVerb:     filter,
 				PrioritizeVerb: prioritize,
 				Weight:         3,
-				EnableHttps:    false,
+				EnableHTTPS:    false,
 			},
 			{
 				URLPrefix:      es2.URL,
@@ -342,14 +343,20 @@ func TestSchedulerExtender(t *testing.T) {
 				PrioritizeVerb: prioritize,
 				BindVerb:       bind,
 				Weight:         4,
-				EnableHttps:    false,
+				EnableHTTPS:    false,
+				ManagedResources: []schedulerapi.ExtenderManagedResource{
+					{
+						Name:               extendedResourceName,
+						IgnoredByScheduler: true,
+					},
+				},
 			},
 			{
 				URLPrefix:        es3.URL,
 				FilterVerb:       filter,
 				PrioritizeVerb:   prioritize,
 				Weight:           10,
-				EnableHttps:      false,
+				EnableHTTPS:      false,
 				NodeCacheCapable: true,
 			},
 		},
@@ -369,6 +376,7 @@ func TestSchedulerExtender(t *testing.T) {
 		informerFactory.Apps().V1beta1().StatefulSets(),
 		informerFactory.Core().V1().Services(),
 		informerFactory.Policy().V1beta1().PodDisruptionBudgets(),
+		informerFactory.Storage().V1().StorageClasses(),
 		v1.DefaultHardPodAffinitySymmetricWeight,
 		enableEquivalenceCache,
 	)
@@ -419,7 +427,17 @@ func DoTestPodScheduling(ns *v1.Namespace, t *testing.T, cs clientset.Interface)
 	pod := &v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{Name: "extender-test-pod"},
 		Spec: v1.PodSpec{
-			Containers: []v1.Container{{Name: "container", Image: e2e.GetPauseImageName(cs)}},
+			Containers: []v1.Container{
+				{
+					Name:  "container",
+					Image: e2e.GetPauseImageName(cs),
+					Resources: v1.ResourceRequirements{
+						Limits: v1.ResourceList{
+							extendedResourceName: *resource.NewQuantity(1, resource.DecimalSI),
+						},
+					},
+				},
+			},
 		},
 	}
 

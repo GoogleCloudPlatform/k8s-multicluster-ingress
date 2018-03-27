@@ -48,7 +48,7 @@ const (
 // orphan dependents by default.
 type GarbageCollectionDeleteStrategy interface {
 	// DefaultGarbageCollectionPolicy returns the default garbage collection behavior.
-	DefaultGarbageCollectionPolicy() GarbageCollectionPolicy
+	DefaultGarbageCollectionPolicy(ctx genericapirequest.Context) GarbageCollectionPolicy
 }
 
 // RESTGracefulDeleteStrategy must be implemented by the registry that supports
@@ -74,7 +74,7 @@ func BeforeDelete(strategy RESTDeleteStrategy, ctx genericapirequest.Context, ob
 		return false, false, kerr
 	}
 	if errs := validation.ValidateDeleteOptions(options); len(errs) > 0 {
-		return false, false, errors.NewInvalid(schema.GroupKind{}, "", errs)
+		return false, false, errors.NewInvalid(schema.GroupKind{Group: metav1.GroupName, Kind: "DeleteOptions"}, "", errs)
 	}
 	// Checking the Preconditions here to fail early. They'll be enforced later on when we actually do the deletion, too.
 	if options.Preconditions != nil && options.Preconditions.UID != nil && *options.Preconditions.UID != objectMeta.GetUID() {

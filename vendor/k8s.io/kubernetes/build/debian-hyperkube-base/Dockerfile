@@ -14,10 +14,13 @@
 
 FROM BASEIMAGE
 
+RUN echo CACHEBUST>/dev/null && clean-install \
+    bash
+
 # The samba-common, cifs-utils, and nfs-common packages depend on
-# ucf, which itself depends on /bin/bash existing.
-# It doesn't seem to actually need bash, however.
-RUN ln -s /bin/sh /bin/bash
+# ucf, which itself depends on /bin/bash.
+RUN echo "dash dash/sh boolean false" | debconf-set-selections
+RUN DEBIAN_FRONTEND=noninteractive dpkg-reconfigure dash
 
 RUN echo CACHEBUST>/dev/null && clean-install \
     ca-certificates \
@@ -25,11 +28,13 @@ RUN echo CACHEBUST>/dev/null && clean-install \
     cifs-utils \
     conntrack \
     e2fsprogs \
+    xfsprogs \
     ebtables \
     ethtool \
     git \
     glusterfs-client \
     iptables \
+    ipset \
     jq \
     kmod \
     openssh-client \

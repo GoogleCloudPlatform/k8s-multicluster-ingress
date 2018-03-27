@@ -30,6 +30,8 @@ import (
 type SecretForDockerRegistryGeneratorV1 struct {
 	// Name of secret (required)
 	Name string
+	// FileSources to derive the secret from (optional)
+	FileSources []string
 	// Username for registry (required)
 	Username string
 	// Email for registry (optional)
@@ -85,15 +87,22 @@ func (s SecretForDockerRegistryGeneratorV1) StructuredGenerate() (runtime.Object
 	if err := s.validate(); err != nil {
 		return nil, err
 	}
-	dockercfgContent, err := handleDockercfgContent(s.Username, s.Password, s.Email, s.Server)
-	if err != nil {
-		return nil, err
-	}
 	secret := &v1.Secret{}
 	secret.Name = s.Name
-	secret.Type = v1.SecretTypeDockercfg
+	secret.Type = v1.SecretTypeDockerConfigJson
 	secret.Data = map[string][]byte{}
-	secret.Data[v1.DockerConfigKey] = dockercfgContent
+	if len(s.FileSources) > 0 {
+		if err := handleFromFileSources(secret, s.FileSources); err != nil {
+			return nil, err
+		}
+	}
+	if len(s.FileSources) == 0 {
+		dockercfgJsonContent, err := handleDockerCfgJsonContent(s.Username, s.Password, s.Email, s.Server)
+		if err != nil {
+			return nil, err
+		}
+		secret.Data[v1.DockerConfigJsonKey] = dockercfgJsonContent
+	}
 	if s.AppendHash {
 		h, err := hash.SecretHash(secret)
 		if err != nil {
@@ -108,6 +117,7 @@ func (s SecretForDockerRegistryGeneratorV1) StructuredGenerate() (runtime.Object
 func (s SecretForDockerRegistryGeneratorV1) ParamNames() []GeneratorParam {
 	return []GeneratorParam{
 		{"name", true},
+		{"from-file", false},
 		{"docker-username", true},
 		{"docker-email", false},
 		{"docker-password", true},
@@ -121,29 +131,32 @@ func (s SecretForDockerRegistryGeneratorV1) validate() error {
 	if len(s.Name) == 0 {
 		return fmt.Errorf("name must be specified")
 	}
-	if len(s.Username) == 0 {
-		return fmt.Errorf("username must be specified")
-	}
-	if len(s.Password) == 0 {
-		return fmt.Errorf("password must be specified")
-	}
-	if len(s.Server) == 0 {
-		return fmt.Errorf("server must be specified")
+
+	if len(s.FileSources) == 0 {
+		if len(s.Username) == 0 {
+			return fmt.Errorf("username must be specified")
+		}
+		if len(s.Password) == 0 {
+			return fmt.Errorf("password must be specified")
+		}
+		if len(s.Server) == 0 {
+			return fmt.Errorf("server must be specified")
+		}
 	}
 	return nil
 }
 
-// handleDockercfgContent serializes a dockercfg json file
-func handleDockercfgContent(username, password, email, server string) ([]byte, error) {
+// handleDockerCfgJsonContent serializes a ~/.docker/config.json file
+func handleDockerCfgJsonContent(username, password, email, server string) ([]byte, error) {
 	dockercfgAuth := credentialprovider.DockerConfigEntry{
 		Username: username,
 		Password: password,
 		Email:    email,
 	}
 
-	dockerCfg := credentialprovider.DockerConfigJson{
+	dockerCfgJson := credentialprovider.DockerConfigJson{
 		Auths: map[string]credentialprovider.DockerConfigEntry{server: dockercfgAuth},
 	}
 
-	return json.Marshal(dockerCfg)
+	return json.Marshal(dockerCfgJson)
 }

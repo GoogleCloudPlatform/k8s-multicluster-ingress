@@ -33,6 +33,7 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"time"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -40,6 +41,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/kubernetes/test/e2e/framework"
+	"k8s.io/kubernetes/test/e2e/storage/utils"
 )
 
 const (
@@ -63,6 +65,7 @@ var md5hashes = map[int64]string{
 func makePodSpec(config framework.VolumeTestConfig, dir, initCmd string, volsrc v1.VolumeSource, podSecContext *v1.PodSecurityContext) *v1.Pod {
 	volName := fmt.Sprintf("%s-%s", config.Prefix, "io-volume")
 
+	var gracePeriod int64 = 1
 	return &v1.Pod{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "Pod",
@@ -109,7 +112,8 @@ func makePodSpec(config framework.VolumeTestConfig, dir, initCmd string, volsrc 
 					},
 				},
 			},
-			SecurityContext: podSecContext,
+			TerminationGracePeriodSeconds: &gracePeriod,
+			SecurityContext:               podSecContext,
 			Volumes: []v1.Volume{
 				{
 					Name:         volName,
@@ -126,7 +130,7 @@ func writeToFile(pod *v1.Pod, fpath, dd_input string, fsize int64) error {
 	By(fmt.Sprintf("writing %d bytes to test file %s", fsize, fpath))
 	loopCnt := fsize / minFileSize
 	writeCmd := fmt.Sprintf("i=0; while [ $i -lt %d ]; do dd if=%s bs=%d >>%s 2>/dev/null; let i+=1; done", loopCnt, dd_input, minFileSize, fpath)
-	_, err := podExec(pod, writeCmd)
+	_, err := utils.PodExec(pod, writeCmd)
 
 	return err
 }
@@ -134,7 +138,7 @@ func writeToFile(pod *v1.Pod, fpath, dd_input string, fsize int64) error {
 // Verify that the test file is the expected size and contains the expected content.
 func verifyFile(pod *v1.Pod, fpath string, expectSize int64, dd_input string) error {
 	By("verifying file size")
-	rtnstr, err := podExec(pod, fmt.Sprintf("stat -c %%s %s", fpath))
+	rtnstr, err := utils.PodExec(pod, fmt.Sprintf("stat -c %%s %s", fpath))
 	if err != nil || rtnstr == "" {
 		return fmt.Errorf("unable to get file size via `stat %s`: %v", fpath, err)
 	}
@@ -147,7 +151,7 @@ func verifyFile(pod *v1.Pod, fpath string, expectSize int64, dd_input string) er
 	}
 
 	By("verifying file hash")
-	rtnstr, err = podExec(pod, fmt.Sprintf("md5sum %s | cut -d' ' -f1", fpath))
+	rtnstr, err = utils.PodExec(pod, fmt.Sprintf("md5sum %s | cut -d' ' -f1", fpath))
 	if err != nil {
 		return fmt.Errorf("unable to test file hash via `md5sum %s`: %v", fpath, err)
 	}
@@ -168,7 +172,7 @@ func verifyFile(pod *v1.Pod, fpath string, expectSize int64, dd_input string) er
 // Delete `fpath` to save some disk space on host. Delete errors are logged but ignored.
 func deleteFile(pod *v1.Pod, fpath string) {
 	By(fmt.Sprintf("deleting test file %s...", fpath))
-	_, err := podExec(pod, fmt.Sprintf("rm -f %s", fpath))
+	_, err := utils.PodExec(pod, fmt.Sprintf("rm -f %s", fpath))
 	if err != nil {
 		// keep going, the test dir will be deleted when the volume is unmounted
 		framework.Logf("unable to delete test file %s: %v\nerror ignored, continuing test", fpath, err)
@@ -208,6 +212,9 @@ func testVolumeIO(f *framework.Framework, cs clientset.Interface, config framewo
 			if err == nil { // delete err is returned if err is not set
 				err = e
 			}
+		} else {
+			framework.Logf("sleeping a bit so kubelet can unmount and detach the volume")
+			time.Sleep(framework.PodCleanupTimeout)
 		}
 	}()
 
@@ -237,7 +244,7 @@ func testVolumeIO(f *framework.Framework, cs clientset.Interface, config framewo
 
 // These tests need privileged containers which are disabled by default.
 // TODO: support all of the plugins tested in storage/volumes.go
-var _ = SIGDescribe("Volume plugin streaming [Slow]", func() {
+var _ = utils.SIGDescribe("Volume plugin streaming [Slow]", func() {
 	f := framework.NewDefaultFramework("volume-io")
 	var (
 		config    framework.VolumeTestConfig
@@ -415,7 +422,7 @@ var _ = SIGDescribe("Volume plugin streaming [Slow]", func() {
 						Name: name,
 					},
 					FSType:   "ext2",
-					ReadOnly: true,
+					ReadOnly: false,
 				},
 			}
 		})

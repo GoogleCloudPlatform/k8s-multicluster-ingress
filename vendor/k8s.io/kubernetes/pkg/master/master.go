@@ -24,6 +24,7 @@ import (
 	"strconv"
 	"time"
 
+	admissionregistrationv1beta1 "k8s.io/api/admissionregistration/v1beta1"
 	appsv1 "k8s.io/api/apps/v1"
 	appsv1beta1 "k8s.io/api/apps/v1beta1"
 	appsv1beta2 "k8s.io/api/apps/v1beta2"
@@ -37,6 +38,7 @@ import (
 	batchapiv1beta1 "k8s.io/api/batch/v1beta1"
 	certificatesapiv1beta1 "k8s.io/api/certificates/v1beta1"
 	apiv1 "k8s.io/api/core/v1"
+	eventsv1beta1 "k8s.io/api/events/v1beta1"
 	extensionsapiv1beta1 "k8s.io/api/extensions/v1beta1"
 	networkingapiv1 "k8s.io/api/networking/v1"
 	policyapiv1beta1 "k8s.io/api/policy/v1beta1"
@@ -52,6 +54,7 @@ import (
 	"k8s.io/apiserver/pkg/server/healthz"
 	serverstorage "k8s.io/apiserver/pkg/server/storage"
 	storagefactory "k8s.io/apiserver/pkg/storage/storagebackend/factory"
+	"k8s.io/client-go/informers"
 	corev1client "k8s.io/client-go/kubernetes/typed/core/v1"
 	api "k8s.io/kubernetes/pkg/apis/core"
 	coreclient "k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset/typed/core/internalversion"
@@ -62,13 +65,13 @@ import (
 	"k8s.io/kubernetes/pkg/registry/core/endpoint"
 	endpointsstorage "k8s.io/kubernetes/pkg/registry/core/endpoint/storage"
 	"k8s.io/kubernetes/pkg/routes"
+	"k8s.io/kubernetes/pkg/serviceaccount"
 	nodeutil "k8s.io/kubernetes/pkg/util/node"
 
 	"github.com/golang/glog"
 	"github.com/prometheus/client_golang/prometheus"
 
 	// RESTStorage installers
-	"k8s.io/client-go/informers"
 	admissionregistrationrest "k8s.io/kubernetes/pkg/registry/admissionregistration/rest"
 	appsrest "k8s.io/kubernetes/pkg/registry/apps/rest"
 	authenticationrest "k8s.io/kubernetes/pkg/registry/authentication/rest"
@@ -77,6 +80,7 @@ import (
 	batchrest "k8s.io/kubernetes/pkg/registry/batch/rest"
 	certificatesrest "k8s.io/kubernetes/pkg/registry/certificates/rest"
 	corerest "k8s.io/kubernetes/pkg/registry/core/rest"
+	eventsrest "k8s.io/kubernetes/pkg/registry/events/rest"
 	extensionsrest "k8s.io/kubernetes/pkg/registry/extensions/rest"
 	networkingrest "k8s.io/kubernetes/pkg/registry/networking/rest"
 	policyrest "k8s.io/kubernetes/pkg/registry/policy/rest"
@@ -106,7 +110,6 @@ type ExtraConfig struct {
 
 	// Used to start and monitor tunneling
 	Tunneler          tunneler.Tunneler
-	EnableUISupport   bool
 	EnableLogsSupport bool
 	ProxyTransport    http.RoundTripper
 
@@ -153,6 +156,9 @@ type ExtraConfig struct {
 
 	// Selects which reconciler to use
 	EndpointReconcilerType reconcilers.Type
+
+	ServiceAccountIssuer       serviceaccount.TokenGenerator
+	ServiceAccountAPIAudiences []string
 }
 
 type Config struct {
@@ -266,9 +272,6 @@ func (cfg *Config) Complete(informers informers.SharedInformerFactory) Completed
 		glog.Infof("Node port range unspecified. Defaulting to %v.", c.ExtraConfig.ServiceNodePortRange)
 	}
 
-	// enable swagger UI only if general UI support is on
-	c.GenericConfig.EnableSwaggerUI = c.GenericConfig.EnableSwaggerUI && c.ExtraConfig.EnableUISupport
-
 	if c.ExtraConfig.EndpointReconcilerConfig.Interval == 0 {
 		c.ExtraConfig.EndpointReconcilerConfig.Interval = DefaultEndpointReconcilerInterval
 	}
@@ -280,9 +283,6 @@ func (cfg *Config) Complete(informers informers.SharedInformerFactory) Completed
 	if c.ExtraConfig.EndpointReconcilerConfig.Reconciler == nil {
 		c.ExtraConfig.EndpointReconcilerConfig.Reconciler = cfg.createEndpointReconciler()
 	}
-
-	// this has always been hardcoded true in the past
-	c.GenericConfig.EnableMetrics = true
 
 	return CompletedConfig{&c}
 }
@@ -301,9 +301,6 @@ func (c completedConfig) New(delegationTarget genericapiserver.DelegationTarget)
 		return nil, err
 	}
 
-	if c.ExtraConfig.EnableUISupport {
-		routes.UIRedirect{}.Install(s.Handler.NonGoRestfulMux)
-	}
 	if c.ExtraConfig.EnableLogsSupport {
 		routes.Logs{}.Install(s.Handler.GoRestfulContainer)
 	}
@@ -313,15 +310,17 @@ func (c completedConfig) New(delegationTarget genericapiserver.DelegationTarget)
 	}
 
 	// install legacy rest storage
-	if c.ExtraConfig.APIResourceConfigSource.AnyResourcesForVersionEnabled(apiv1.SchemeGroupVersion) {
+	if c.ExtraConfig.APIResourceConfigSource.VersionEnabled(apiv1.SchemeGroupVersion) {
 		legacyRESTStorageProvider := corerest.LegacyRESTStorageProvider{
-			StorageFactory:       c.ExtraConfig.StorageFactory,
-			ProxyTransport:       c.ExtraConfig.ProxyTransport,
-			KubeletClientConfig:  c.ExtraConfig.KubeletClientConfig,
-			EventTTL:             c.ExtraConfig.EventTTL,
-			ServiceIPRange:       c.ExtraConfig.ServiceIPRange,
-			ServiceNodePortRange: c.ExtraConfig.ServiceNodePortRange,
-			LoopbackClientConfig: c.GenericConfig.LoopbackClientConfig,
+			StorageFactory:             c.ExtraConfig.StorageFactory,
+			ProxyTransport:             c.ExtraConfig.ProxyTransport,
+			KubeletClientConfig:        c.ExtraConfig.KubeletClientConfig,
+			EventTTL:                   c.ExtraConfig.EventTTL,
+			ServiceIPRange:             c.ExtraConfig.ServiceIPRange,
+			ServiceNodePortRange:       c.ExtraConfig.ServiceNodePortRange,
+			LoopbackClientConfig:       c.GenericConfig.LoopbackClientConfig,
+			ServiceAccountIssuer:       c.ExtraConfig.ServiceAccountIssuer,
+			ServiceAccountAPIAudiences: c.ExtraConfig.ServiceAccountAPIAudiences,
 		}
 		m.InstallLegacyAPI(&c, c.GenericConfig.RESTOptionsGetter, legacyRESTStorageProvider)
 	}
@@ -334,15 +333,15 @@ func (c completedConfig) New(delegationTarget genericapiserver.DelegationTarget)
 	// TODO: describe the priority all the way down in the RESTStorageProviders and plumb it back through the various discovery
 	// handlers that we have.
 	restStorageProviders := []RESTStorageProvider{
-		authenticationrest.RESTStorageProvider{Authenticator: c.GenericConfig.Authenticator},
-		authorizationrest.RESTStorageProvider{Authorizer: c.GenericConfig.Authorizer, RuleResolver: c.GenericConfig.RuleResolver},
+		authenticationrest.RESTStorageProvider{Authenticator: c.GenericConfig.Authentication.Authenticator},
+		authorizationrest.RESTStorageProvider{Authorizer: c.GenericConfig.Authorization.Authorizer, RuleResolver: c.GenericConfig.RuleResolver},
 		autoscalingrest.RESTStorageProvider{},
 		batchrest.RESTStorageProvider{},
 		certificatesrest.RESTStorageProvider{},
 		extensionsrest.RESTStorageProvider{},
 		networkingrest.RESTStorageProvider{},
 		policyrest.RESTStorageProvider{},
-		rbacrest.RESTStorageProvider{Authorizer: c.GenericConfig.Authorizer},
+		rbacrest.RESTStorageProvider{Authorizer: c.GenericConfig.Authorization.Authorizer},
 		schedulingrest.RESTStorageProvider{},
 		settingsrest.RESTStorageProvider{},
 		storagerest.RESTStorageProvider{},
@@ -350,6 +349,7 @@ func (c completedConfig) New(delegationTarget genericapiserver.DelegationTarget)
 		// See https://github.com/kubernetes/kubernetes/issues/42392
 		appsrest.RESTStorageProvider{},
 		admissionregistrationrest.RESTStorageProvider{},
+		eventsrest.RESTStorageProvider{TTL: c.ExtraConfig.EventTTL},
 	}
 	m.InstallAPIs(c.ExtraConfig.APIResourceConfigSource, c.GenericConfig.RESTOptionsGetter, restStorageProviders...)
 
@@ -371,7 +371,7 @@ func (m *Master) InstallLegacyAPI(c *completedConfig, restOptionsGetter generic.
 	if c.ExtraConfig.EnableCoreControllers {
 		controllerName := "bootstrap-controller"
 		coreClient := coreclient.NewForConfigOrDie(c.GenericConfig.LoopbackClientConfig)
-		bootstrapController := c.NewBootstrapController(legacyRESTStorage, coreClient, coreClient)
+		bootstrapController := c.NewBootstrapController(legacyRESTStorage, coreClient, coreClient, coreClient)
 		m.GenericAPIServer.AddPostStartHookOrDie(controllerName, bootstrapController.PostStartHook)
 		m.GenericAPIServer.AddPreShutdownHookOrDie(controllerName, bootstrapController.PreShutdownHook)
 	}
@@ -402,7 +402,7 @@ func (m *Master) InstallAPIs(apiResourceConfigSource serverstorage.APIResourceCo
 
 	for _, restStorageBuilder := range restStorageProviders {
 		groupName := restStorageBuilder.GroupName()
-		if !apiResourceConfigSource.AnyResourcesForGroupEnabled(groupName) {
+		if !apiResourceConfigSource.AnyVersionForGroupEnabled(groupName) {
 			glog.V(1).Infof("Skipping disabled API group %q.", groupName)
 			continue
 		}
@@ -479,16 +479,8 @@ func DefaultAPIResourceConfigSource() *serverstorage.ResourceConfig {
 		authorizationapiv1.SchemeGroupVersion,
 		authorizationapiv1beta1.SchemeGroupVersion,
 		networkingapiv1.SchemeGroupVersion,
-	)
-
-	// all extensions resources except these are disabled by default
-	ret.EnableResources(
-		extensionsapiv1beta1.SchemeGroupVersion.WithResource("daemonsets"),
-		extensionsapiv1beta1.SchemeGroupVersion.WithResource("deployments"),
-		extensionsapiv1beta1.SchemeGroupVersion.WithResource("ingresses"),
-		extensionsapiv1beta1.SchemeGroupVersion.WithResource("networkpolicies"),
-		extensionsapiv1beta1.SchemeGroupVersion.WithResource("replicasets"),
-		extensionsapiv1beta1.SchemeGroupVersion.WithResource("podsecuritypolicies"),
+		eventsv1beta1.SchemeGroupVersion,
+		admissionregistrationv1beta1.SchemeGroupVersion,
 	)
 
 	return ret

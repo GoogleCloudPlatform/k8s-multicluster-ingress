@@ -64,7 +64,7 @@ const (
 	// latency/pod at the scale of 3000 pods over 100 nodes.
 	ExpectationsTimeout = 5 * time.Minute
 	// When batching pod creates, SlowStartInitialBatchSize is the size of the
-	// inital batch.  The size of each successive batch is twice the size of
+	// initial batch.  The size of each successive batch is twice the size of
 	// the previous batch.  For example, for a value of 1, batch sizes would be
 	// 1, 2, 4, 8, ...  and for a value of 10, batch sizes would be
 	// 10, 20, 40, 80, ...  Setting the value higher means that quota denials
@@ -1008,7 +1008,7 @@ func PatchNodeTaints(c clientset.Interface, nodeName string, oldNode *v1.Node, n
 		return fmt.Errorf("failed to create patch for node %q: %v", nodeName, err)
 	}
 
-	_, err = c.CoreV1().Nodes().Patch(string(nodeName), types.StrategicMergePatchType, patchBytes)
+	_, err = c.CoreV1().Nodes().Patch(nodeName, types.StrategicMergePatchType, patchBytes)
 	return err
 }
 

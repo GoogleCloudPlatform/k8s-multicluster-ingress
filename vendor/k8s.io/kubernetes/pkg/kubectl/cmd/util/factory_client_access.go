@@ -23,6 +23,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -38,6 +39,7 @@ import (
 	appsv1beta1 "k8s.io/api/apps/v1beta1"
 	appsv1beta2 "k8s.io/api/apps/v1beta2"
 	batchv1 "k8s.io/api/batch/v1"
+	batchv1beta1 "k8s.io/api/batch/v1beta1"
 	batchv2alpha1 "k8s.io/api/batch/v2alpha1"
 	extensionsv1beta1 "k8s.io/api/extensions/v1beta1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -58,8 +60,7 @@ import (
 	"k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset"
 	"k8s.io/kubernetes/pkg/kubectl"
 	"k8s.io/kubernetes/pkg/kubectl/resource"
-	"k8s.io/kubernetes/pkg/printers"
-	printersinternal "k8s.io/kubernetes/pkg/printers/internalversion"
+	"k8s.io/kubernetes/pkg/kubectl/util/transport"
 )
 
 type ring0Factory struct {
@@ -108,7 +109,15 @@ func (f *discoveryFactory) DiscoveryClient() (discovery.CachedDiscoveryInterface
 		return nil, err
 	}
 
-	cfg.CacheDir = f.cacheDir
+	if f.cacheDir != "" {
+		wt := cfg.WrapTransport
+		cfg.WrapTransport = func(rt http.RoundTripper) http.RoundTripper {
+			if wt != nil {
+				rt = wt(rt)
+			}
+			return transport.NewCacheRoundTripper(f.cacheDir, rt)
+		}
+	}
 
 	discoveryClient, err := discovery.NewDiscoveryClientForConfig(cfg)
 	if err != nil {
@@ -194,19 +203,11 @@ func (f *ring0Factory) ClientSet() (internalclientset.Interface, error) {
 	return f.clientCache.ClientSetForVersion(nil)
 }
 
-func (f *ring0Factory) ClientSetForVersion(requiredVersion *schema.GroupVersion) (internalclientset.Interface, error) {
-	return f.clientCache.ClientSetForVersion(requiredVersion)
-}
-
 func (f *ring0Factory) ClientConfig() (*restclient.Config, error) {
 	return f.clientCache.ClientConfigForVersion(nil)
 }
 func (f *ring0Factory) BareClientConfig() (*restclient.Config, error) {
 	return f.clientConfig.ClientConfig()
-}
-
-func (f *ring0Factory) ClientConfigForVersion(requiredVersion *schema.GroupVersion) (*restclient.Config, error) {
-	return f.clientCache.ClientConfigForVersion(nil)
 }
 
 func (f *ring0Factory) RESTClient() (*restclient.RESTClient, error) {
@@ -215,20 +216,6 @@ func (f *ring0Factory) RESTClient() (*restclient.RESTClient, error) {
 		return nil, err
 	}
 	return restclient.RESTClientFor(clientConfig)
-}
-
-func (f *ring0Factory) Decoder(toInternal bool) runtime.Decoder {
-	var decoder runtime.Decoder
-	if toInternal {
-		decoder = legacyscheme.Codecs.UniversalDecoder()
-	} else {
-		decoder = legacyscheme.Codecs.UniversalDeserializer()
-	}
-	return decoder
-}
-
-func (f *ring0Factory) JSONEncoder() runtime.Encoder {
-	return legacyscheme.Codecs.LegacyCodec(legacyscheme.Registry.EnabledVersions()...)
 }
 
 func (f *ring0Factory) UpdatePodSpecForObject(obj runtime.Object, fn func(*v1.PodSpec) error) (bool, error) {
@@ -275,6 +262,11 @@ func (f *ring0Factory) UpdatePodSpecForObject(obj runtime.Object, fn func(*v1.Po
 	// Job
 	case *batchv1.Job:
 		return true, fn(&t.Spec.Template.Spec)
+	// CronJob
+	case *batchv1beta1.CronJob:
+		return true, fn(&t.Spec.JobTemplate.Spec.Template.Spec)
+	case *batchv2alpha1.CronJob:
+		return true, fn(&t.Spec.JobTemplate.Spec.Template.Spec)
 	default:
 		return false, fmt.Errorf("the object is not a pod or does not have a pod template")
 	}
@@ -310,11 +302,7 @@ func (f *ring0Factory) MapBasedSelectorForObject(object runtime.Object) (string,
 		}
 		return kubectl.MakeLabels(t.Spec.Selector.MatchLabels), nil
 	default:
-		gvks, _, err := legacyscheme.Scheme.ObjectKinds(object)
-		if err != nil {
-			return "", err
-		}
-		return "", fmt.Errorf("cannot extract pod selector from %v", gvks[0])
+		return "", fmt.Errorf("cannot extract pod selector from %T", object)
 	}
 }
 
@@ -332,11 +320,7 @@ func (f *ring0Factory) PortsForObject(object runtime.Object) ([]string, error) {
 	case *extensions.ReplicaSet:
 		return getPorts(t.Spec.Template.Spec), nil
 	default:
-		gvks, _, err := legacyscheme.Scheme.ObjectKinds(object)
-		if err != nil {
-			return nil, err
-		}
-		return nil, fmt.Errorf("cannot extract ports from %v", gvks[0])
+		return nil, fmt.Errorf("cannot extract ports from %T", object)
 	}
 }
 
@@ -354,11 +338,7 @@ func (f *ring0Factory) ProtocolsForObject(object runtime.Object) (map[string]str
 	case *extensions.ReplicaSet:
 		return getProtocols(t.Spec.Template.Spec), nil
 	default:
-		gvks, _, err := legacyscheme.Scheme.ObjectKinds(object)
-		if err != nil {
-			return nil, err
-		}
-		return nil, fmt.Errorf("cannot extract protocols from %v", gvks[0])
+		return nil, fmt.Errorf("cannot extract protocols from %T", object)
 	}
 }
 
@@ -423,28 +403,6 @@ func (f *ring0Factory) BindExternalFlags(flags *pflag.FlagSet) {
 	flags.AddGoFlagSet(flag.CommandLine)
 }
 
-func (f *ring0Factory) DefaultResourceFilterOptions(cmd *cobra.Command, withNamespace bool) *printers.PrintOptions {
-	columnLabel, err := cmd.Flags().GetStringSlice("label-columns")
-	if err != nil {
-		columnLabel = []string{}
-	}
-	opts := &printers.PrintOptions{
-		NoHeaders:          GetFlagBool(cmd, "no-headers"),
-		WithNamespace:      withNamespace,
-		Wide:               GetWideFlag(cmd),
-		ShowAll:            GetFlagBool(cmd, "show-all"),
-		ShowLabels:         GetFlagBool(cmd, "show-labels"),
-		AbsoluteTimestamps: isWatch(cmd),
-		ColumnLabels:       columnLabel,
-	}
-
-	return opts
-}
-
-func (f *ring0Factory) DefaultResourceFilterFunc() kubectl.Filters {
-	return kubectl.NewResourceFilter()
-}
-
 func (f *ring0Factory) SuggestedPodTemplateResources() []schema.GroupResource {
 	return []schema.GroupResource{
 		{Resource: "replicationcontroller"},
@@ -455,12 +413,6 @@ func (f *ring0Factory) SuggestedPodTemplateResources() []schema.GroupResource {
 	}
 }
 
-func (f *ring0Factory) Printer(mapping *meta.RESTMapping, options printers.PrintOptions) (printers.ResourcePrinter, error) {
-	p := printers.NewHumanReadablePrinter(f.JSONEncoder(), f.Decoder(true), options)
-	printersinternal.AddHandlers(p)
-	return p, nil
-}
-
 func (f *ring0Factory) Pauser(info *resource.Info) ([]byte, error) {
 	switch obj := info.Object.(type) {
 	case *extensions.Deployment:
@@ -468,7 +420,7 @@ func (f *ring0Factory) Pauser(info *resource.Info) ([]byte, error) {
 			return nil, errors.New("is already paused")
 		}
 		obj.Spec.Paused = true
-		return runtime.Encode(f.JSONEncoder(), info.Object)
+		return runtime.Encode(InternalVersionJSONEncoder(), info.Object)
 	default:
 		return nil, fmt.Errorf("pausing is not supported")
 	}
@@ -485,7 +437,7 @@ func (f *ring0Factory) Resumer(info *resource.Info) ([]byte, error) {
 			return nil, errors.New("is not paused")
 		}
 		obj.Spec.Paused = false
-		return runtime.Encode(f.JSONEncoder(), info.Object)
+		return runtime.Encode(InternalVersionJSONEncoder(), info.Object)
 	default:
 		return nil, fmt.Errorf("resuming is not supported")
 	}
@@ -567,10 +519,6 @@ func DefaultGenerators(cmdName string) map[string]kubectl.Generator {
 			JobV1GeneratorName:                 kubectl.JobV1{},
 			CronJobV2Alpha1GeneratorName:       kubectl.CronJobV2Alpha1{},
 			CronJobV1Beta1GeneratorName:        kubectl.CronJobV1Beta1{},
-		}
-	case "autoscale":
-		generator = map[string]kubectl.Generator{
-			HorizontalPodAutoscalerV1GeneratorName: kubectl.HorizontalPodAutoscalerV1{},
 		}
 	case "namespace":
 		generator = map[string]kubectl.Generator{
@@ -695,34 +643,6 @@ func (f *ring0Factory) EditorEnvs() []string {
 	return []string{"KUBE_EDITOR", "EDITOR"}
 }
 
-func (f *ring0Factory) PrintObjectSpecificMessage(obj runtime.Object, out io.Writer) {
-	switch obj := obj.(type) {
-	case *api.Service:
-		if obj.Spec.Type == api.ServiceTypeNodePort {
-			msg := fmt.Sprintf(
-				`You have exposed your service on an external port on all nodes in your
-cluster.  If you want to expose this service to the external internet, you may
-need to set up firewall rules for the service port(s) (%s) to serve traffic.
-
-See http://kubernetes.io/docs/user-guide/services-firewalls for more details.
-`,
-				makePortsString(obj.Spec.Ports, true))
-			out.Write([]byte(msg))
-		}
-
-		if _, ok := obj.Annotations[api.AnnotationLoadBalancerSourceRangesKey]; ok {
-			msg := fmt.Sprintf(
-				`You are using service annotation [service.beta.kubernetes.io/load-balancer-source-ranges].
-It has been promoted to field [loadBalancerSourceRanges] in service spec. This annotation will be deprecated in the future.
-Please use the loadBalancerSourceRanges field instead.
-
-See http://kubernetes.io/docs/user-guide/services-firewalls for more details.
-`)
-			out.Write([]byte(msg))
-		}
-	}
-}
-
 // overlyCautiousIllegalFileCharacters matches characters that *might* not be supported.  Windows is really restrictive, so this is really restrictive
 var overlyCautiousIllegalFileCharacters = regexp.MustCompile(`[^(\w/\.)]`)
 
@@ -734,4 +654,13 @@ func computeDiscoverCacheDir(parentDir, host string) string {
 	safeHost := overlyCautiousIllegalFileCharacters.ReplaceAllString(schemelessHost, "_")
 
 	return filepath.Join(parentDir, safeHost)
+}
+
+// this method exists to help us find the points still relying on internal types.
+func InternalVersionDecoder() runtime.Decoder {
+	return legacyscheme.Codecs.UniversalDecoder()
+}
+
+func InternalVersionJSONEncoder() runtime.Encoder {
+	return legacyscheme.Codecs.LegacyCodec(legacyscheme.Registry.EnabledVersions()...)
 }

@@ -39,7 +39,6 @@ import (
 	cmdutil "k8s.io/kubernetes/pkg/kubectl/cmd/util"
 	"k8s.io/kubernetes/pkg/kubectl/resource"
 	"k8s.io/kubernetes/pkg/kubectl/util/i18n"
-	"k8s.io/kubernetes/pkg/printers"
 )
 
 // LabelOptions have the data required to perform the label operation
@@ -63,7 +62,8 @@ type LabelOptions struct {
 	removeLabels []string
 
 	// Common shared fields
-	out io.Writer
+	out    io.Writer
+	errout io.Writer
 }
 
 var (
@@ -96,22 +96,16 @@ var (
 		kubectl label pods foo bar-`))
 )
 
-func NewCmdLabel(f cmdutil.Factory, out io.Writer) *cobra.Command {
-	options := &LabelOptions{}
-
-	// retrieve a list of handled resources from printer as valid args
-	validArgs, argAliases := []string{}, []string{}
-	p, err := f.Printer(nil, printers.PrintOptions{
-		ColumnLabels: []string{},
-	})
-	cmdutil.CheckErr(err)
-	if p != nil {
-		validArgs = p.HandledResources()
-		argAliases = kubectl.ResourceAliases(validArgs)
+func NewCmdLabel(f cmdutil.Factory, out, errout io.Writer) *cobra.Command {
+	options := &LabelOptions{
+		errout: errout,
 	}
 
+	validArgs := cmdutil.ValidArgList(f)
+
 	cmd := &cobra.Command{
-		Use:     "label [--overwrite] (-f FILENAME | TYPE NAME) KEY_1=VAL_1 ... KEY_N=VAL_N [--resource-version=version]",
+		Use: "label [--overwrite] (-f FILENAME | TYPE NAME) KEY_1=VAL_1 ... KEY_N=VAL_N [--resource-version=version]",
+		DisableFlagsInUseLine: true,
 		Short:   i18n.T("Update the labels on a resource"),
 		Long:    fmt.Sprintf(labelLong, validation.LabelValueMaxLength),
 		Example: labelExample,
@@ -125,15 +119,15 @@ func NewCmdLabel(f cmdutil.Factory, out io.Writer) *cobra.Command {
 			cmdutil.CheckErr(options.RunLabel(f, cmd))
 		},
 		ValidArgs:  validArgs,
-		ArgAliases: argAliases,
+		ArgAliases: kubectl.ResourceAliases(validArgs),
 	}
 	cmdutil.AddPrinterFlags(cmd)
-	cmd.Flags().Bool("overwrite", false, "If true, allow labels to be overwritten, otherwise reject label updates that overwrite existing labels.")
+	cmd.Flags().BoolVar(&options.overwrite, "overwrite", options.overwrite, "If true, allow labels to be overwritten, otherwise reject label updates that overwrite existing labels.")
 	cmd.Flags().BoolVar(&options.list, "list", options.list, "If true, display the labels for a given resource.")
-	cmd.Flags().Bool("local", false, "If true, label will NOT contact api-server but run locally.")
-	cmd.Flags().StringP("selector", "l", "", "Selector (label query) to filter on, not including uninitialized ones, supports '=', '==', and '!='.(e.g. -l key1=value1,key2=value2).")
-	cmd.Flags().Bool("all", false, "Select all resources, including uninitialized ones, in the namespace of the specified resource types")
-	cmd.Flags().String("resource-version", "", i18n.T("If non-empty, the labels update will only succeed if this is the current resource-version for the object. Only valid when specifying a single resource."))
+	cmd.Flags().BoolVar(&options.local, "local", options.local, "If true, label will NOT contact api-server but run locally.")
+	cmd.Flags().StringVarP(&options.selector, "selector", "l", options.selector, "Selector (label query) to filter on, not including uninitialized ones, supports '=', '==', and '!='.(e.g. -l key1=value1,key2=value2).")
+	cmd.Flags().BoolVar(&options.all, "all", options.all, "Select all resources, including uninitialized ones, in the namespace of the specified resource types")
+	cmd.Flags().StringVar(&options.resourceVersion, "resource-version", options.resourceVersion, i18n.T("If non-empty, the labels update will only succeed if this is the current resource-version for the object. Only valid when specifying a single resource."))
 	usage := "identifying the resource to update the labels"
 	cmdutil.AddFilenameOptionFlags(cmd, &options.FilenameOptions, usage)
 	cmdutil.AddDryRunFlag(cmd)
@@ -147,12 +141,6 @@ func NewCmdLabel(f cmdutil.Factory, out io.Writer) *cobra.Command {
 // Complete adapts from the command line args and factory to the data required.
 func (o *LabelOptions) Complete(out io.Writer, cmd *cobra.Command, args []string) (err error) {
 	o.out = out
-	o.list = cmdutil.GetFlagBool(cmd, "list")
-	o.local = cmdutil.GetFlagBool(cmd, "local")
-	o.overwrite = cmdutil.GetFlagBool(cmd, "overwrite")
-	o.all = cmdutil.GetFlagBool(cmd, "all")
-	o.resourceVersion = cmdutil.GetFlagString(cmd, "resource-version")
-	o.selector = cmdutil.GetFlagString(cmd, "selector")
 	o.outputFormat = cmdutil.GetFlagString(cmd, "output")
 	o.dryrun = cmdutil.GetDryRunFlag(cmd)
 
@@ -172,6 +160,9 @@ func (o *LabelOptions) Complete(out io.Writer, cmd *cobra.Command, args []string
 
 // Validate checks to the LabelOptions to see if there is sufficient information run the command.
 func (o *LabelOptions) Validate() error {
+	if o.all && len(o.selector) > 0 {
+		return fmt.Errorf("cannot set --all and --selector at the same time")
+	}
 	if len(o.resources) < 1 && cmdutil.IsFilenameSliceEmpty(o.FilenameOptions.Filenames) {
 		return fmt.Errorf("one or more resources must be specified as <resource> <name> or <resource>/<name>")
 	}
@@ -191,25 +182,23 @@ func (o *LabelOptions) RunLabel(f cmdutil.Factory, cmd *cobra.Command) error {
 	changeCause := f.Command(cmd, false)
 
 	includeUninitialized := cmdutil.ShouldIncludeUninitialized(cmd, false)
-	var b *resource.Builder
-	if o.local {
-		b = f.NewBuilder().
-			Local(f.ClientForMapping)
-	} else {
-		b = f.NewUnstructuredBuilder().
-			LabelSelectorParam(o.selector).
+	b := f.NewBuilder().
+		Unstructured().
+		LocalParam(o.local).
+		ContinueOnError().
+		NamespaceParam(cmdNamespace).DefaultNamespace().
+		FilenameParam(enforceNamespace, &o.FilenameOptions).
+		IncludeUninitialized(includeUninitialized).
+		Flatten()
+
+	if !o.local {
+		b = b.LabelSelectorParam(o.selector).
 			ResourceTypeOrNameArgs(o.all, o.resources...).
 			Latest()
 	}
 
 	one := false
-	r := b.ContinueOnError().
-		NamespaceParam(cmdNamespace).DefaultNamespace().
-		FilenameParam(enforceNamespace, &o.FilenameOptions).
-		IncludeUninitialized(includeUninitialized).
-		Flatten().
-		Do().
-		IntoSingleItemImplied(&one)
+	r := b.Do().IntoSingleItemImplied(&one)
 	if err := r.Err(); err != nil {
 		return err
 	}
@@ -295,26 +284,22 @@ func (o *LabelOptions) RunLabel(f cmdutil.Factory, cmd *cobra.Command) error {
 				return err
 			}
 
+			indent := ""
+			if !one {
+				indent = " "
+				fmt.Fprintf(o.errout, "Listing labels for %s.%s/%s:\n", info.Mapping.GroupVersionKind.Kind, info.Mapping.GroupVersionKind.Group, info.Name)
+			}
 			for k, v := range accessor.GetLabels() {
-				fmt.Fprintf(o.out, "%s=%s\n", k, v)
+				fmt.Fprintf(o.out, "%s%s=%s\n", indent, k, v)
 			}
 
 			return nil
 		}
 
-		var mapper meta.RESTMapper
-		if o.local {
-			mapper, _ = f.Object()
-		} else {
-			mapper, _, err = f.UnstructuredObject()
-			if err != nil {
-				return err
-			}
+		if len(o.outputFormat) > 0 {
+			return cmdutil.PrintObject(cmd, outputObj, o.out)
 		}
-		if o.outputFormat != "" {
-			return f.PrintObject(cmd, o.local, mapper, outputObj, o.out)
-		}
-		cmdutil.PrintSuccess(mapper, false, o.out, info.Mapping.Resource, info.Name, o.dryrun, dataChangeMsg)
+		cmdutil.PrintSuccess(false, o.out, info.Object, o.dryrun, dataChangeMsg)
 		return nil
 	})
 }

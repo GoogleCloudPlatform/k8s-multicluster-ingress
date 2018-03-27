@@ -38,7 +38,7 @@ import (
 
 const defaultContainerName = "test-c"
 
-func TestCreatePodSecurityContextNonmutating(t *testing.T) {
+func TestDefaultPodSecurityContextNonmutating(t *testing.T) {
 	// Create a pod with a security context that needs filling in
 	createPod := func() *api.Pod {
 		return &api.Pod{
@@ -82,7 +82,7 @@ func TestCreatePodSecurityContextNonmutating(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unable to create provider %v", err)
 	}
-	_, _, err = provider.CreatePodSecurityContext(pod)
+	err = provider.DefaultPodSecurityContext(pod)
 	if err != nil {
 		t.Fatalf("unable to create psc %v", err)
 	}
@@ -91,14 +91,14 @@ func TestCreatePodSecurityContextNonmutating(t *testing.T) {
 	// since all the strategies were permissive
 	if !reflect.DeepEqual(createPod(), pod) {
 		diffs := diff.ObjectDiff(createPod(), pod)
-		t.Errorf("pod was mutated by CreatePodSecurityContext. diff:\n%s", diffs)
+		t.Errorf("pod was mutated by DefaultPodSecurityContext. diff:\n%s", diffs)
 	}
 	if !reflect.DeepEqual(createPSP(), psp) {
-		t.Error("psp was mutated by CreatePodSecurityContext")
+		t.Error("psp was mutated by DefaultPodSecurityContext")
 	}
 }
 
-func TestCreateContainerSecurityContextNonmutating(t *testing.T) {
+func TestDefaultContainerSecurityContextNonmutating(t *testing.T) {
 	untrue := false
 	tests := []struct {
 		security *api.SecurityContext
@@ -154,7 +154,7 @@ func TestCreateContainerSecurityContextNonmutating(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unable to create provider %v", err)
 		}
-		_, _, err = provider.CreateContainerSecurityContext(pod, &pod.Spec.Containers[0])
+		err = provider.DefaultContainerSecurityContext(pod, &pod.Spec.Containers[0])
 		if err != nil {
 			t.Fatalf("unable to create container security context %v", err)
 		}
@@ -163,10 +163,10 @@ func TestCreateContainerSecurityContextNonmutating(t *testing.T) {
 		// since all the strategies were permissive
 		if !reflect.DeepEqual(createPod(), pod) {
 			diffs := diff.ObjectDiff(createPod(), pod)
-			t.Errorf("pod was mutated by CreateContainerSecurityContext. diff:\n%s", diffs)
+			t.Errorf("pod was mutated by DefaultContainerSecurityContext. diff:\n%s", diffs)
 		}
 		if !reflect.DeepEqual(createPSP(), psp) {
-			t.Error("psp was mutated by CreateContainerSecurityContext")
+			t.Error("psp was mutated by DefaultContainerSecurityContext")
 		}
 	}
 }
@@ -256,6 +256,18 @@ func TestValidatePodSecurityContextFailures(t *testing.T) {
 	failSeccompProfilePod := defaultPod()
 	failSeccompProfilePod.Annotations = map[string]string{api.SeccompPodAnnotationKey: "foo"}
 
+	podWithInvalidFlexVolumeDriver := defaultPod()
+	podWithInvalidFlexVolumeDriver.Spec.Volumes = []api.Volume{
+		{
+			Name: "flex-volume",
+			VolumeSource: api.VolumeSource{
+				FlexVolume: &api.FlexVolumeSource{
+					Driver: "example/unknown",
+				},
+			},
+		},
+	}
+
 	errorCases := map[string]struct {
 		pod           *api.Pod
 		psp           *extensions.PodSecurityPolicy
@@ -279,7 +291,7 @@ func TestValidatePodSecurityContextFailures(t *testing.T) {
 		"failSupplementalGroupOutOfRange": {
 			pod:           failSupplementalGroupPod,
 			psp:           failSupplementalGroupPSP,
-			expectedError: "999 is not an allowed group",
+			expectedError: "group 999 must be in the ranges: [{1 1}]",
 		},
 		"failSupplementalGroupEmpty": {
 			pod:           defaultPod(),
@@ -289,7 +301,7 @@ func TestValidatePodSecurityContextFailures(t *testing.T) {
 		"failFSGroupOutOfRange": {
 			pod:           failFSGroupPod,
 			psp:           failFSGroupPSP,
-			expectedError: "999 is not an allowed group",
+			expectedError: "group 999 must be in the ranges: [{1 1}]",
 		},
 		"failFSGroupEmpty": {
 			pod:           defaultPod(),
@@ -341,13 +353,23 @@ func TestValidatePodSecurityContextFailures(t *testing.T) {
 			psp:           defaultPSP(),
 			expectedError: "Forbidden: seccomp may not be set",
 		},
+		"fail pod with disallowed flexVolume when flex volumes are allowed": {
+			pod:           podWithInvalidFlexVolumeDriver,
+			psp:           allowFlexVolumesPSP(false, false),
+			expectedError: "Flexvolume driver is not allowed to be used",
+		},
+		"fail pod with disallowed flexVolume when all volumes are allowed": {
+			pod:           podWithInvalidFlexVolumeDriver,
+			psp:           allowFlexVolumesPSP(false, true),
+			expectedError: "Flexvolume driver is not allowed to be used",
+		},
 	}
 	for k, v := range errorCases {
 		provider, err := NewSimpleProvider(v.psp, "namespace", NewSimpleStrategyFactory())
 		if err != nil {
 			t.Fatalf("unable to create provider %v", err)
 		}
-		errs := provider.ValidatePodSecurityContext(v.pod, field.NewPath(""))
+		errs := provider.ValidatePod(v.pod, field.NewPath(""))
 		if len(errs) == 0 {
 			t.Errorf("%s expected validation failure but did not receive errors", k)
 			continue
@@ -358,8 +380,30 @@ func TestValidatePodSecurityContextFailures(t *testing.T) {
 	}
 }
 
+func allowFlexVolumesPSP(allowAllFlexVolumes, allowAllVolumes bool) *extensions.PodSecurityPolicy {
+	psp := defaultPSP()
+
+	allowedVolumes := []extensions.AllowedFlexVolume{
+		{Driver: "example/foo"},
+		{Driver: "example/bar"},
+	}
+	if allowAllFlexVolumes {
+		allowedVolumes = []extensions.AllowedFlexVolume{}
+	}
+
+	allowedVolumeType := extensions.FlexVolume
+	if allowAllVolumes {
+		allowedVolumeType = extensions.All
+	}
+
+	psp.Spec.AllowedFlexVolumes = allowedVolumes
+	psp.Spec.Volumes = []extensions.FSType{allowedVolumeType}
+
+	return psp
+}
+
 func TestValidateContainerSecurityContextFailures(t *testing.T) {
-	// fail user strat
+	// fail user strategy
 	failUserPSP := defaultPSP()
 	uid := int64(999)
 	badUID := int64(1)
@@ -370,7 +414,7 @@ func TestValidateContainerSecurityContextFailures(t *testing.T) {
 	failUserPod := defaultPod()
 	failUserPod.Spec.Containers[0].SecurityContext.RunAsUser = &badUID
 
-	// fail selinux strat
+	// fail selinux strategy
 	failSELinuxPSP := defaultPSP()
 	failSELinuxPSP.Spec.SELinux = extensions.SELinuxStrategyOptions{
 		Rule: extensions.SELinuxStrategyMustRunAs,
@@ -597,6 +641,18 @@ func TestValidatePodSecurityContextSuccess(t *testing.T) {
 		api.SeccompPodAnnotationKey: "foo",
 	}
 
+	flexVolumePod := defaultPod()
+	flexVolumePod.Spec.Volumes = []api.Volume{
+		{
+			Name: "flex-volume",
+			VolumeSource: api.VolumeSource{
+				FlexVolume: &api.FlexVolumeSource{
+					Driver: "example/bar",
+				},
+			},
+		},
+	}
+
 	successCases := map[string]struct {
 		pod *api.Pod
 		psp *extensions.PodSecurityPolicy
@@ -653,6 +709,22 @@ func TestValidatePodSecurityContextSuccess(t *testing.T) {
 			pod: seccompPod,
 			psp: seccompPSP,
 		},
+		"flex volume driver in a whitelist (all volumes are allowed)": {
+			pod: flexVolumePod,
+			psp: allowFlexVolumesPSP(false, true),
+		},
+		"flex volume driver with empty whitelist (all volumes are allowed)": {
+			pod: flexVolumePod,
+			psp: allowFlexVolumesPSP(true, true),
+		},
+		"flex volume driver in a whitelist (only flex volumes are allowed)": {
+			pod: flexVolumePod,
+			psp: allowFlexVolumesPSP(false, false),
+		},
+		"flex volume driver with empty whitelist (only flex volumes volumes are allowed)": {
+			pod: flexVolumePod,
+			psp: allowFlexVolumesPSP(true, false),
+		},
 	}
 
 	for k, v := range successCases {
@@ -660,7 +732,7 @@ func TestValidatePodSecurityContextSuccess(t *testing.T) {
 		if err != nil {
 			t.Fatalf("unable to create provider %v", err)
 		}
-		errs := provider.ValidatePodSecurityContext(v.pod, field.NewPath(""))
+		errs := provider.ValidatePod(v.pod, field.NewPath(""))
 		if len(errs) != 0 {
 			t.Errorf("%s expected validation pass but received errors %v", k, errs)
 			continue
@@ -669,7 +741,7 @@ func TestValidatePodSecurityContextSuccess(t *testing.T) {
 }
 
 func TestValidateContainerSecurityContextSuccess(t *testing.T) {
-	// success user strat
+	// success user strategy
 	userPSP := defaultPSP()
 	uid := int64(999)
 	userPSP.Spec.RunAsUser = extensions.RunAsUserStrategyOptions{
@@ -679,7 +751,7 @@ func TestValidateContainerSecurityContextSuccess(t *testing.T) {
 	userPod := defaultPod()
 	userPod.Spec.Containers[0].SecurityContext.RunAsUser = &uid
 
-	// success selinux strat
+	// success selinux strategy
 	seLinuxPSP := defaultPSP()
 	seLinuxPSP.Spec.SELinux = extensions.SELinuxStrategyOptions{
 		Rule: extensions.SELinuxStrategyMustRunAs,
@@ -893,12 +965,13 @@ func TestGenerateContainerSecurityContextReadOnlyRootFS(t *testing.T) {
 			t.Errorf("%s unable to create provider %v", k, err)
 			continue
 		}
-		sc, _, err := provider.CreateContainerSecurityContext(v.pod, &v.pod.Spec.Containers[0])
+		err = provider.DefaultContainerSecurityContext(v.pod, &v.pod.Spec.Containers[0])
 		if err != nil {
 			t.Errorf("%s unable to create container security context %v", k, err)
 			continue
 		}
 
+		sc := v.pod.Spec.Containers[0].SecurityContext
 		if v.expected == nil && sc.ReadOnlyRootFilesystem != nil {
 			t.Errorf("%s expected a nil ReadOnlyRootFilesystem but got %t", k, *sc.ReadOnlyRootFilesystem)
 		}
@@ -1021,7 +1094,7 @@ func TestValidateAllowedVolumes(t *testing.T) {
 		}
 
 		// expect a denial for this PSP and test the error message to ensure it's related to the volumesource
-		errs := provider.ValidatePodSecurityContext(pod, field.NewPath(""))
+		errs := provider.ValidatePod(pod, field.NewPath(""))
 		if len(errs) != 1 {
 			t.Errorf("expected exactly 1 error for %s but got %v", fieldVal.Name, errs)
 		} else {
@@ -1032,14 +1105,14 @@ func TestValidateAllowedVolumes(t *testing.T) {
 
 		// now add the fstype directly to the psp and it should validate
 		psp.Spec.Volumes = []extensions.FSType{fsType}
-		errs = provider.ValidatePodSecurityContext(pod, field.NewPath(""))
+		errs = provider.ValidatePod(pod, field.NewPath(""))
 		if len(errs) != 0 {
 			t.Errorf("directly allowing volume expected no errors for %s but got %v", fieldVal.Name, errs)
 		}
 
 		// now change the psp to allow any volumes and the pod should still validate
 		psp.Spec.Volumes = []extensions.FSType{extensions.All}
-		errs = provider.ValidatePodSecurityContext(pod, field.NewPath(""))
+		errs = provider.ValidatePod(pod, field.NewPath(""))
 		if len(errs) != 0 {
 			t.Errorf("wildcard volume expected no errors for %s but got %v", fieldVal.Name, errs)
 		}

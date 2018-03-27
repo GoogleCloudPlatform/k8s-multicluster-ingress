@@ -1,3 +1,5 @@
+// +build windows
+
 /*
 Copyright 2017 The Kubernetes Authors.
 
@@ -114,13 +116,6 @@ func TestWinVersionInfo(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, versionInfo, &cadvisorapi.VersionInfo{
 		KernelVersion: "v42"})
-}
-
-func TestExtractVersionNumber(t *testing.T) {
-	fullVersion := "Microsoft Windows [Version 10.0.14393]"
-	versionNumber := extractVersionNumber(fullVersion)
-	expected := "10.0.14393"
-	assert.Equal(t, expected, versionNumber)
 }
 
 func getClient(t *testing.T) Client {

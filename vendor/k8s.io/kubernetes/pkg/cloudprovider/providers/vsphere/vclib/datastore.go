@@ -17,19 +17,31 @@ limitations under the License.
 package vclib
 
 import (
+	"context"
+	"fmt"
+
 	"github.com/golang/glog"
 	"github.com/vmware/govmomi/object"
 	"github.com/vmware/govmomi/property"
 	"github.com/vmware/govmomi/vim25/mo"
 	"github.com/vmware/govmomi/vim25/soap"
 	"github.com/vmware/govmomi/vim25/types"
-	"golang.org/x/net/context"
 )
 
 // Datastore extends the govmomi Datastore object
 type Datastore struct {
 	*object.Datastore
 	Datacenter *Datacenter
+}
+
+// DatastoreInfo is a structure to store the Datastore and it's Info.
+type DatastoreInfo struct {
+	*Datastore
+	Info *types.DatastoreInfo
+}
+
+func (di DatastoreInfo) String() string {
+	return fmt.Sprintf("Datastore: %+v, datastore URL: %s", di.Datastore, di.Info.Url)
 }
 
 // CreateDirectory creates the directory at location specified by directoryPath.

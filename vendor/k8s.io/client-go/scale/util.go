@@ -23,8 +23,12 @@ import (
 
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	serializer "k8s.io/apimachinery/pkg/runtime/serializer"
 	"k8s.io/client-go/discovery"
 	scalescheme "k8s.io/client-go/scale/scheme"
+	scaleappsint "k8s.io/client-go/scale/scheme/appsint"
+	scaleappsv1beta1 "k8s.io/client-go/scale/scheme/appsv1beta1"
+	scaleappsv1beta2 "k8s.io/client-go/scale/scheme/appsv1beta2"
 	scaleautoscaling "k8s.io/client-go/scale/scheme/autoscalingv1"
 	scaleextint "k8s.io/client-go/scale/scheme/extensionsint"
 	scaleext "k8s.io/client-go/scale/scheme/extensionsv1beta1"
@@ -121,6 +125,7 @@ func NewDiscoveryScaleKindResolver(client discovery.ServerResourcesInterface) Sc
 // ScaleConverter knows how to convert between external scale versions.
 type ScaleConverter struct {
 	scheme            *runtime.Scheme
+	codecs            serializer.CodecFactory
 	internalVersioner runtime.GroupVersioner
 }
 
@@ -132,13 +137,19 @@ func NewScaleConverter() *ScaleConverter {
 	scalescheme.AddToScheme(scheme)
 	scaleext.AddToScheme(scheme)
 	scaleextint.AddToScheme(scheme)
+	scaleappsint.AddToScheme(scheme)
+	scaleappsv1beta1.AddToScheme(scheme)
+	scaleappsv1beta2.AddToScheme(scheme)
 
 	return &ScaleConverter{
 		scheme: scheme,
+		codecs: serializer.NewCodecFactory(scheme),
 		internalVersioner: runtime.NewMultiGroupVersioner(
 			scalescheme.SchemeGroupVersion,
 			schema.GroupKind{Group: scaleext.GroupName, Kind: "Scale"},
 			schema.GroupKind{Group: scaleautoscaling.GroupName, Kind: "Scale"},
+			schema.GroupKind{Group: scaleappsv1beta1.GroupName, Kind: "Scale"},
+			schema.GroupKind{Group: scaleappsv1beta2.GroupName, Kind: "Scale"},
 		),
 	}
 }
@@ -146,6 +157,22 @@ func NewScaleConverter() *ScaleConverter {
 // Scheme returns the scheme used by this scale converter.
 func (c *ScaleConverter) Scheme() *runtime.Scheme {
 	return c.scheme
+}
+
+func (c *ScaleConverter) Codecs() serializer.CodecFactory {
+	return c.codecs
+}
+
+func (c *ScaleConverter) ScaleVersions() []schema.GroupVersion {
+	return []schema.GroupVersion{
+		scaleautoscaling.SchemeGroupVersion,
+		scalescheme.SchemeGroupVersion,
+		scaleext.SchemeGroupVersion,
+		scaleextint.SchemeGroupVersion,
+		scaleappsint.SchemeGroupVersion,
+		scaleappsv1beta1.SchemeGroupVersion,
+		scaleappsv1beta2.SchemeGroupVersion,
+	}
 }
 
 // ConvertToVersion converts the given *external* input object to the given output *external* output group-version.

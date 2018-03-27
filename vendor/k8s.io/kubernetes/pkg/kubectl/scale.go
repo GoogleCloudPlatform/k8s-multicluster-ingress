@@ -21,49 +21,49 @@ import (
 	"strconv"
 	"time"
 
+	autoscalingapi "k8s.io/api/autoscaling/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/wait"
-	"k8s.io/apimachinery/pkg/watch"
-	"k8s.io/kubernetes/pkg/apis/apps"
 	"k8s.io/kubernetes/pkg/apis/batch"
-	api "k8s.io/kubernetes/pkg/apis/core"
-	"k8s.io/kubernetes/pkg/apis/extensions"
-	"k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset"
-	appsclient "k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset/typed/apps/internalversion"
+
+	scaleclient "k8s.io/client-go/scale"
 	batchclient "k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset/typed/batch/internalversion"
-	coreclient "k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset/typed/core/internalversion"
-	extensionsclient "k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset/typed/extensions/internalversion"
-	client "k8s.io/kubernetes/pkg/client/unversioned"
 )
+
+// TODO: Figure out if we should be waiting on initializers in the Scale() functions below.
 
 // Scaler provides an interface for resources that can be scaled.
 type Scaler interface {
 	// Scale scales the named resource after checking preconditions. It optionally
 	// retries in the event of resource version mismatch (if retry is not nil),
 	// and optionally waits until the status of the resource matches newSize (if wait is not nil)
+	// TODO: Make the implementation of this watch-based (#56075) once #31345 is fixed.
 	Scale(namespace, name string, newSize uint, preconditions *ScalePrecondition, retry, wait *RetryParams) error
 	// ScaleSimple does a simple one-shot attempt at scaling - not useful on its own, but
 	// a necessary building block for Scale
 	ScaleSimple(namespace, name string, preconditions *ScalePrecondition, newSize uint) (updatedResourceVersion string, err error)
 }
 
-func ScalerFor(kind schema.GroupKind, c internalclientset.Interface) (Scaler, error) {
+// ScalerFor gets a scaler for a given resource
+func ScalerFor(kind schema.GroupKind, jobsClient batchclient.JobsGetter, scalesGetter scaleclient.ScalesGetter, gr schema.GroupResource) Scaler {
+	// it seems like jobs dont't follow "normal" scale semantics.
+	// For example it is not clear whether HPA could make use of it or not.
+	// For more details see: https://github.com/kubernetes/kubernetes/pull/58468
 	switch kind {
-	case api.Kind("ReplicationController"):
-		return &ReplicationControllerScaler{c.Core()}, nil
-	case extensions.Kind("ReplicaSet"), apps.Kind("ReplicaSet"):
-		return &ReplicaSetScaler{c.Extensions()}, nil
 	case batch.Kind("Job"):
-		return &JobScaler{c.Batch()}, nil // Either kind of job can be scaled with Batch interface.
-	case apps.Kind("StatefulSet"):
-		return &StatefulSetScaler{c.Apps()}, nil
-	case extensions.Kind("Deployment"), apps.Kind("Deployment"):
-		return &DeploymentScaler{c.Extensions()}, nil
+		return &jobScaler{jobsClient} // Either kind of job can be scaled with Batch interface.
+	default:
+		return NewScaler(scalesGetter, gr)
 	}
-	return nil, fmt.Errorf("no scaler has been implemented for %q", kind)
+}
+
+// NewScaler get a scaler for a given resource
+// Note that if you are trying to crate create a scaler for "job" then stop and use ScalerFor instead.
+// When scaling jobs is dead, we'll remove ScalerFor method.
+func NewScaler(scalesGetter scaleclient.ScalesGetter, gr schema.GroupResource) Scaler {
+	return &genericScaler{scalesGetter, gr}
 }
 
 // ScalePrecondition describes a condition that must be true for the scale to take place
@@ -140,186 +140,6 @@ func ScaleCondition(r Scaler, precondition *ScalePrecondition, namespace, name s
 	}
 }
 
-// ValidateStatefulSet ensures that the preconditions match. Returns nil if they are valid, an error otherwise.
-func (precondition *ScalePrecondition) ValidateStatefulSet(ps *apps.StatefulSet) error {
-	if precondition.Size != -1 && int(ps.Spec.Replicas) != precondition.Size {
-		return PreconditionError{"replicas", strconv.Itoa(precondition.Size), strconv.Itoa(int(ps.Spec.Replicas))}
-	}
-	if len(precondition.ResourceVersion) != 0 && ps.ResourceVersion != precondition.ResourceVersion {
-		return PreconditionError{"resource version", precondition.ResourceVersion, ps.ResourceVersion}
-	}
-	return nil
-}
-
-// ValidateReplicationController ensures that the preconditions match.  Returns nil if they are valid, an error otherwise
-func (precondition *ScalePrecondition) ValidateReplicationController(controller *api.ReplicationController) error {
-	if precondition.Size != -1 && int(controller.Spec.Replicas) != precondition.Size {
-		return PreconditionError{"replicas", strconv.Itoa(precondition.Size), strconv.Itoa(int(controller.Spec.Replicas))}
-	}
-	if len(precondition.ResourceVersion) != 0 && controller.ResourceVersion != precondition.ResourceVersion {
-		return PreconditionError{"resource version", precondition.ResourceVersion, controller.ResourceVersion}
-	}
-	return nil
-}
-
-type ReplicationControllerScaler struct {
-	c coreclient.ReplicationControllersGetter
-}
-
-// ScaleSimple does a simple one-shot attempt at scaling. It returns the
-// resourceVersion of the replication controller if the update is successful.
-func (scaler *ReplicationControllerScaler) ScaleSimple(namespace, name string, preconditions *ScalePrecondition, newSize uint) (string, error) {
-	controller, err := scaler.c.ReplicationControllers(namespace).Get(name, metav1.GetOptions{})
-	if err != nil {
-		return "", ScaleError{ScaleGetFailure, "", err}
-	}
-	if preconditions != nil {
-		if err := preconditions.ValidateReplicationController(controller); err != nil {
-			return "", err
-		}
-	}
-	controller.Spec.Replicas = int32(newSize)
-	updatedRC, err := scaler.c.ReplicationControllers(namespace).Update(controller)
-	if err != nil {
-		if errors.IsConflict(err) {
-			return "", ScaleError{ScaleUpdateConflictFailure, controller.ResourceVersion, err}
-		}
-		return "", ScaleError{ScaleUpdateFailure, controller.ResourceVersion, err}
-	}
-	return updatedRC.ObjectMeta.ResourceVersion, nil
-}
-
-// Scale updates a ReplicationController to a new size, with optional precondition check (if preconditions is not nil),
-// optional retries (if retry is not nil), and then optionally waits for it's replica count to reach the new value
-// (if wait is not nil).
-func (scaler *ReplicationControllerScaler) Scale(namespace, name string, newSize uint, preconditions *ScalePrecondition, retry, waitForReplicas *RetryParams) error {
-	if preconditions == nil {
-		preconditions = &ScalePrecondition{-1, ""}
-	}
-	if retry == nil {
-		// Make it try only once, immediately
-		retry = &RetryParams{Interval: time.Millisecond, Timeout: time.Millisecond}
-	}
-	var updatedResourceVersion string
-	cond := ScaleCondition(scaler, preconditions, namespace, name, newSize, &updatedResourceVersion)
-	if err := wait.PollImmediate(retry.Interval, retry.Timeout, cond); err != nil {
-		return err
-	}
-	if waitForReplicas != nil {
-		checkRC := func(rc *api.ReplicationController) bool {
-			if uint(rc.Spec.Replicas) != newSize {
-				// the size is changed by other party. Don't need to wait for the new change to complete.
-				return true
-			}
-			return rc.Status.ObservedGeneration >= rc.Generation && rc.Status.Replicas == rc.Spec.Replicas
-		}
-		// If number of replicas doesn't change, then the update may not event
-		// be sent to underlying databse (we don't send no-op changes).
-		// In such case, <updatedResourceVersion> will have value of the most
-		// recent update (which may be far in the past) so we may get "too old
-		// RV" error from watch or potentially no ReplicationController events
-		// will be deliver, since it may already be in the expected state.
-		// To protect from these two, we first issue Get() to ensure that we
-		// are not already in the expected state.
-		currentRC, err := scaler.c.ReplicationControllers(namespace).Get(name, metav1.GetOptions{})
-		if err != nil {
-			return err
-		}
-		if !checkRC(currentRC) {
-			watchOptions := metav1.ListOptions{
-				FieldSelector:   fields.OneTermEqualSelector("metadata.name", name).String(),
-				ResourceVersion: updatedResourceVersion,
-			}
-			watcher, err := scaler.c.ReplicationControllers(namespace).Watch(watchOptions)
-			if err != nil {
-				return err
-			}
-			_, err = watch.Until(waitForReplicas.Timeout, watcher, func(event watch.Event) (bool, error) {
-				if event.Type != watch.Added && event.Type != watch.Modified {
-					return false, nil
-				}
-				return checkRC(event.Object.(*api.ReplicationController)), nil
-			})
-			if err == wait.ErrWaitTimeout {
-				return fmt.Errorf("timed out waiting for %q to be synced", name)
-			}
-			return err
-		}
-	}
-	return nil
-}
-
-// ValidateReplicaSet ensures that the preconditions match.  Returns nil if they are valid, an error otherwise
-func (precondition *ScalePrecondition) ValidateReplicaSet(replicaSet *extensions.ReplicaSet) error {
-	if precondition.Size != -1 && int(replicaSet.Spec.Replicas) != precondition.Size {
-		return PreconditionError{"replicas", strconv.Itoa(precondition.Size), strconv.Itoa(int(replicaSet.Spec.Replicas))}
-	}
-	if len(precondition.ResourceVersion) != 0 && replicaSet.ResourceVersion != precondition.ResourceVersion {
-		return PreconditionError{"resource version", precondition.ResourceVersion, replicaSet.ResourceVersion}
-	}
-	return nil
-}
-
-type ReplicaSetScaler struct {
-	c extensionsclient.ReplicaSetsGetter
-}
-
-// ScaleSimple does a simple one-shot attempt at scaling. It returns the
-// resourceVersion of the replicaset if the update is successful.
-func (scaler *ReplicaSetScaler) ScaleSimple(namespace, name string, preconditions *ScalePrecondition, newSize uint) (string, error) {
-	rs, err := scaler.c.ReplicaSets(namespace).Get(name, metav1.GetOptions{})
-	if err != nil {
-		return "", ScaleError{ScaleGetFailure, "", err}
-	}
-	if preconditions != nil {
-		if err := preconditions.ValidateReplicaSet(rs); err != nil {
-			return "", err
-		}
-	}
-	rs.Spec.Replicas = int32(newSize)
-	updatedRS, err := scaler.c.ReplicaSets(namespace).Update(rs)
-	if err != nil {
-		if errors.IsConflict(err) {
-			return "", ScaleError{ScaleUpdateConflictFailure, rs.ResourceVersion, err}
-		}
-		return "", ScaleError{ScaleUpdateFailure, rs.ResourceVersion, err}
-	}
-	return updatedRS.ObjectMeta.ResourceVersion, nil
-}
-
-// Scale updates a ReplicaSet to a new size, with optional precondition check (if preconditions is
-// not nil), optional retries (if retry is not nil), and then optionally waits for it's replica
-// count to reach the new value (if wait is not nil).
-func (scaler *ReplicaSetScaler) Scale(namespace, name string, newSize uint, preconditions *ScalePrecondition, retry, waitForReplicas *RetryParams) error {
-	if preconditions == nil {
-		preconditions = &ScalePrecondition{-1, ""}
-	}
-	if retry == nil {
-		// Make it try only once, immediately
-		retry = &RetryParams{Interval: time.Millisecond, Timeout: time.Millisecond}
-	}
-	cond := ScaleCondition(scaler, preconditions, namespace, name, newSize, nil)
-	if err := wait.Poll(retry.Interval, retry.Timeout, cond); err != nil {
-		return err
-	}
-	if waitForReplicas != nil {
-		rs, err := scaler.c.ReplicaSets(namespace).Get(name, metav1.GetOptions{})
-		if err != nil {
-			return err
-		}
-		if rs.Initializers != nil {
-			return nil
-		}
-		err = wait.Poll(waitForReplicas.Interval, waitForReplicas.Timeout, client.ReplicaSetHasDesiredReplicas(scaler.c, rs))
-
-		if err == wait.ErrWaitTimeout {
-			return fmt.Errorf("timed out waiting for %q to be synced", name)
-		}
-		return err
-	}
-	return nil
-}
-
 // ValidateJob ensures that the preconditions match.  Returns nil if they are valid, an error otherwise.
 func (precondition *ScalePrecondition) ValidateJob(job *batch.Job) error {
 	if precondition.Size != -1 && job.Spec.Parallelism == nil {
@@ -334,69 +154,13 @@ func (precondition *ScalePrecondition) ValidateJob(job *batch.Job) error {
 	return nil
 }
 
-type StatefulSetScaler struct {
-	c appsclient.StatefulSetsGetter
-}
-
-// ScaleSimple does a simple one-shot attempt at scaling. It returns the
-// resourceVersion of the statefulset if the update is successful.
-func (scaler *StatefulSetScaler) ScaleSimple(namespace, name string, preconditions *ScalePrecondition, newSize uint) (string, error) {
-	ss, err := scaler.c.StatefulSets(namespace).Get(name, metav1.GetOptions{})
-	if err != nil {
-		return "", ScaleError{ScaleGetFailure, "", err}
-	}
-	if preconditions != nil {
-		if err := preconditions.ValidateStatefulSet(ss); err != nil {
-			return "", err
-		}
-	}
-	ss.Spec.Replicas = int32(newSize)
-	updatedStatefulSet, err := scaler.c.StatefulSets(namespace).Update(ss)
-	if err != nil {
-		if errors.IsConflict(err) {
-			return "", ScaleError{ScaleUpdateConflictFailure, ss.ResourceVersion, err}
-		}
-		return "", ScaleError{ScaleUpdateFailure, ss.ResourceVersion, err}
-	}
-	return updatedStatefulSet.ResourceVersion, nil
-}
-
-func (scaler *StatefulSetScaler) Scale(namespace, name string, newSize uint, preconditions *ScalePrecondition, retry, waitForReplicas *RetryParams) error {
-	if preconditions == nil {
-		preconditions = &ScalePrecondition{-1, ""}
-	}
-	if retry == nil {
-		// Make it try only once, immediately
-		retry = &RetryParams{Interval: time.Millisecond, Timeout: time.Millisecond}
-	}
-	cond := ScaleCondition(scaler, preconditions, namespace, name, newSize, nil)
-	if err := wait.Poll(retry.Interval, retry.Timeout, cond); err != nil {
-		return err
-	}
-	if waitForReplicas != nil {
-		job, err := scaler.c.StatefulSets(namespace).Get(name, metav1.GetOptions{})
-		if err != nil {
-			return err
-		}
-		if job.Initializers != nil {
-			return nil
-		}
-		err = wait.Poll(waitForReplicas.Interval, waitForReplicas.Timeout, client.StatefulSetHasDesiredReplicas(scaler.c, job))
-		if err == wait.ErrWaitTimeout {
-			return fmt.Errorf("timed out waiting for %q to be synced", name)
-		}
-		return err
-	}
-	return nil
-}
-
-type JobScaler struct {
+type jobScaler struct {
 	c batchclient.JobsGetter
 }
 
 // ScaleSimple is responsible for updating job's parallelism. It returns the
 // resourceVersion of the job if the update is successful.
-func (scaler *JobScaler) ScaleSimple(namespace, name string, preconditions *ScalePrecondition, newSize uint) (string, error) {
+func (scaler *jobScaler) ScaleSimple(namespace, name string, preconditions *ScalePrecondition, newSize uint) (string, error) {
 	job, err := scaler.c.Jobs(namespace).Get(name, metav1.GetOptions{})
 	if err != nil {
 		return "", ScaleError{ScaleGetFailure, "", err}
@@ -421,7 +185,7 @@ func (scaler *JobScaler) ScaleSimple(namespace, name string, preconditions *Scal
 // Scale updates a Job to a new size, with optional precondition check (if preconditions is not nil),
 // optional retries (if retry is not nil), and then optionally waits for parallelism to reach desired
 // number, which can be less than requested based on job's current progress.
-func (scaler *JobScaler) Scale(namespace, name string, newSize uint, preconditions *ScalePrecondition, retry, waitForReplicas *RetryParams) error {
+func (scaler *jobScaler) Scale(namespace, name string, newSize uint, preconditions *ScalePrecondition, retry, waitForReplicas *RetryParams) error {
 	if preconditions == nil {
 		preconditions = &ScalePrecondition{-1, ""}
 	}
@@ -430,7 +194,7 @@ func (scaler *JobScaler) Scale(namespace, name string, newSize uint, preconditio
 		retry = &RetryParams{Interval: time.Millisecond, Timeout: time.Millisecond}
 	}
 	cond := ScaleCondition(scaler, preconditions, namespace, name, newSize, nil)
-	if err := wait.Poll(retry.Interval, retry.Timeout, cond); err != nil {
+	if err := wait.PollImmediate(retry.Interval, retry.Timeout, cond); err != nil {
 		return err
 	}
 	if waitForReplicas != nil {
@@ -438,7 +202,7 @@ func (scaler *JobScaler) Scale(namespace, name string, newSize uint, preconditio
 		if err != nil {
 			return err
 		}
-		err = wait.Poll(waitForReplicas.Interval, waitForReplicas.Timeout, client.JobHasDesiredParallelism(scaler.c, job))
+		err = wait.PollImmediate(waitForReplicas.Interval, waitForReplicas.Timeout, JobHasDesiredParallelism(scaler.c, job))
 		if err == wait.ErrWaitTimeout {
 			return fmt.Errorf("timed out waiting for %q to be synced", name)
 		}
@@ -447,72 +211,88 @@ func (scaler *JobScaler) Scale(namespace, name string, newSize uint, preconditio
 	return nil
 }
 
-// ValidateDeployment ensures that the preconditions match.  Returns nil if they are valid, an error otherwise.
-func (precondition *ScalePrecondition) ValidateDeployment(deployment *extensions.Deployment) error {
-	if precondition.Size != -1 && int(deployment.Spec.Replicas) != precondition.Size {
-		return PreconditionError{"replicas", strconv.Itoa(precondition.Size), strconv.Itoa(int(deployment.Spec.Replicas))}
+// validateGeneric ensures that the preconditions match. Returns nil if they are valid, otherwise an error
+func (precondition *ScalePrecondition) validate(scale *autoscalingapi.Scale) error {
+	if precondition.Size != -1 && int(scale.Spec.Replicas) != precondition.Size {
+		return PreconditionError{"replicas", strconv.Itoa(precondition.Size), strconv.Itoa(int(scale.Spec.Replicas))}
 	}
-	if len(precondition.ResourceVersion) != 0 && deployment.ResourceVersion != precondition.ResourceVersion {
-		return PreconditionError{"resource version", precondition.ResourceVersion, deployment.ResourceVersion}
+	if len(precondition.ResourceVersion) > 0 && scale.ResourceVersion != precondition.ResourceVersion {
+		return PreconditionError{"resource version", precondition.ResourceVersion, scale.ResourceVersion}
 	}
 	return nil
 }
 
-type DeploymentScaler struct {
-	c extensionsclient.DeploymentsGetter
+// genericScaler can update scales for resources in a particular namespace
+type genericScaler struct {
+	scaleNamespacer scaleclient.ScalesGetter
+	targetGR        schema.GroupResource
 }
 
-// ScaleSimple is responsible for updating a deployment's desired replicas
-// count. It returns the resourceVersion of the deployment if the update is
-// successful.
-func (scaler *DeploymentScaler) ScaleSimple(namespace, name string, preconditions *ScalePrecondition, newSize uint) (string, error) {
-	deployment, err := scaler.c.Deployments(namespace).Get(name, metav1.GetOptions{})
+var _ Scaler = &genericScaler{}
+
+// ScaleSimple updates a scale of a given resource. It returns the resourceVersion of the scale if the update was successful.
+func (s *genericScaler) ScaleSimple(namespace, name string, preconditions *ScalePrecondition, newSize uint) (updatedResourceVersion string, err error) {
+	scale, err := s.scaleNamespacer.Scales(namespace).Get(s.targetGR, name)
 	if err != nil {
 		return "", ScaleError{ScaleGetFailure, "", err}
 	}
 	if preconditions != nil {
-		if err := preconditions.ValidateDeployment(deployment); err != nil {
+		if err := preconditions.validate(scale); err != nil {
 			return "", err
 		}
 	}
 
-	// TODO(madhusudancs): Fix this when Scale group issues are resolved (see issue #18528).
-	// For now I'm falling back to regular Deployment update operation.
-	deployment.Spec.Replicas = int32(newSize)
-	updatedDeployment, err := scaler.c.Deployments(namespace).Update(deployment)
+	scale.Spec.Replicas = int32(newSize)
+	updatedScale, err := s.scaleNamespacer.Scales(namespace).Update(s.targetGR, scale)
 	if err != nil {
 		if errors.IsConflict(err) {
-			return "", ScaleError{ScaleUpdateConflictFailure, deployment.ResourceVersion, err}
+			return "", ScaleError{ScaleUpdateConflictFailure, scale.ResourceVersion, err}
 		}
-		return "", ScaleError{ScaleUpdateFailure, deployment.ResourceVersion, err}
+		return "", ScaleError{ScaleUpdateFailure, scale.ResourceVersion, err}
 	}
-	return updatedDeployment.ObjectMeta.ResourceVersion, nil
+	return updatedScale.ResourceVersion, nil
 }
 
-// Scale updates a deployment to a new size, with optional precondition check (if preconditions is not nil),
+// Scale updates a scale of a given resource to a new size, with optional precondition check (if preconditions is not nil),
 // optional retries (if retry is not nil), and then optionally waits for the status to reach desired count.
-func (scaler *DeploymentScaler) Scale(namespace, name string, newSize uint, preconditions *ScalePrecondition, retry, waitForReplicas *RetryParams) error {
+func (s *genericScaler) Scale(namespace, resourceName string, newSize uint, preconditions *ScalePrecondition, retry, waitForReplicas *RetryParams) error {
 	if preconditions == nil {
 		preconditions = &ScalePrecondition{-1, ""}
 	}
 	if retry == nil {
-		// Make it try only once, immediately
+		// make it try only once, immediately
 		retry = &RetryParams{Interval: time.Millisecond, Timeout: time.Millisecond}
 	}
-	cond := ScaleCondition(scaler, preconditions, namespace, name, newSize, nil)
-	if err := wait.Poll(retry.Interval, retry.Timeout, cond); err != nil {
+	cond := ScaleCondition(s, preconditions, namespace, resourceName, newSize, nil)
+	if err := wait.PollImmediate(retry.Interval, retry.Timeout, cond); err != nil {
 		return err
 	}
 	if waitForReplicas != nil {
-		deployment, err := scaler.c.Deployments(namespace).Get(name, metav1.GetOptions{})
-		if err != nil {
-			return err
-		}
-		err = wait.Poll(waitForReplicas.Interval, waitForReplicas.Timeout, client.DeploymentHasDesiredReplicas(scaler.c, deployment))
+		err := wait.PollImmediate(
+			waitForReplicas.Interval,
+			waitForReplicas.Timeout,
+			scaleHasDesiredReplicas(s.scaleNamespacer, s.targetGR, resourceName, namespace, int32(newSize)))
 		if err == wait.ErrWaitTimeout {
-			return fmt.Errorf("timed out waiting for %q to be synced", name)
+			return fmt.Errorf("timed out waiting for %q to be synced", resourceName)
 		}
 		return err
 	}
 	return nil
+}
+
+// scaleHasDesiredReplicas returns a condition that will be true if and only if the desired replica
+// count for a scale (Spec) equals its updated replicas count (Status)
+func scaleHasDesiredReplicas(sClient scaleclient.ScalesGetter, gr schema.GroupResource, resourceName string, namespace string, desiredReplicas int32) wait.ConditionFunc {
+	return func() (bool, error) {
+		actualScale, err := sClient.Scales(namespace).Get(gr, resourceName)
+		if err != nil {
+			return false, err
+		}
+		// this means the desired scale target has been reset by something else
+		if actualScale.Spec.Replicas != desiredReplicas {
+			return true, nil
+		}
+		return actualScale.Spec.Replicas == actualScale.Status.Replicas &&
+			desiredReplicas == actualScale.Status.Replicas, nil
+	}
 }

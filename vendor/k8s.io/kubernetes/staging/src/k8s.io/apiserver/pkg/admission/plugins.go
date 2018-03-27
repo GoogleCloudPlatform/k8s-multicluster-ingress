@@ -23,6 +23,7 @@ import (
 	"io/ioutil"
 	"reflect"
 	"sort"
+	"strings"
 	"sync"
 
 	"github.com/golang/glog"
@@ -39,18 +40,8 @@ type Plugins struct {
 	registry map[string]Factory
 }
 
-// pluginHandler associates name with a admission.Interface handler.
-type pluginHandler struct {
-	i    Interface
-	name string
-}
-
-func (h *pluginHandler) Interface() Interface {
-	return h.i
-}
-
-func (h *pluginHandler) Name() string {
-	return h.name
+func NewPlugins() *Plugins {
+	return &Plugins{}
 }
 
 // All registered admission options.
@@ -134,8 +125,10 @@ func splitStream(config io.Reader) (io.Reader, io.Reader, error) {
 
 // NewFromPlugins returns an admission.Interface that will enforce admission control decisions of all
 // the given plugins.
-func (ps *Plugins) NewFromPlugins(pluginNames []string, configProvider ConfigProvider, pluginInitializer PluginInitializer) (Interface, error) {
-	handlers := []NamedHandler{}
+func (ps *Plugins) NewFromPlugins(pluginNames []string, configProvider ConfigProvider, pluginInitializer PluginInitializer, decorator Decorator) (Interface, error) {
+	handlers := []Interface{}
+	mutationPlugins := []string{}
+	validationPlugins := []string{}
 	for _, pluginName := range pluginNames {
 		pluginConfig, err := configProvider.ConfigFor(pluginName)
 		if err != nil {
@@ -147,9 +140,25 @@ func (ps *Plugins) NewFromPlugins(pluginNames []string, configProvider ConfigPro
 			return nil, err
 		}
 		if plugin != nil {
-			handler := &pluginHandler{i: plugin, name: pluginName}
-			handlers = append(handlers, handler)
+			if decorator != nil {
+				handlers = append(handlers, decorator.Decorate(plugin, pluginName))
+			} else {
+				handlers = append(handlers, plugin)
+			}
+
+			if _, ok := plugin.(MutationInterface); ok {
+				mutationPlugins = append(mutationPlugins, pluginName)
+			}
+			if _, ok := plugin.(ValidationInterface); ok {
+				validationPlugins = append(validationPlugins, pluginName)
+			}
 		}
+	}
+	if len(mutationPlugins) != 0 {
+		glog.Infof("Loaded %d mutating admission controller(s) successfully in the following order: %s.", len(mutationPlugins), strings.Join(mutationPlugins, ","))
+	}
+	if len(validationPlugins) != 0 {
+		glog.Infof("Loaded %d validating admission controller(s) successfully in the following order: %s.", len(validationPlugins), strings.Join(validationPlugins, ","))
 	}
 	return chainAdmissionHandler(handlers), nil
 }

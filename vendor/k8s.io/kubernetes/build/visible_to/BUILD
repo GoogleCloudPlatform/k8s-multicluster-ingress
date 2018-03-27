@@ -40,13 +40,8 @@ package_group(
         "//hack",
         "//hack/lib",
         "//hack/make-rules",
-        "//test/e2e",
-        "//test/e2e/framework",
-        "//test/e2e/kubectl",
-        "//test/e2e/workload",
-        "//test/integration/etcd",
-        "//test/integration/framework",
-        "//test/integration/kubectl",
+        "//test/e2e/...",
+        "//test/integration/...",
     ],
 )
 
@@ -197,6 +192,7 @@ package_group(
         "//pkg/kubectl/cmd/auth",
         "//pkg/kubectl/cmd/resource",
         "//pkg/kubectl/cmd/set",
+        "//pkg/kubectl/explain",
     ],
 )
 
@@ -209,7 +205,7 @@ package_group(
         "//cmd/clicheck",
         "//cmd/hyperkube",
         "//cmd/kube-proxy/app",
-        "//plugin/cmd/kube-scheduler/app",
+        "//cmd/kube-scheduler/app",
     ],
 )
 

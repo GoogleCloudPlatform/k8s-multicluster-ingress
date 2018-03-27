@@ -1232,11 +1232,6 @@ func TestValidateDeployment(t *testing.T) {
 	}
 }
 
-func int64p(i int) *int64 {
-	i64 := int64(i)
-	return &i64
-}
-
 func TestValidateDeploymentStatus(t *testing.T) {
 	collisionCount := int32(-3)
 	tests := []struct {
@@ -1472,8 +1467,6 @@ func TestValidateDeploymentRollback(t *testing.T) {
 		}
 	}
 }
-
-type ingressRules map[string]string
 
 func TestValidateIngress(t *testing.T) {
 	defaultBackend := extensions.IngressBackend{
@@ -2450,6 +2443,13 @@ func TestValidatePodSecurityPolicy(t *testing.T) {
 	pe := true
 	invalidDefaultAllowPrivilegeEscalation.Spec.DefaultAllowPrivilegeEscalation = &pe
 
+	emptyFlexDriver := validPSP()
+	emptyFlexDriver.Spec.Volumes = []extensions.FSType{extensions.FlexVolume}
+	emptyFlexDriver.Spec.AllowedFlexVolumes = []extensions.AllowedFlexVolume{{}}
+
+	nonEmptyFlexVolumes := validPSP()
+	nonEmptyFlexVolumes.Spec.AllowedFlexVolumes = []extensions.AllowedFlexVolume{{Driver: "example/driver"}}
+
 	type testCase struct {
 		psp         *extensions.PodSecurityPolicy
 		errorType   field.ErrorType
@@ -2581,6 +2581,11 @@ func TestValidatePodSecurityPolicy(t *testing.T) {
 			errorType:   field.ErrorTypeInvalid,
 			errorDetail: "must not contain '..'",
 		},
+		"empty flex volume driver": {
+			psp:         emptyFlexDriver,
+			errorType:   field.ErrorTypeRequired,
+			errorDetail: "must specify a driver",
+		},
 	}
 
 	for k, v := range errorCases {
@@ -2660,6 +2665,17 @@ func TestValidatePodSecurityPolicy(t *testing.T) {
 	validDefaultAllowPrivilegeEscalation.Spec.DefaultAllowPrivilegeEscalation = &pe
 	validDefaultAllowPrivilegeEscalation.Spec.AllowPrivilegeEscalation = true
 
+	flexvolumeWhenFlexVolumesAllowed := validPSP()
+	flexvolumeWhenFlexVolumesAllowed.Spec.Volumes = []extensions.FSType{extensions.FlexVolume}
+	flexvolumeWhenFlexVolumesAllowed.Spec.AllowedFlexVolumes = []extensions.AllowedFlexVolume{
+		{Driver: "example/driver1"},
+	}
+
+	flexvolumeWhenAllVolumesAllowed := validPSP()
+	flexvolumeWhenAllVolumesAllowed.Spec.Volumes = []extensions.FSType{extensions.All}
+	flexvolumeWhenAllVolumesAllowed.Spec.AllowedFlexVolumes = []extensions.AllowedFlexVolume{
+		{Driver: "example/driver2"},
+	}
 	successCases := map[string]struct {
 		psp *extensions.PodSecurityPolicy
 	}{
@@ -2689,6 +2705,12 @@ func TestValidatePodSecurityPolicy(t *testing.T) {
 		},
 		"valid defaultAllowPrivilegeEscalation as true": {
 			psp: validDefaultAllowPrivilegeEscalation,
+		},
+		"allow white-listed flexVolume when flex volumes are allowed": {
+			psp: flexvolumeWhenFlexVolumesAllowed,
+		},
+		"allow white-listed flexVolume when all volumes are allowed": {
+			psp: flexvolumeWhenAllVolumesAllowed,
 		},
 	}
 
@@ -2789,5 +2811,33 @@ func TestIsValidSysctlPattern(t *testing.T) {
 		if IsValidSysctlPattern(s) {
 			t.Errorf("%q expected to be an invalid sysctl pattern", s)
 		}
+	}
+}
+
+func Test_validatePSPRunAsUser(t *testing.T) {
+	var testCases = []struct {
+		name              string
+		runAsUserStrategy extensions.RunAsUserStrategyOptions
+		fail              bool
+	}{
+		{"Invalid RunAsUserStrategy", extensions.RunAsUserStrategyOptions{Rule: extensions.RunAsUserStrategy("someInvalidStrategy")}, true},
+		{"RunAsUserStrategyMustRunAs", extensions.RunAsUserStrategyOptions{Rule: extensions.RunAsUserStrategyMustRunAs}, false},
+		{"RunAsUserStrategyMustRunAsNonRoot", extensions.RunAsUserStrategyOptions{Rule: extensions.RunAsUserStrategyMustRunAsNonRoot}, false},
+		{"RunAsUserStrategyMustRunAsNonRoot With Valid Range", extensions.RunAsUserStrategyOptions{Rule: extensions.RunAsUserStrategyMustRunAs, Ranges: []extensions.UserIDRange{{Min: 2, Max: 3}, {Min: 4, Max: 5}}}, false},
+		{"RunAsUserStrategyMustRunAsNonRoot With Invalid Range", extensions.RunAsUserStrategyOptions{Rule: extensions.RunAsUserStrategyMustRunAs, Ranges: []extensions.UserIDRange{{Min: 2, Max: 3}, {Min: 5, Max: 4}}}, true},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			errList := validatePSPRunAsUser(field.NewPath("status"), &testCase.runAsUserStrategy)
+			actualErrors := len(errList)
+			expectedErrors := 1
+			if !testCase.fail {
+				expectedErrors = 0
+			}
+			if actualErrors != expectedErrors {
+				t.Errorf("In testCase %v, expected %v errors, got %v errors", testCase.name, expectedErrors, actualErrors)
+			}
+		})
 	}
 }

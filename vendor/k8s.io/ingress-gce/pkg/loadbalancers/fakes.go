@@ -124,10 +124,8 @@ func (f *FakeLoadBalancers) GetGlobalForwardingRule(name string) (*compute.Forwa
 	return nil, utils.FakeGoogleAPINotFoundErr()
 }
 
-func (f *FakeLoadBalancers) ListGlobalForwardingRules() (*compute.ForwardingRuleList, error) {
-	ruleList := &compute.ForwardingRuleList{}
-	ruleList.Items = f.Fw
-	return ruleList, nil
+func (f *FakeLoadBalancers) ListGlobalForwardingRules() ([]*compute.ForwardingRule, error) {
+	return f.Fw, nil
 }
 
 // CreateGlobalForwardingRule fakes forwarding rule creation.
@@ -194,7 +192,7 @@ func (f *FakeLoadBalancers) GetUrlMap(name string) (*compute.UrlMap, error) {
 func (f *FakeLoadBalancers) CreateUrlMap(urlMap *compute.UrlMap) error {
 	glog.V(4).Infof("CreateUrlMap %+v", urlMap)
 	f.calls = append(f.calls, "CreateUrlMap")
-	urlMap.SelfLink = f.UMName()
+	urlMap.SelfLink = urlMap.Name
 	f.Um = append(f.Um, urlMap)
 	return nil
 }
@@ -222,6 +220,12 @@ func (f *FakeLoadBalancers) DeleteUrlMap(name string) error {
 	}
 	f.Um = um
 	return nil
+}
+
+// ListUrlMaps fakes getting url maps from the cloud.
+func (f *FakeLoadBalancers) ListUrlMaps() ([]*compute.UrlMap, error) {
+	f.calls = append(f.calls, "ListUrlMaps")
+	return f.Um, nil
 }
 
 // TargetProxies fakes

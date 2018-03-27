@@ -27,7 +27,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -35,7 +34,6 @@ import (
 	"github.com/go-openapi/spec"
 	"github.com/golang/glog"
 	"github.com/spf13/cobra"
-	"github.com/spf13/pflag"
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -45,31 +43,40 @@ import (
 	utilwait "k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/apiserver/pkg/admission"
 	webhookconfig "k8s.io/apiserver/pkg/admission/plugin/webhook/config"
+	webhookinit "k8s.io/apiserver/pkg/admission/plugin/webhook/initializer"
 	"k8s.io/apiserver/pkg/authentication/authenticator"
 	"k8s.io/apiserver/pkg/authorization/authorizer"
+	"k8s.io/apiserver/pkg/server"
 	genericapiserver "k8s.io/apiserver/pkg/server"
 	"k8s.io/apiserver/pkg/server/filters"
 	serveroptions "k8s.io/apiserver/pkg/server/options"
 	"k8s.io/apiserver/pkg/server/options/encryptionconfig"
 	serverstorage "k8s.io/apiserver/pkg/server/storage"
-	aggregatorapiserver "k8s.io/kube-aggregator/pkg/apiserver"
-	openapi "k8s.io/kube-openapi/pkg/common"
-
 	"k8s.io/apiserver/pkg/storage/etcd3/preflight"
+	utilfeature "k8s.io/apiserver/pkg/util/feature"
 	clientgoinformers "k8s.io/client-go/informers"
 	clientgoclientset "k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
+	certutil "k8s.io/client-go/util/cert"
+	aggregatorapiserver "k8s.io/kube-aggregator/pkg/apiserver"
+	openapi "k8s.io/kube-openapi/pkg/common"
 	"k8s.io/kubernetes/cmd/kube-apiserver/app/options"
 	"k8s.io/kubernetes/pkg/api/legacyscheme"
+	"k8s.io/kubernetes/pkg/apis/admissionregistration"
 	"k8s.io/kubernetes/pkg/apis/apps"
 	"k8s.io/kubernetes/pkg/apis/batch"
+	api "k8s.io/kubernetes/pkg/apis/core"
+	"k8s.io/kubernetes/pkg/apis/events"
 	"k8s.io/kubernetes/pkg/apis/extensions"
 	"k8s.io/kubernetes/pkg/apis/networking"
+	"k8s.io/kubernetes/pkg/apis/policy"
 	"k8s.io/kubernetes/pkg/apis/storage"
 	"k8s.io/kubernetes/pkg/capabilities"
 	"k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset"
 	informers "k8s.io/kubernetes/pkg/client/informers/informers_generated/internalversion"
 	"k8s.io/kubernetes/pkg/cloudprovider"
 	serviceaccountcontroller "k8s.io/kubernetes/pkg/controller/serviceaccount"
+	"k8s.io/kubernetes/pkg/features"
 	generatedopenapi "k8s.io/kubernetes/pkg/generated/openapi"
 	"k8s.io/kubernetes/pkg/kubeapiserver"
 	kubeapiserveradmission "k8s.io/kubernetes/pkg/kubeapiserver/admission"
@@ -83,11 +90,12 @@ import (
 	quotainstall "k8s.io/kubernetes/pkg/quota/install"
 	"k8s.io/kubernetes/pkg/registry/cachesize"
 	rbacrest "k8s.io/kubernetes/pkg/registry/rbac/rest"
+	"k8s.io/kubernetes/pkg/serviceaccount"
 	"k8s.io/kubernetes/pkg/version"
+	"k8s.io/kubernetes/pkg/version/verflag"
 	"k8s.io/kubernetes/plugin/pkg/auth/authenticator/token/bootstrap"
 
-	"k8s.io/client-go/rest"
-	api "k8s.io/kubernetes/pkg/apis/core"
+	utilflag "k8s.io/kubernetes/pkg/util/flag"
 	_ "k8s.io/kubernetes/pkg/util/reflector/prometheus" // for reflector metric registration
 	_ "k8s.io/kubernetes/pkg/util/workqueue/prometheus" // for workqueue metric registration
 )
@@ -98,7 +106,6 @@ const etcdRetryInterval = 1 * time.Second
 // NewAPIServerCommand creates a *cobra.Command object with default parameters
 func NewAPIServerCommand() *cobra.Command {
 	s := options.NewServerRunOptions()
-	s.AddFlags(pflag.CommandLine)
 	cmd := &cobra.Command{
 		Use: "kube-apiserver",
 		Long: `The Kubernetes API server validates and configures data
@@ -106,8 +113,17 @@ for the api objects which include pods, services, replicationcontrollers, and
 others. The API Server services REST operations and provides the frontend to the
 cluster's shared state through which all other components interact.`,
 		Run: func(cmd *cobra.Command, args []string) {
+			verflag.PrintAndExitIfRequested()
+			utilflag.PrintFlags(cmd.Flags())
+
+			stopCh := server.SetupSignalHandler()
+			if err := Run(s, stopCh); err != nil {
+				fmt.Fprintf(os.Stderr, "%v\n", err)
+				os.Exit(1)
+			}
 		},
 	}
+	s.AddFlags(cmd.Flags())
 
 	return cmd
 }
@@ -131,12 +147,12 @@ func CreateServerChain(runOptions *options.ServerRunOptions, stopCh <-chan struc
 	if err != nil {
 		return nil, err
 	}
+
 	kubeAPIServerConfig, sharedInformers, versionedInformers, insecureServingOptions, serviceResolver, err := CreateKubeAPIServerConfig(runOptions, nodeTunneler, proxyTransport)
 	if err != nil {
 		return nil, err
 	}
 
-	// TPRs are enabled and not yet beta, since this these are the successor, they fall under the same enablement rule
 	// If additional API servers are added, they should be gated.
 	apiExtensionsConfig, err := createAPIExtensionsConfig(*kubeAPIServerConfig.GenericConfig, versionedInformers, runOptions)
 	if err != nil {
@@ -177,8 +193,6 @@ func CreateServerChain(runOptions *options.ServerRunOptions, stopCh <-chan struc
 	if err != nil {
 		return nil, err
 	}
-	aggregatorConfig.ExtraConfig.ProxyTransport = proxyTransport
-	aggregatorConfig.ExtraConfig.ServiceResolver = serviceResolver
 	aggregatorServer, err := createAggregatorServer(aggregatorConfig, kubeAPIServer.GenericAPIServer, apiExtensionsServer.Informers)
 	if err != nil {
 		// we don't need special handling for innerStopCh because the aggregator server doesn't create any go routines
@@ -293,7 +307,7 @@ func CreateKubeAPIServerConfig(s *options.ServerRunOptions, nodeTunneler tunnele
 		return nil, nil, nil, nil, nil, err
 	}
 
-	storageFactory, err := BuildStorageFactory(s)
+	storageFactory, err := BuildStorageFactory(s, genericConfig.MergedResourceConfig)
 	if err != nil {
 		return nil, nil, nil, nil, nil, err
 	}
@@ -305,6 +319,28 @@ func CreateKubeAPIServerConfig(s *options.ServerRunOptions, nodeTunneler tunnele
 	requestHeaderProxyCA, err := readCAorNil(s.Authentication.RequestHeader.ClientCAFile)
 	if err != nil {
 		return nil, nil, nil, nil, nil, err
+	}
+
+	var issuer serviceaccount.TokenGenerator
+	var apiAudiences []string
+	if s.ServiceAccountSigningKeyFile != "" ||
+		s.Authentication.ServiceAccounts.Issuer != "" ||
+		len(s.Authentication.ServiceAccounts.APIAudiences) > 0 {
+		if !utilfeature.DefaultFeatureGate.Enabled(features.TokenRequest) {
+			return nil, nil, nil, nil, nil, fmt.Errorf("the TokenRequest feature is not enabled but --service-account-signing-key-file and/or --service-account-issuer-id flags were passed")
+		}
+		if s.ServiceAccountSigningKeyFile == "" ||
+			s.Authentication.ServiceAccounts.Issuer == "" ||
+			len(s.Authentication.ServiceAccounts.APIAudiences) == 0 ||
+			len(s.Authentication.ServiceAccounts.KeyFiles) == 0 {
+			return nil, nil, nil, nil, nil, fmt.Errorf("service-account-signing-key-file, service-account-issuer, service-account-api-audiences and service-account-key-file should be specified together")
+		}
+		sk, err := certutil.PrivateKeyFromFile(s.ServiceAccountSigningKeyFile)
+		if err != nil {
+			return nil, nil, nil, nil, nil, fmt.Errorf("failed to parse service-account-issuer-key-file: %v", err)
+		}
+		issuer = serviceaccount.JWTTokenGenerator(s.Authentication.ServiceAccounts.Issuer, sk)
+		apiAudiences = s.Authentication.ServiceAccounts.APIAudiences
 	}
 
 	config := &master.Config{
@@ -324,7 +360,6 @@ func CreateKubeAPIServerConfig(s *options.ServerRunOptions, nodeTunneler tunnele
 			EnableCoreControllers:   true,
 			EventTTL:                s.EventTTL,
 			KubeletClientConfig:     s.KubeletConfig,
-			EnableUISupport:         true,
 			EnableLogsSupport:       s.EnableLogsHandler,
 			ProxyTransport:          proxyTransport,
 
@@ -339,6 +374,9 @@ func CreateKubeAPIServerConfig(s *options.ServerRunOptions, nodeTunneler tunnele
 
 			EndpointReconcilerType: reconcilers.Type(s.EndpointReconcilerType),
 			MasterCount:            s.MasterCount,
+
+			ServiceAccountIssuer:       issuer,
+			ServiceAccountAPIAudiences: apiAudiences,
 		},
 	}
 
@@ -356,6 +394,7 @@ func BuildGenericConfig(s *options.ServerRunOptions, proxyTransport *http.Transp
 	if err := s.GenericServerRunOptions.ApplyTo(genericConfig); err != nil {
 		return nil, nil, nil, nil, nil, err
 	}
+
 	insecureServingOptions, err := s.InsecureServing.ApplyTo(genericConfig)
 	if err != nil {
 		return nil, nil, nil, nil, nil, err
@@ -372,12 +411,14 @@ func BuildGenericConfig(s *options.ServerRunOptions, proxyTransport *http.Transp
 	if err := s.Features.ApplyTo(genericConfig); err != nil {
 		return nil, nil, nil, nil, nil, err
 	}
+	if err := s.APIEnablement.ApplyTo(genericConfig, master.DefaultAPIResourceConfigSource(), legacyscheme.Registry); err != nil {
+		return nil, nil, nil, nil, nil, err
+	}
 
 	genericConfig.OpenAPIConfig = genericapiserver.DefaultOpenAPIConfig(generatedopenapi.GetOpenAPIDefinitions, legacyscheme.Scheme)
 	genericConfig.OpenAPIConfig.PostProcessSpec = postProcessOpenAPISpecForBackwardCompatibility
 	genericConfig.OpenAPIConfig.Info.Title = "Kubernetes"
 	genericConfig.SwaggerConfig = genericapiserver.DefaultSwaggerConfig()
-	genericConfig.EnableMetrics = true
 	genericConfig.LongRunningFunc = filters.BasicLongRunningRequestCheck(
 		sets.NewString("watch", "proxy"),
 		sets.NewString("attach", "exec", "proxy", "log", "portforward"),
@@ -386,7 +427,7 @@ func BuildGenericConfig(s *options.ServerRunOptions, proxyTransport *http.Transp
 	kubeVersion := version.Get()
 	genericConfig.Version = &kubeVersion
 
-	storageFactory, err := BuildStorageFactory(s)
+	storageFactory, err := BuildStorageFactory(s, genericConfig.MergedResourceConfig)
 	if err != nil {
 		return nil, nil, nil, nil, nil, err
 	}
@@ -434,12 +475,12 @@ func BuildGenericConfig(s *options.ServerRunOptions, proxyTransport *http.Transp
 		)
 	}
 
-	genericConfig.Authenticator, genericConfig.OpenAPIConfig.SecurityDefinitions, err = BuildAuthenticator(s, storageFactory, client, sharedInformers)
+	genericConfig.Authentication.Authenticator, genericConfig.OpenAPIConfig.SecurityDefinitions, err = BuildAuthenticator(s, clientgoExternalClient, sharedInformers)
 	if err != nil {
 		return nil, nil, nil, nil, nil, fmt.Errorf("invalid authentication config: %v", err)
 	}
 
-	genericConfig.Authorizer, genericConfig.RuleResolver, err = BuildAuthorizer(s, sharedInformers)
+	genericConfig.Authorization.Authorizer, genericConfig.RuleResolver, err = BuildAuthorizer(s, sharedInformers, versionedInformers)
 	if err != nil {
 		return nil, nil, nil, nil, nil, fmt.Errorf("invalid authorization config: %v", err)
 	}
@@ -447,27 +488,35 @@ func BuildGenericConfig(s *options.ServerRunOptions, proxyTransport *http.Transp
 		genericConfig.DisabledPostStartHooks.Insert(rbacrest.PostStartHookName)
 	}
 
-	webhookAuthResolver := func(delegate webhookconfig.AuthenticationInfoResolver) webhookconfig.AuthenticationInfoResolver {
-		return webhookconfig.AuthenticationInfoResolverFunc(func(server string) (*rest.Config, error) {
-			if server == "kubernetes.default.svc" {
-				return genericConfig.LoopbackClientConfig, nil
-			}
-			ret, err := delegate.ClientConfigFor(server)
-			if err != nil {
-				return nil, err
-			}
-			if proxyTransport != nil && proxyTransport.Dial != nil {
-				ret.Dial = proxyTransport.Dial
-			}
-			return ret, err
-		})
+	webhookAuthResolverWrapper := func(delegate webhookconfig.AuthenticationInfoResolver) webhookconfig.AuthenticationInfoResolver {
+		return &webhookconfig.AuthenticationInfoResolverDelegator{
+			ClientConfigForFunc: func(server string) (*rest.Config, error) {
+				if server == "kubernetes.default.svc" {
+					return genericConfig.LoopbackClientConfig, nil
+				}
+				return delegate.ClientConfigFor(server)
+			},
+			ClientConfigForServiceFunc: func(serviceName, serviceNamespace string) (*rest.Config, error) {
+				if serviceName == "kubernetes" && serviceNamespace == "default" {
+					return genericConfig.LoopbackClientConfig, nil
+				}
+				ret, err := delegate.ClientConfigForService(serviceName, serviceNamespace)
+				if err != nil {
+					return nil, err
+				}
+				if proxyTransport != nil && proxyTransport.Dial != nil {
+					ret.Dial = proxyTransport.Dial
+				}
+				return ret, err
+			},
+		}
 	}
-	pluginInitializer, err := BuildAdmissionPluginInitializer(
+	pluginInitializers, err := BuildAdmissionPluginInitializers(
 		s,
 		client,
 		sharedInformers,
 		serviceResolver,
-		webhookAuthResolver,
+		webhookAuthResolverWrapper,
 	)
 	if err != nil {
 		return nil, nil, nil, nil, nil, fmt.Errorf("failed to create admission plugin initializer: %v", err)
@@ -478,7 +527,7 @@ func BuildGenericConfig(s *options.ServerRunOptions, proxyTransport *http.Transp
 		versionedInformers,
 		kubeClientConfig,
 		legacyscheme.Scheme,
-		pluginInitializer)
+		pluginInitializers...)
 	if err != nil {
 		return nil, nil, nil, nil, nil, fmt.Errorf("failed to initialize admission: %v", err)
 	}
@@ -486,8 +535,8 @@ func BuildGenericConfig(s *options.ServerRunOptions, proxyTransport *http.Transp
 	return genericConfig, sharedInformers, versionedInformers, insecureServingOptions, serviceResolver, nil
 }
 
-// BuildAdmissionPluginInitializer constructs the admission plugin initializer
-func BuildAdmissionPluginInitializer(s *options.ServerRunOptions, client internalclientset.Interface, sharedInformers informers.SharedInformerFactory, serviceResolver aggregatorapiserver.ServiceResolver, webhookAuthWrapper webhookconfig.AuthenticationInfoResolverWrapper) (admission.PluginInitializer, error) {
+// BuildAdmissionPluginInitializers constructs the admission plugin initializer
+func BuildAdmissionPluginInitializers(s *options.ServerRunOptions, client internalclientset.Interface, sharedInformers informers.SharedInformerFactory, serviceResolver aggregatorapiserver.ServiceResolver, webhookAuthWrapper webhookconfig.AuthenticationInfoResolverWrapper) ([]admission.PluginInitializer, error) {
 	var cloudConfig []byte
 
 	if s.CloudProvider.CloudConfigFile != "" {
@@ -503,52 +552,37 @@ func BuildAdmissionPluginInitializer(s *options.ServerRunOptions, client interna
 
 	quotaConfiguration := quotainstall.NewQuotaConfigurationForAdmission()
 
-	pluginInitializer := kubeapiserveradmission.NewPluginInitializer(client, sharedInformers, cloudConfig, restMapper, quotaConfiguration, webhookAuthWrapper, serviceResolver)
+	kubePluginInitializer := kubeapiserveradmission.NewPluginInitializer(client, sharedInformers, cloudConfig, restMapper, quotaConfiguration)
+	webhookPluginInitializer := webhookinit.NewPluginInitializer(webhookAuthWrapper, serviceResolver)
 
-	return pluginInitializer, nil
+	return []admission.PluginInitializer{webhookPluginInitializer, kubePluginInitializer}, nil
 }
 
 // BuildAuthenticator constructs the authenticator
-func BuildAuthenticator(s *options.ServerRunOptions, storageFactory serverstorage.StorageFactory, client internalclientset.Interface, sharedInformers informers.SharedInformerFactory) (authenticator.Request, *spec.SecurityDefinitions, error) {
+func BuildAuthenticator(s *options.ServerRunOptions, extclient clientgoclientset.Interface, sharedInformers informers.SharedInformerFactory) (authenticator.Request, *spec.SecurityDefinitions, error) {
 	authenticatorConfig := s.Authentication.ToAuthenticationConfig()
 	if s.Authentication.ServiceAccounts.Lookup {
-		// we have to go direct to storage because the clientsets fail when they're initialized with some API versions excluded
-		// we should stop trying to control them like that.
-		storageConfigServiceAccounts, err := storageFactory.NewConfig(api.Resource("serviceaccounts"))
-		if err != nil {
-			return nil, nil, fmt.Errorf("unable to get serviceaccounts storage: %v", err)
-		}
-		storageConfigSecrets, err := storageFactory.NewConfig(api.Resource("secrets"))
-		if err != nil {
-			return nil, nil, fmt.Errorf("unable to get secrets storage: %v", err)
-		}
-		authenticatorConfig.ServiceAccountTokenGetter = serviceaccountcontroller.NewGetterFromStorageInterface(
-			storageConfigServiceAccounts,
-			storageFactory.ResourcePrefix(api.Resource("serviceaccounts")),
-			storageConfigSecrets,
-			storageFactory.ResourcePrefix(api.Resource("secrets")),
-		)
+		authenticatorConfig.ServiceAccountTokenGetter = serviceaccountcontroller.NewGetterFromClient(extclient)
 	}
-	if client == nil || reflect.ValueOf(client).IsNil() {
-		// TODO: Remove check once client can never be nil.
-		glog.Errorf("Failed to setup bootstrap token authenticator because the loopback clientset was not setup properly.")
-	} else {
+	kubeAPIVersions := os.Getenv("KUBE_API_VERSIONS")
+	if len(kubeAPIVersions) == 0 {
 		authenticatorConfig.BootstrapTokenAuthenticator = bootstrap.NewTokenAuthenticator(
 			sharedInformers.Core().InternalVersion().Secrets().Lister().Secrets(v1.NamespaceSystem),
 		)
 	}
+
 	return authenticatorConfig.New()
 }
 
 // BuildAuthorizer constructs the authorizer
-func BuildAuthorizer(s *options.ServerRunOptions, sharedInformers informers.SharedInformerFactory) (authorizer.Authorizer, authorizer.RuleResolver, error) {
-	authorizationConfig := s.Authorization.ToAuthorizationConfig(sharedInformers)
+func BuildAuthorizer(s *options.ServerRunOptions, sharedInformers informers.SharedInformerFactory, versionedInformers clientgoinformers.SharedInformerFactory) (authorizer.Authorizer, authorizer.RuleResolver, error) {
+	authorizationConfig := s.Authorization.ToAuthorizationConfig(sharedInformers, versionedInformers)
 	return authorizationConfig.New()
 }
 
 // BuildStorageFactory constructs the storage factory. If encryption at rest is used, it expects
 // all supported KMS plugins to be registered in the KMS plugin registry before being called.
-func BuildStorageFactory(s *options.ServerRunOptions) (*serverstorage.DefaultStorageFactory, error) {
+func BuildStorageFactory(s *options.ServerRunOptions, apiResourceConfig *serverstorage.ResourceConfig) (*serverstorage.DefaultStorageFactory, error) {
 	storageGroupsToEncodingVersion, err := s.StorageSerialization.StorageGroupsToEncodingVersion()
 	if err != nil {
 		return nil, fmt.Errorf("error generating storage version map: %s", err)
@@ -556,34 +590,30 @@ func BuildStorageFactory(s *options.ServerRunOptions) (*serverstorage.DefaultSto
 	storageFactory, err := kubeapiserver.NewStorageFactory(
 		s.Etcd.StorageConfig, s.Etcd.DefaultStorageMediaType, legacyscheme.Codecs,
 		serverstorage.NewDefaultResourceEncodingConfig(legacyscheme.Registry), storageGroupsToEncodingVersion,
+		// The list includes resources that need to be stored in a different
+		// group version than other resources in the groups.
 		// FIXME (soltysh): this GroupVersionResource override should be configurable
 		[]schema.GroupVersionResource{
 			batch.Resource("cronjobs").WithVersion("v1beta1"),
-			storage.Resource("volumeattachments").WithVersion("v1alpha1"),
+			storage.Resource("volumeattachments").WithVersion("v1beta1"),
+			admissionregistration.Resource("initializerconfigurations").WithVersion("v1alpha1"),
 		},
-		master.DefaultAPIResourceConfigSource(), s.APIEnablement.RuntimeConfig)
+		apiResourceConfig)
 	if err != nil {
 		return nil, fmt.Errorf("error in initializing storage factory: %s", err)
 	}
 
 	storageFactory.AddCohabitatingResources(networking.Resource("networkpolicies"), extensions.Resource("networkpolicies"))
-
-	// keep Deployments, Daemonsets and ReplicaSets in extensions for backwards compatibility, we'll have to migrate at some point, eventually
-	storageFactory.AddCohabitatingResources(extensions.Resource("deployments"), apps.Resource("deployments"))
-	storageFactory.AddCohabitatingResources(extensions.Resource("daemonsets"), apps.Resource("daemonsets"))
-	storageFactory.AddCohabitatingResources(extensions.Resource("replicasets"), apps.Resource("replicasets"))
+	storageFactory.AddCohabitatingResources(apps.Resource("deployments"), extensions.Resource("deployments"))
+	storageFactory.AddCohabitatingResources(apps.Resource("daemonsets"), extensions.Resource("daemonsets"))
+	storageFactory.AddCohabitatingResources(apps.Resource("replicasets"), extensions.Resource("replicasets"))
+	storageFactory.AddCohabitatingResources(api.Resource("events"), events.Resource("events"))
+	// TODO(#54933): 1.11: switch to using policy storage and flip the order here
+	storageFactory.AddCohabitatingResources(extensions.Resource("podsecuritypolicies"), policy.Resource("podsecuritypolicies"))
 	for _, override := range s.Etcd.EtcdServersOverrides {
 		tokens := strings.Split(override, "#")
-		if len(tokens) != 2 {
-			glog.Errorf("invalid value of etcd server overrides: %s", override)
-			continue
-		}
-
 		apiresource := strings.Split(tokens[0], "/")
-		if len(apiresource) != 2 {
-			glog.Errorf("invalid resource definition: %s", tokens[0])
-			continue
-		}
+
 		group := apiresource[0]
 		resource := apiresource[1]
 		groupResource := schema.GroupResource{Group: group, Resource: resource}
@@ -607,7 +637,7 @@ func BuildStorageFactory(s *options.ServerRunOptions) (*serverstorage.DefaultSto
 
 func defaultOptions(s *options.ServerRunOptions) error {
 	// set defaults
-	if err := s.GenericServerRunOptions.DefaultAdvertiseAddress(s.SecureServing); err != nil {
+	if err := s.GenericServerRunOptions.DefaultAdvertiseAddress(s.SecureServing.SecureServingOptions); err != nil {
 		return err
 	}
 	if err := kubeoptions.DefaultAdvertiseAddress(s.GenericServerRunOptions, s.InsecureServing); err != nil {
@@ -621,18 +651,35 @@ func defaultOptions(s *options.ServerRunOptions) error {
 	if err := s.SecureServing.MaybeDefaultWithSelfSignedCerts(s.GenericServerRunOptions.AdvertiseAddress.String(), []string{"kubernetes.default.svc", "kubernetes.default", "kubernetes"}, []net.IP{apiServerServiceIP}); err != nil {
 		return fmt.Errorf("error creating self-signed certificates: %v", err)
 	}
-	if err := s.CloudProvider.DefaultExternalHost(s.GenericServerRunOptions); err != nil {
-		return fmt.Errorf("error setting the external host value: %v", err)
+
+	if len(s.GenericServerRunOptions.ExternalHost) == 0 {
+		if len(s.GenericServerRunOptions.AdvertiseAddress) > 0 {
+			s.GenericServerRunOptions.ExternalHost = s.GenericServerRunOptions.AdvertiseAddress.String()
+		} else {
+			if hostname, err := os.Hostname(); err == nil {
+				s.GenericServerRunOptions.ExternalHost = hostname
+			} else {
+				return fmt.Errorf("error finding host name: %v", err)
+			}
+		}
+		glog.Infof("external host was not specified, using %v", s.GenericServerRunOptions.ExternalHost)
 	}
 
 	s.Authentication.ApplyAuthorization(s.Authorization)
 
-	// Default to the private server key for service account token signing
-	if len(s.Authentication.ServiceAccounts.KeyFiles) == 0 && s.SecureServing.ServerCert.CertKey.KeyFile != "" {
-		if kubeauthenticator.IsValidServiceAccountKeyFile(s.SecureServing.ServerCert.CertKey.KeyFile) {
-			s.Authentication.ServiceAccounts.KeyFiles = []string{s.SecureServing.ServerCert.CertKey.KeyFile}
-		} else {
-			glog.Warning("No TLS key provided, service account token authentication disabled")
+	// Use (ServiceAccountSigningKeyFile != "") as a proxy to the user enabling
+	// TokenRequest functionality. This defaulting was convenient, but messed up
+	// a lot of people when they rotated their serving cert with no idea it was
+	// connected to their service account keys. We are taking this oppurtunity to
+	// remove this problematic defaulting.
+	if s.ServiceAccountSigningKeyFile == "" {
+		// Default to the private server key for service account token signing
+		if len(s.Authentication.ServiceAccounts.KeyFiles) == 0 && s.SecureServing.ServerCert.CertKey.KeyFile != "" {
+			if kubeauthenticator.IsValidServiceAccountKeyFile(s.SecureServing.ServerCert.CertKey.KeyFile) {
+				s.Authentication.ServiceAccounts.KeyFiles = []string{s.SecureServing.ServerCert.CertKey.KeyFile}
+			} else {
+				glog.Warning("No TLS key provided, service account token authentication disabled")
+			}
 		}
 	}
 
@@ -668,6 +715,20 @@ func defaultOptions(s *options.ServerRunOptions) error {
 		s.Etcd.WatchCacheSizes, err = serveroptions.WriteWatchCacheSizes(sizes)
 		if err != nil {
 			return err
+		}
+	}
+
+	// TODO: remove when we stop supporting the legacy group version.
+	if s.APIEnablement.RuntimeConfig != nil {
+		for key, value := range s.APIEnablement.RuntimeConfig {
+			if key == "v1" || strings.HasPrefix(key, "v1/") ||
+				key == "api/v1" || strings.HasPrefix(key, "api/v1/") {
+				delete(s.APIEnablement.RuntimeConfig, key)
+				s.APIEnablement.RuntimeConfig["/v1"] = value
+			}
+			if key == "api/legacy" {
+				delete(s.APIEnablement.RuntimeConfig, key)
+			}
 		}
 	}
 

@@ -17,16 +17,16 @@ limitations under the License.
 package storage
 
 import (
+	"context"
 	"strings"
 	"testing"
 	"time"
 
-	"golang.org/x/net/context"
 	"k8s.io/api/core/v1"
 	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	metav1alpha1 "k8s.io/apimachinery/pkg/apis/meta/v1alpha1"
+	metav1beta1 "k8s.io/apimachinery/pkg/apis/meta/v1beta1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -34,6 +34,7 @@ import (
 	genericapirequest "k8s.io/apiserver/pkg/endpoints/request"
 	"k8s.io/apiserver/pkg/features"
 	"k8s.io/apiserver/pkg/registry/generic"
+	genericregistrytest "k8s.io/apiserver/pkg/registry/generic/testing"
 	"k8s.io/apiserver/pkg/registry/rest"
 	"k8s.io/apiserver/pkg/storage"
 	storeerr "k8s.io/apiserver/pkg/storage/errors"
@@ -98,7 +99,7 @@ func TestCreate(t *testing.T) {
 	storage, _, _, server := newStorage(t)
 	defer server.Terminate(t)
 	defer storage.Store.DestroyFunc()
-	test := registrytest.New(t, storage.Store)
+	test := genericregistrytest.New(t, storage.Store)
 	pod := validNewPod()
 	pod.ObjectMeta = metav1.ObjectMeta{}
 	// Make an invalid pod with an an incorrect label.
@@ -125,7 +126,7 @@ func TestUpdate(t *testing.T) {
 	storage, _, _, server := newStorage(t)
 	defer server.Terminate(t)
 	defer storage.Store.DestroyFunc()
-	test := registrytest.New(t, storage.Store)
+	test := genericregistrytest.New(t, storage.Store)
 	test.TestUpdate(
 		// valid
 		validNewPod(),
@@ -142,7 +143,7 @@ func TestDelete(t *testing.T) {
 	storage, _, _, server := newStorage(t)
 	defer server.Terminate(t)
 	defer storage.Store.DestroyFunc()
-	test := registrytest.New(t, storage.Store).ReturnDeletedObject()
+	test := genericregistrytest.New(t, storage.Store).ReturnDeletedObject()
 	test.TestDelete(validNewPod())
 
 	scheduledPod := validNewPod()
@@ -366,7 +367,7 @@ func TestGet(t *testing.T) {
 	storage, _, _, server := newStorage(t)
 	defer server.Terminate(t)
 	defer storage.Store.DestroyFunc()
-	test := registrytest.New(t, storage.Store)
+	test := genericregistrytest.New(t, storage.Store)
 	test.TestGet(validNewPod())
 }
 
@@ -374,7 +375,7 @@ func TestList(t *testing.T) {
 	storage, _, _, server := newStorage(t)
 	defer server.Terminate(t)
 	defer storage.Store.DestroyFunc()
-	test := registrytest.New(t, storage.Store)
+	test := genericregistrytest.New(t, storage.Store)
 	test.TestList(validNewPod())
 }
 
@@ -382,7 +383,7 @@ func TestWatch(t *testing.T) {
 	storage, _, _, server := newStorage(t)
 	defer server.Terminate(t)
 	defer storage.Store.DestroyFunc()
-	test := registrytest.New(t, storage.Store)
+	test := genericregistrytest.New(t, storage.Store)
 	test.TestWatch(
 		validNewPod(),
 		// matching labels
@@ -395,7 +396,7 @@ func TestWatch(t *testing.T) {
 		[]fields.Set{
 			{"metadata.name": "foo"},
 		},
-		// not matchin fields
+		// not matching fields
 		[]fields.Set{
 			{"metadata.name": "bar"},
 		},
@@ -408,7 +409,7 @@ func TestConvertToTableList(t *testing.T) {
 	defer storage.Store.DestroyFunc()
 	ctx := genericapirequest.NewDefaultContext()
 
-	columns := []metav1alpha1.TableColumnDefinition{
+	columns := []metav1beta1.TableColumnDefinition{
 		{Name: "Name", Type: "string", Format: "name", Description: metav1.ObjectMeta{}.SwaggerDoc()["name"]},
 		{Name: "Ready", Type: "string", Description: "The aggregate readiness state of this pod for accepting traffic."},
 		{Name: "Status", Type: "string", Description: "The aggregate status of the containers in this pod."},
@@ -439,7 +440,7 @@ func TestConvertToTableList(t *testing.T) {
 
 	testCases := []struct {
 		in  runtime.Object
-		out *metav1alpha1.Table
+		out *metav1beta1.Table
 		err bool
 	}{
 		{
@@ -448,25 +449,25 @@ func TestConvertToTableList(t *testing.T) {
 		},
 		{
 			in: &api.Pod{},
-			out: &metav1alpha1.Table{
+			out: &metav1beta1.Table{
 				ColumnDefinitions: columns,
-				Rows: []metav1alpha1.TableRow{
+				Rows: []metav1beta1.TableRow{
 					{Cells: []interface{}{"", "0/0", "", 0, "<unknown>", "<none>", "<none>"}, Object: runtime.RawExtension{Object: &api.Pod{}}},
 				},
 			},
 		},
 		{
 			in: pod1,
-			out: &metav1alpha1.Table{
+			out: &metav1beta1.Table{
 				ColumnDefinitions: columns,
-				Rows: []metav1alpha1.TableRow{
+				Rows: []metav1beta1.TableRow{
 					{Cells: []interface{}{"foo", "1/2", "Pending", 10, "1y", "10.1.2.3", "test-node"}, Object: runtime.RawExtension{Object: pod1}},
 				},
 			},
 		},
 		{
 			in:  &api.PodList{},
-			out: &metav1alpha1.Table{ColumnDefinitions: columns},
+			out: &metav1beta1.Table{ColumnDefinitions: columns},
 		},
 	}
 	for i, test := range testCases {

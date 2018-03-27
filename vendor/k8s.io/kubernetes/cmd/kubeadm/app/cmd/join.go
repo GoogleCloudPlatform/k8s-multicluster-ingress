@@ -21,18 +21,22 @@ import (
 	"io"
 	"io/ioutil"
 	"path/filepath"
+	"strings"
 
 	"github.com/renstrom/dedent"
 	"github.com/spf13/cobra"
 	flag "github.com/spf13/pflag"
 
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/util/sets"
 	certutil "k8s.io/client-go/util/cert"
 	kubeadmapi "k8s.io/kubernetes/cmd/kubeadm/app/apis/kubeadm"
 	kubeadmapiext "k8s.io/kubernetes/cmd/kubeadm/app/apis/kubeadm/v1alpha1"
 	"k8s.io/kubernetes/cmd/kubeadm/app/apis/kubeadm/validation"
 	kubeadmconstants "k8s.io/kubernetes/cmd/kubeadm/app/constants"
 	"k8s.io/kubernetes/cmd/kubeadm/app/discovery"
+	"k8s.io/kubernetes/cmd/kubeadm/app/features"
+	kubeletphase "k8s.io/kubernetes/cmd/kubeadm/app/phases/kubelet"
 	"k8s.io/kubernetes/cmd/kubeadm/app/preflight"
 	kubeadmutil "k8s.io/kubernetes/cmd/kubeadm/app/util"
 	kubeconfigutil "k8s.io/kubernetes/cmd/kubeadm/app/util/kubeconfig"
@@ -102,34 +106,43 @@ func NewCmdJoin(out io.Writer) *cobra.Command {
 
 	var skipPreFlight bool
 	var cfgPath string
-	var criSocket string
+	var featureGatesString string
+	var ignorePreflightErrors []string
 
 	cmd := &cobra.Command{
-		Use:   "join [flags]",
+		Use:   "join",
 		Short: "Run this on any machine you wish to join an existing cluster",
 		Long:  joinLongDescription,
 		Run: func(cmd *cobra.Command, args []string) {
 			cfg.DiscoveryTokenAPIServers = args
 
+			var err error
+			if cfg.FeatureGates, err = features.NewFeatureGate(&features.InitFeatureGates, featureGatesString); err != nil {
+				kubeadmutil.CheckErr(err)
+			}
+
 			legacyscheme.Scheme.Default(cfg)
 			internalcfg := &kubeadmapi.NodeConfiguration{}
 			legacyscheme.Scheme.Convert(cfg, internalcfg, nil)
 
-			j, err := NewJoin(cfgPath, args, internalcfg, skipPreFlight, criSocket)
+			ignorePreflightErrorsSet, err := validation.ValidateIgnorePreflightErrors(ignorePreflightErrors, skipPreFlight)
+			kubeadmutil.CheckErr(err)
+
+			j, err := NewJoin(cfgPath, args, internalcfg, ignorePreflightErrorsSet)
 			kubeadmutil.CheckErr(err)
 			kubeadmutil.CheckErr(j.Validate(cmd))
 			kubeadmutil.CheckErr(j.Run(out))
 		},
 	}
 
-	AddJoinConfigFlags(cmd.PersistentFlags(), cfg)
-	AddJoinOtherFlags(cmd.PersistentFlags(), &cfgPath, &skipPreFlight, &criSocket)
+	AddJoinConfigFlags(cmd.PersistentFlags(), cfg, &featureGatesString)
+	AddJoinOtherFlags(cmd.PersistentFlags(), &cfgPath, &skipPreFlight, &ignorePreflightErrors)
 
 	return cmd
 }
 
 // AddJoinConfigFlags adds join flags bound to the config to the specified flagset
-func AddJoinConfigFlags(flagSet *flag.FlagSet, cfg *kubeadmapiext.NodeConfiguration) {
+func AddJoinConfigFlags(flagSet *flag.FlagSet, cfg *kubeadmapiext.NodeConfiguration, featureGatesString *string) {
 	flagSet.StringVar(
 		&cfg.DiscoveryFile, "discovery-file", "",
 		"A file or url from which to load cluster information.")
@@ -151,22 +164,31 @@ func AddJoinConfigFlags(flagSet *flag.FlagSet, cfg *kubeadmapiext.NodeConfigurat
 	flagSet.StringVar(
 		&cfg.Token, "token", "",
 		"Use this token for both discovery-token and tls-bootstrap-token.")
+	flagSet.StringVar(
+		featureGatesString, "feature-gates", *featureGatesString,
+		"A set of key=value pairs that describe feature gates for various features. "+
+			"Options are:\n"+strings.Join(features.KnownFeatures(&features.InitFeatureGates), "\n"))
+	flagSet.StringVar(
+		&cfg.CRISocket, "cri-socket", cfg.CRISocket,
+		`Specify the CRI socket to connect to.`,
+	)
 }
 
 // AddJoinOtherFlags adds join flags that are not bound to a configuration file to the given flagset
-func AddJoinOtherFlags(flagSet *flag.FlagSet, cfgPath *string, skipPreFlight *bool, criSocket *string) {
+func AddJoinOtherFlags(flagSet *flag.FlagSet, cfgPath *string, skipPreFlight *bool, ignorePreflightErrors *[]string) {
 	flagSet.StringVar(
 		cfgPath, "config", *cfgPath,
 		"Path to kubeadm config file.")
 
+	flagSet.StringSliceVar(
+		ignorePreflightErrors, "ignore-preflight-errors", *ignorePreflightErrors,
+		"A list of checks whose errors will be shown as warnings. Example: 'IsPrivilegedUser,Swap'. Value 'all' ignores errors from all checks.",
+	)
 	flagSet.BoolVar(
 		skipPreFlight, "skip-preflight-checks", false,
 		"Skip preflight checks which normally run before modifying the system.",
 	)
-	flagSet.StringVar(
-		criSocket, "cri-socket", "/var/run/dockershim.sock",
-		`Specify the CRI socket to connect to.`,
-	)
+	flagSet.MarkDeprecated("skip-preflight-checks", "it is now equivalent to --ignore-preflight-errors=all")
 }
 
 // Join defines struct used by kubeadm join command
@@ -175,8 +197,7 @@ type Join struct {
 }
 
 // NewJoin instantiates Join struct with given arguments
-func NewJoin(cfgPath string, args []string, cfg *kubeadmapi.NodeConfiguration, skipPreFlight bool, criSocket string) (*Join, error) {
-	fmt.Println("[kubeadm] WARNING: kubeadm is in beta. Please do not use it for production clusters!")
+func NewJoin(cfgPath string, args []string, cfg *kubeadmapi.NodeConfiguration, ignorePreflightErrors sets.String) (*Join, error) {
 
 	if cfg.NodeName == "" {
 		cfg.NodeName = nodeutil.GetHostname("")
@@ -192,19 +213,15 @@ func NewJoin(cfgPath string, args []string, cfg *kubeadmapi.NodeConfiguration, s
 		}
 	}
 
-	if !skipPreFlight {
-		fmt.Println("[preflight] Running pre-flight checks.")
+	fmt.Println("[preflight] Running pre-flight checks.")
 
-		// Then continue with the others...
-		if err := preflight.RunJoinNodeChecks(utilsexec.New(), cfg, criSocket); err != nil {
-			return nil, err
-		}
-
-		// Try to start the kubelet service in case it's inactive
-		preflight.TryStartKubelet()
-	} else {
-		fmt.Println("[preflight] Skipping pre-flight checks.")
+	// Then continue with the others...
+	if err := preflight.RunJoinNodeChecks(utilsexec.New(), cfg, ignorePreflightErrors); err != nil {
+		return nil, err
 	}
+
+	// Try to start the kubelet service in case it's inactive
+	preflight.TryStartKubelet(ignorePreflightErrors)
 
 	return &Join{cfg: cfg}, nil
 }
@@ -228,7 +245,7 @@ func (j *Join) Run(out io.Writer) error {
 
 	// Write the bootstrap kubelet config file or the TLS-Boostrapped kubelet config file down to disk
 	if err := kubeconfigutil.WriteToDisk(kubeconfigFile, cfg); err != nil {
-		return err
+		return fmt.Errorf("couldn't save bootstrap-kubelet.conf to disk: %v", err)
 	}
 
 	// Write the ca certificate to disk so kubelet can use it for authentication
@@ -236,6 +253,13 @@ func (j *Join) Run(out io.Writer) error {
 	err = certutil.WriteCert(j.cfg.CACertPath, cfg.Clusters[cluster].CertificateAuthorityData)
 	if err != nil {
 		return fmt.Errorf("couldn't save the CA certificate to disk: %v", err)
+	}
+
+	// NOTE: flag "--dynamic-config-dir" should be specified in /etc/systemd/system/kubelet.service.d/10-kubeadm.conf
+	if features.Enabled(j.cfg.FeatureGates, features.DynamicKubeletConfig) {
+		if err := kubeletphase.ConsumeBaseKubeletConfiguration(j.cfg.NodeName); err != nil {
+			return fmt.Errorf("error consuming base kubelet configuration: %v", err)
+		}
 	}
 
 	fmt.Fprintf(out, joinDoneMsgf)

@@ -27,6 +27,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/golang/glog"
+
 	"k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -40,9 +42,9 @@ import (
 	"k8s.io/kubernetes/pkg/apis/batch"
 	api "k8s.io/kubernetes/pkg/apis/core"
 	"k8s.io/kubernetes/pkg/apis/extensions"
-	client "k8s.io/kubernetes/pkg/client/unversioned"
 	"k8s.io/kubernetes/pkg/controller"
 	"k8s.io/kubernetes/pkg/kubectl"
+	"k8s.io/kubernetes/pkg/kubectl/categories"
 	"k8s.io/kubernetes/pkg/kubectl/cmd/util/openapi"
 	openapivalidation "k8s.io/kubernetes/pkg/kubectl/cmd/util/openapi/validation"
 	"k8s.io/kubernetes/pkg/kubectl/resource"
@@ -70,60 +72,51 @@ func NewObjectMappingFactory(clientAccessFactory ClientAccessFactory) ObjectMapp
 	return f
 }
 
-// TODO: This method should return an error now that it can fail.  Alternatively, it needs to
-//   return lazy implementations of mapper and typer that don't hit the wire until they are
-//   invoked.
-func (f *ring1Factory) Object() (meta.RESTMapper, runtime.ObjectTyper) {
-	mapper := legacyscheme.Registry.RESTMapper()
-	discoveryClient, err := f.clientAccessFactory.DiscoveryClient()
-	if err == nil {
-		mapper = meta.FirstHitRESTMapper{
-			MultiRESTMapper: meta.MultiRESTMapper{
-				discovery.NewDeferredDiscoveryRESTMapper(discoveryClient, legacyscheme.Registry.InterfacesFor),
-				legacyscheme.Registry.RESTMapper(), // hardcoded fall back
-			},
-		}
-
-		// wrap with shortcuts, they require a discoveryClient
-		mapper, err = NewShortcutExpander(mapper, discoveryClient)
-		// you only have an error on missing discoveryClient, so this shouldn't fail.  Check anyway.
-		CheckErr(err)
-	}
-
-	return mapper, legacyscheme.Scheme
-}
-
-func (f *ring1Factory) UnstructuredObject() (meta.RESTMapper, runtime.ObjectTyper, error) {
+// objectLoader attempts to perform discovery against the server, and will fall back to
+// the built in mapper if necessary. It supports unstructured objects either way, since
+// the underlying Scheme supports Unstructured. The mapper will return converters that can
+// convert versioned types to unstructured and back.
+func (f *ring1Factory) objectLoader() (meta.RESTMapper, runtime.ObjectTyper, error) {
 	discoveryClient, err := f.clientAccessFactory.DiscoveryClient()
 	if err != nil {
-		return nil, nil, err
+		glog.V(3).Infof("Unable to get a discovery client to find server resources, falling back to hardcoded types: %v", err)
+		return legacyscheme.Registry.RESTMapper(), legacyscheme.Scheme, nil
 	}
+
 	groupResources, err := discovery.GetAPIGroupResources(discoveryClient)
 	if err != nil && !discoveryClient.Fresh() {
 		discoveryClient.Invalidate()
 		groupResources, err = discovery.GetAPIGroupResources(discoveryClient)
 	}
 	if err != nil {
-		return nil, nil, err
+		glog.V(3).Infof("Unable to retrieve API resources, falling back to hardcoded types: %v", err)
+		return legacyscheme.Registry.RESTMapper(), legacyscheme.Scheme, nil
 	}
 
-	mapper := discovery.NewDeferredDiscoveryRESTMapper(discoveryClient, meta.InterfacesForUnstructured)
-	typer := discovery.NewUnstructuredObjectTyper(groupResources)
-	expander, err := NewShortcutExpander(mapper, discoveryClient)
+	// allow conversion between typed and unstructured objects
+	interfaces := meta.InterfacesForUnstructuredConversion(legacyscheme.Registry.InterfacesFor)
+	mapper := discovery.NewDeferredDiscoveryRESTMapper(discoveryClient, meta.VersionInterfacesFunc(interfaces))
+	// TODO: should this also indicate it recognizes typed objects?
+	typer := discovery.NewUnstructuredObjectTyper(groupResources, legacyscheme.Scheme)
+	expander := NewShortcutExpander(mapper, discoveryClient)
 	return expander, typer, err
 }
 
-func (f *ring1Factory) CategoryExpander() resource.CategoryExpander {
-	legacyExpander := resource.LegacyCategoryExpander
+func (f *ring1Factory) Object() (meta.RESTMapper, runtime.ObjectTyper) {
+	return meta.NewLazyObjectLoader(f.objectLoader)
+}
+
+func (f *ring1Factory) CategoryExpander() categories.CategoryExpander {
+	legacyExpander := categories.LegacyCategoryExpander
 
 	discoveryClient, err := f.clientAccessFactory.DiscoveryClient()
 	if err == nil {
 		// fallback is the legacy expander wrapped with discovery based filtering
-		fallbackExpander, err := resource.NewDiscoveryFilteredExpander(legacyExpander, discoveryClient)
+		fallbackExpander, err := categories.NewDiscoveryFilteredExpander(legacyExpander, discoveryClient)
 		CheckErr(err)
 
 		// by default use the expander that discovers based on "categories" field from the API
-		discoveryCategoryExpander, err := resource.NewDiscoveryCategoryExpander(fallbackExpander, discoveryClient)
+		discoveryCategoryExpander, err := categories.NewDiscoveryCategoryExpander(fallbackExpander, discoveryClient)
 		CheckErr(err)
 
 		return discoveryCategoryExpander
@@ -137,7 +130,7 @@ func (f *ring1Factory) ClientForMapping(mapping *meta.RESTMapping) (resource.RES
 	if err != nil {
 		return nil, err
 	}
-	if err := client.SetKubernetesDefaults(cfg); err != nil {
+	if err := setKubernetesDefaults(cfg); err != nil {
 		return nil, err
 	}
 	gvk := mapping.GroupVersionKind
@@ -171,9 +164,7 @@ func (f *ring1Factory) UnstructuredClientForMapping(mapping *meta.RESTMapping) (
 }
 
 func (f *ring1Factory) Describer(mapping *meta.RESTMapping) (printers.Describer, error) {
-	mappingVersion := mapping.GroupVersionKind.GroupVersion()
-
-	clientset, err := f.clientAccessFactory.ClientSetForVersion(&mappingVersion)
+	clientset, err := f.clientAccessFactory.ClientSet()
 	if err != nil {
 		// if we can't make a client for this group/version, go generic if possible
 		if genericDescriber, genericErr := genericDescriber(f.clientAccessFactory, mapping); genericErr == nil {
@@ -224,7 +215,7 @@ func genericDescriber(clientAccessFactory ClientAccessFactory, mapping *meta.RES
 }
 
 func (f *ring1Factory) LogsForObject(object, options runtime.Object, timeout time.Duration) (*restclient.Request, error) {
-	clientset, err := f.clientAccessFactory.ClientSetForVersion(nil)
+	clientset, err := f.clientAccessFactory.ClientSet()
 	if err != nil {
 		return nil, err
 	}
@@ -272,11 +263,7 @@ func (f *ring1Factory) LogsForObject(object, options runtime.Object, timeout tim
 		}
 
 	default:
-		gvks, _, err := legacyscheme.Scheme.ObjectKinds(object)
-		if err != nil {
-			return nil, err
-		}
-		return nil, fmt.Errorf("cannot get the logs from %v", gvks[0])
+		return nil, fmt.Errorf("cannot get the logs from %T", object)
 	}
 
 	sortBy := func(pods []*v1.Pod) sort.Interface { return controller.ByLogging(pods) }
@@ -288,29 +275,6 @@ func (f *ring1Factory) LogsForObject(object, options runtime.Object, timeout tim
 		fmt.Fprintf(os.Stderr, "Found %v pods, using pod/%v\n", numPods, pod.Name)
 	}
 	return clientset.Core().Pods(pod.Namespace).GetLogs(pod.Name, opts), nil
-}
-
-func (f *ring1Factory) Scaler(mapping *meta.RESTMapping) (kubectl.Scaler, error) {
-	mappingVersion := mapping.GroupVersionKind.GroupVersion()
-	clientset, err := f.clientAccessFactory.ClientSetForVersion(&mappingVersion)
-	if err != nil {
-		return nil, err
-	}
-	return kubectl.ScalerFor(mapping.GroupVersionKind.GroupKind(), clientset)
-}
-
-func (f *ring1Factory) Reaper(mapping *meta.RESTMapping) (kubectl.Reaper, error) {
-	mappingVersion := mapping.GroupVersionKind.GroupVersion()
-	clientset, clientsetErr := f.clientAccessFactory.ClientSetForVersion(&mappingVersion)
-	reaper, reaperErr := kubectl.ReaperFor(mapping.GroupVersionKind.GroupKind(), clientset)
-
-	if kubectl.IsNoSuchReaperError(reaperErr) {
-		return nil, reaperErr
-	}
-	if clientsetErr != nil {
-		return nil, clientsetErr
-	}
-	return reaper, reaperErr
 }
 
 func (f *ring1Factory) HistoryViewer(mapping *meta.RESTMapping) (kubectl.HistoryViewer, error) {
@@ -360,7 +324,7 @@ func (f *ring1Factory) ApproximatePodTemplateForObject(object runtime.Object) (*
 }
 
 func (f *ring1Factory) AttachablePodForObject(object runtime.Object, timeout time.Duration) (*api.Pod, error) {
-	clientset, err := f.clientAccessFactory.ClientSetForVersion(nil)
+	clientset, err := f.clientAccessFactory.ClientSet()
 	if err != nil {
 		return nil, err
 	}
@@ -396,15 +360,18 @@ func (f *ring1Factory) AttachablePodForObject(object runtime.Object, timeout tim
 			return nil, fmt.Errorf("invalid label selector: %v", err)
 		}
 
+	case *api.Service:
+		namespace = t.Namespace
+		if t.Spec.Selector == nil || len(t.Spec.Selector) == 0 {
+			return nil, fmt.Errorf("invalid service '%s': Service is defined without a selector", t.Name)
+		}
+		selector = labels.SelectorFromSet(t.Spec.Selector)
+
 	case *api.Pod:
 		return t, nil
 
 	default:
-		gvks, _, err := legacyscheme.Scheme.ObjectKinds(object)
-		if err != nil {
-			return nil, err
-		}
-		return nil, fmt.Errorf("cannot attach to %v: not implemented", gvks[0])
+		return nil, fmt.Errorf("cannot attach to %T: not implemented", object)
 	}
 
 	sortBy := func(pods []*v1.Pod) sort.Interface { return sort.Reverse(controller.ActivePods(pods)) }

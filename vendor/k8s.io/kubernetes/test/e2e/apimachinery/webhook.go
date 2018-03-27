@@ -18,16 +18,15 @@ package apimachinery
 
 import (
 	"fmt"
+	"reflect"
 	"strings"
 	"time"
 
-	"k8s.io/api/admissionregistration/v1alpha1"
+	"k8s.io/api/admissionregistration/v1beta1"
 	"k8s.io/api/core/v1"
 	extensions "k8s.io/api/extensions/v1beta1"
 	rbacv1beta1 "k8s.io/api/rbac/v1beta1"
 	apiextensionsv1beta1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1"
-	crdclientset "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
-	"k8s.io/apiextensions-apiserver/test/integration/testserver"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -38,6 +37,7 @@ import (
 	clientset "k8s.io/client-go/kubernetes"
 	utilversion "k8s.io/kubernetes/pkg/util/version"
 	"k8s.io/kubernetes/test/e2e/framework"
+	imageutils "k8s.io/kubernetes/test/utils/image"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -45,26 +45,32 @@ import (
 )
 
 const (
-	secretName                  = "sample-webhook-secret"
-	deploymentName              = "sample-webhook-deployment"
-	serviceName                 = "e2e-test-webhook"
-	roleBindingName             = "webhook-auth-reader"
-	webhookConfigName           = "e2e-test-webhook-config"
-	skipNamespaceLabelKey       = "skip-webhook-admission"
-	skipNamespaceLabelValue     = "yes"
-	skippedNamespaceName        = "exempted-namesapce"
-	disallowedPodName           = "disallowed-pod"
-	disallowedConfigMapName     = "disallowed-configmap"
-	allowedConfigMapName        = "allowed-configmap"
-	crdName                     = "e2e-test-webhook-crd"
-	crdKind                     = "E2e-test-webhook-crd"
-	crdWebhookConfigName        = "e2e-test-webhook-config-crd"
-	crdAPIGroup                 = "webhook-crd-test.k8s.io"
-	crdAPIVersion               = "v1"
-	webhookFailClosedConfigName = "e2e-test-webhook-fail-closed"
-	failNamespaceLabelKey       = "fail-closed-webhook"
-	failNamespaceLabelValue     = "yes"
-	failNamespaceName           = "fail-closed-namesapce"
+	secretName      = "sample-webhook-secret"
+	deploymentName  = "sample-webhook-deployment"
+	serviceName     = "e2e-test-webhook"
+	roleBindingName = "webhook-auth-reader"
+
+	// The webhook configuration names should not be reused between test instances.
+	crdWebhookConfigName         = "e2e-test-webhook-config-crd"
+	webhookConfigName            = "e2e-test-webhook-config"
+	mutatingWebhookConfigName    = "e2e-test-mutating-webhook-config"
+	podMutatingWebhookConfigName = "e2e-test-mutating-webhook-pod"
+	crdMutatingWebhookConfigName = "e2e-test-mutating-webhook-config-crd"
+	webhookFailClosedConfigName  = "e2e-test-webhook-fail-closed"
+	webhookForWebhooksConfigName = "e2e-test-webhook-for-webhooks-config"
+	removableValidatingHookName  = "e2e-test-should-be-removable-validating-webhook-config"
+	removableMutatingHookName    = "e2e-test-should-be-removable-mutating-webhook-config"
+
+	skipNamespaceLabelKey   = "skip-webhook-admission"
+	skipNamespaceLabelValue = "yes"
+	skippedNamespaceName    = "exempted-namesapce"
+	disallowedPodName       = "disallowed-pod"
+	hangingPodName          = "hanging-pod"
+	disallowedConfigMapName = "disallowed-configmap"
+	allowedConfigMapName    = "allowed-configmap"
+	failNamespaceLabelKey   = "fail-closed-webhook"
+	failNamespaceLabelValue = "yes"
+	failNamespaceName       = "fail-closed-namesapce"
 )
 
 var serverWebhookVersion = utilversion.MustParseSemantic("v1.8.0")
@@ -72,50 +78,96 @@ var serverWebhookVersion = utilversion.MustParseSemantic("v1.8.0")
 var _ = SIGDescribe("AdmissionWebhook", func() {
 	var context *certContext
 	f := framework.NewDefaultFramework("webhook")
-	framework.AddCleanupAction(func() {
-		cleanWebhookTest(f)
-	})
+
+	var client clientset.Interface
+	var namespaceName string
 
 	BeforeEach(func() {
+		client = f.ClientSet
+		namespaceName = f.Namespace.Name
+
 		// Make sure the relevant provider supports admission webhook
 		framework.SkipUnlessServerVersionGTE(serverWebhookVersion, f.ClientSet.Discovery())
 		framework.SkipUnlessProviderIs("gce", "gke", "local")
 
-		_, err := f.ClientSet.AdmissionregistrationV1alpha1().ValidatingWebhookConfigurations().List(metav1.ListOptions{})
+		_, err := f.ClientSet.AdmissionregistrationV1beta1().ValidatingWebhookConfigurations().List(metav1.ListOptions{})
 		if errors.IsNotFound(err) {
-			framework.Skipf("dynamic configuration of webhooks requires the alpha admissionregistration.k8s.io group to be enabled")
+			framework.Skipf("dynamic configuration of webhooks requires the admissionregistration.k8s.io group to be enabled")
 		}
 
 		By("Setting up server cert")
-		namespaceName := f.Namespace.Name
 		context = setupServerCert(namespaceName, serviceName)
 		createAuthReaderRoleBinding(f, namespaceName)
 
 		// Note that in 1.9 we will have backwards incompatible change to
 		// admission webhooks, so the image will be updated to 1.9 sometime in
 		// the development 1.9 cycle.
-		deployWebhookAndService(f, "gcr.io/kubernetes-e2e-test-images/k8s-sample-admission-webhook-amd64:1.8v3", context)
+		deployWebhookAndService(f, imageutils.GetE2EImage(imageutils.AdmissionWebhook), context)
+	})
+
+	AfterEach(func() {
+		cleanWebhookTest(client, namespaceName)
 	})
 
 	It("Should be able to deny pod and configmap creation", func() {
-		registerWebhook(f, context)
+		webhookCleanup := registerWebhook(f, context)
+		defer webhookCleanup()
 		testWebhook(f)
 	})
 
 	It("Should be able to deny custom resource creation", func() {
-		crdCleanup, dynamicClient := createCRD(f)
-		defer crdCleanup()
-		registerWebhookForCRD(f, context)
-		testCRDWebhook(f, dynamicClient)
+		testcrd, err := framework.CreateTestCRD(f)
+		if err != nil {
+			return
+		}
+		defer testcrd.CleanUp()
+		webhookCleanup := registerWebhookForCRD(f, context, testcrd)
+		defer webhookCleanup()
+		testCRDWebhook(f, testcrd.Crd, testcrd.DynamicClient)
 	})
 
 	It("Should unconditionally reject operations on fail closed webhook", func() {
-		registerFailClosedWebhook(f, context)
+		webhookCleanup := registerFailClosedWebhook(f, context)
+		defer webhookCleanup()
 		testFailClosedWebhook(f)
-		// Clean up
-		err := f.ClientSet.AdmissionregistrationV1alpha1().ValidatingWebhookConfigurations().Delete(webhookFailClosedConfigName, nil)
-		Expect(err).NotTo(HaveOccurred(), "failed deleting fail closed webhook, this may cause subsequent e2e tests to fail")
 	})
+
+	It("Should mutate configmap", func() {
+		webhookCleanup := registerMutatingWebhookForConfigMap(f, context)
+		defer webhookCleanup()
+		testMutatingConfigMapWebhook(f)
+	})
+
+	It("Should mutate pod and apply defaults after mutation", func() {
+		webhookCleanup := registerMutatingWebhookForPod(f, context)
+		defer webhookCleanup()
+		testMutatingPodWebhook(f)
+	})
+
+	It("Should not be able to prevent deleting validating-webhook-configurations or mutating-webhook-configurations", func() {
+		webhookCleanup := registerWebhookForWebhookConfigurations(f, context)
+		defer webhookCleanup()
+		testWebhookForWebhookConfigurations(f)
+	})
+
+	It("Should mutate crd", func() {
+		testcrd, err := framework.CreateTestCRD(f)
+		if err != nil {
+			return
+		}
+		defer testcrd.CleanUp()
+		webhookCleanup := registerMutatingWebhookForCRD(f, context, testcrd)
+		defer webhookCleanup()
+		testMutatingCRDWebhook(f, testcrd.Crd, testcrd.DynamicClient)
+	})
+
+	// TODO: add more e2e tests for mutating webhooks
+	// 1. mutating webhook that mutates pod
+	// 2. mutating webhook that sends empty patch
+	//   2.1 and sets status.allowed=true
+	//   2.2 and sets status.allowed=false
+	// 3. mutating webhook that sends patch, but also sets status.allowed=false
+	// 4. mtuating webhook that fail-open v.s. fail-closed
 })
 
 func createAuthReaderRoleBinding(f *framework.Framework, namespace string) {
@@ -261,33 +313,34 @@ func deployWebhookAndService(f *framework.Framework, image string, context *cert
 
 func strPtr(s string) *string { return &s }
 
-func registerWebhook(f *framework.Framework, context *certContext) {
+func registerWebhook(f *framework.Framework, context *certContext) func() {
 	client := f.ClientSet
 	By("Registering the webhook via the AdmissionRegistration API")
 
 	namespace := f.Namespace.Name
+	configName := webhookConfigName
 	// A webhook that cannot talk to server, with fail-open policy
 	failOpenHook := failingWebhook(namespace, "fail-open.k8s.io")
-	policyIgnore := v1alpha1.Ignore
+	policyIgnore := v1beta1.Ignore
 	failOpenHook.FailurePolicy = &policyIgnore
 
-	_, err := client.AdmissionregistrationV1alpha1().ValidatingWebhookConfigurations().Create(&v1alpha1.ValidatingWebhookConfiguration{
+	_, err := client.AdmissionregistrationV1beta1().ValidatingWebhookConfigurations().Create(&v1beta1.ValidatingWebhookConfiguration{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: webhookConfigName,
+			Name: configName,
 		},
-		Webhooks: []v1alpha1.Webhook{
+		Webhooks: []v1beta1.Webhook{
 			{
 				Name: "deny-unwanted-pod-container-name-and-label.k8s.io",
-				Rules: []v1alpha1.RuleWithOperations{{
-					Operations: []v1alpha1.OperationType{v1alpha1.Create},
-					Rule: v1alpha1.Rule{
+				Rules: []v1beta1.RuleWithOperations{{
+					Operations: []v1beta1.OperationType{v1beta1.Create},
+					Rule: v1beta1.Rule{
 						APIGroups:   []string{""},
 						APIVersions: []string{"v1"},
 						Resources:   []string{"pods"},
 					},
 				}},
-				ClientConfig: v1alpha1.WebhookClientConfig{
-					Service: &v1alpha1.ServiceReference{
+				ClientConfig: v1beta1.WebhookClientConfig{
+					Service: &v1beta1.ServiceReference{
 						Namespace: namespace,
 						Name:      serviceName,
 						Path:      strPtr("/pods"),
@@ -297,9 +350,9 @@ func registerWebhook(f *framework.Framework, context *certContext) {
 			},
 			{
 				Name: "deny-unwanted-configmap-data.k8s.io",
-				Rules: []v1alpha1.RuleWithOperations{{
-					Operations: []v1alpha1.OperationType{v1alpha1.Create, v1alpha1.Update},
-					Rule: v1alpha1.Rule{
+				Rules: []v1beta1.RuleWithOperations{{
+					Operations: []v1beta1.OperationType{v1beta1.Create, v1beta1.Update},
+					Rule: v1beta1.Rule{
 						APIGroups:   []string{""},
 						APIVersions: []string{"v1"},
 						Resources:   []string{"configmaps"},
@@ -315,8 +368,8 @@ func registerWebhook(f *framework.Framework, context *certContext) {
 						},
 					},
 				},
-				ClientConfig: v1alpha1.WebhookClientConfig{
-					Service: &v1alpha1.ServiceReference{
+				ClientConfig: v1beta1.WebhookClientConfig{
+					Service: &v1beta1.ServiceReference{
 						Namespace: namespace,
 						Name:      serviceName,
 						Path:      strPtr("/configmaps"),
@@ -329,10 +382,163 @@ func registerWebhook(f *framework.Framework, context *certContext) {
 			failOpenHook,
 		},
 	})
-	framework.ExpectNoError(err, "registering webhook config %s with namespace %s", webhookConfigName, namespace)
+	framework.ExpectNoError(err, "registering webhook config %s with namespace %s", configName, namespace)
 
-	// The webhook configuration is honored in 1s.
+	// The webhook configuration is honored in 10s.
 	time.Sleep(10 * time.Second)
+
+	return func() {
+		client.AdmissionregistrationV1beta1().ValidatingWebhookConfigurations().Delete(configName, nil)
+	}
+}
+
+func registerMutatingWebhookForConfigMap(f *framework.Framework, context *certContext) func() {
+	client := f.ClientSet
+	By("Registering the mutating configmap webhook via the AdmissionRegistration API")
+
+	namespace := f.Namespace.Name
+	configName := mutatingWebhookConfigName
+
+	_, err := client.AdmissionregistrationV1beta1().MutatingWebhookConfigurations().Create(&v1beta1.MutatingWebhookConfiguration{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: configName,
+		},
+		Webhooks: []v1beta1.Webhook{
+			{
+				Name: "adding-configmap-data-stage-1.k8s.io",
+				Rules: []v1beta1.RuleWithOperations{{
+					Operations: []v1beta1.OperationType{v1beta1.Create},
+					Rule: v1beta1.Rule{
+						APIGroups:   []string{""},
+						APIVersions: []string{"v1"},
+						Resources:   []string{"configmaps"},
+					},
+				}},
+				ClientConfig: v1beta1.WebhookClientConfig{
+					Service: &v1beta1.ServiceReference{
+						Namespace: namespace,
+						Name:      serviceName,
+						Path:      strPtr("/mutating-configmaps"),
+					},
+					CABundle: context.signingCert,
+				},
+			},
+			{
+				Name: "adding-configmap-data-stage-2.k8s.io",
+				Rules: []v1beta1.RuleWithOperations{{
+					Operations: []v1beta1.OperationType{v1beta1.Create},
+					Rule: v1beta1.Rule{
+						APIGroups:   []string{""},
+						APIVersions: []string{"v1"},
+						Resources:   []string{"configmaps"},
+					},
+				}},
+				ClientConfig: v1beta1.WebhookClientConfig{
+					Service: &v1beta1.ServiceReference{
+						Namespace: namespace,
+						Name:      serviceName,
+						Path:      strPtr("/mutating-configmaps"),
+					},
+					CABundle: context.signingCert,
+				},
+			},
+		},
+	})
+	framework.ExpectNoError(err, "registering mutating webhook config %s with namespace %s", configName, namespace)
+
+	// The webhook configuration is honored in 10s.
+	time.Sleep(10 * time.Second)
+	return func() { client.AdmissionregistrationV1beta1().MutatingWebhookConfigurations().Delete(configName, nil) }
+}
+
+func testMutatingConfigMapWebhook(f *framework.Framework) {
+	By("create a configmap that should be updated by the webhook")
+	client := f.ClientSet
+	configMap := toBeMutatedConfigMap(f)
+	mutatedConfigMap, err := client.CoreV1().ConfigMaps(f.Namespace.Name).Create(configMap)
+	Expect(err).To(BeNil())
+	expectedConfigMapData := map[string]string{
+		"mutation-start":   "yes",
+		"mutation-stage-1": "yes",
+		"mutation-stage-2": "yes",
+	}
+	if !reflect.DeepEqual(expectedConfigMapData, mutatedConfigMap.Data) {
+		framework.Failf("\nexpected %#v\n, got %#v\n", expectedConfigMapData, mutatedConfigMap.Data)
+	}
+}
+
+func registerMutatingWebhookForPod(f *framework.Framework, context *certContext) func() {
+	client := f.ClientSet
+	By("Registering the mutating pod webhook via the AdmissionRegistration API")
+
+	namespace := f.Namespace.Name
+	configName := podMutatingWebhookConfigName
+
+	_, err := client.AdmissionregistrationV1beta1().MutatingWebhookConfigurations().Create(&v1beta1.MutatingWebhookConfiguration{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: configName,
+		},
+		Webhooks: []v1beta1.Webhook{
+			{
+				Name: "adding-init-container.k8s.io",
+				Rules: []v1beta1.RuleWithOperations{{
+					Operations: []v1beta1.OperationType{v1beta1.Create},
+					Rule: v1beta1.Rule{
+						APIGroups:   []string{""},
+						APIVersions: []string{"v1"},
+						Resources:   []string{"pods"},
+					},
+				}},
+				ClientConfig: v1beta1.WebhookClientConfig{
+					Service: &v1beta1.ServiceReference{
+						Namespace: namespace,
+						Name:      serviceName,
+						Path:      strPtr("/mutating-pods"),
+					},
+					CABundle: context.signingCert,
+				},
+			},
+		},
+	})
+	framework.ExpectNoError(err, "registering mutating webhook config %s with namespace %s", configName, namespace)
+
+	// The webhook configuration is honored in 10s.
+	time.Sleep(10 * time.Second)
+
+	return func() { client.AdmissionregistrationV1beta1().MutatingWebhookConfigurations().Delete(configName, nil) }
+}
+
+func testMutatingPodWebhook(f *framework.Framework) {
+	By("create a pod that should be updated by the webhook")
+	client := f.ClientSet
+	configMap := toBeMutatedPod(f)
+	mutatedPod, err := client.CoreV1().Pods(f.Namespace.Name).Create(configMap)
+	Expect(err).To(BeNil())
+	if len(mutatedPod.Spec.InitContainers) != 1 {
+		framework.Failf("expect pod to have 1 init container, got %#v", mutatedPod.Spec.InitContainers)
+	}
+	if got, expected := mutatedPod.Spec.InitContainers[0].Name, "webhook-added-init-container"; got != expected {
+		framework.Failf("expect the init container name to be %q, got %q", expected, got)
+	}
+	if got, expected := mutatedPod.Spec.InitContainers[0].TerminationMessagePolicy, v1.TerminationMessageReadFile; got != expected {
+		framework.Failf("expect the init terminationMessagePolicy to be default to %q, got %q", expected, got)
+	}
+}
+
+func toBeMutatedPod(f *framework.Framework) *v1.Pod {
+	return &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "webhook-to-be-mutated",
+		},
+		Spec: v1.PodSpec{
+			Containers: []v1.Container{
+				{
+					Name:  "example",
+					Image: framework.GetPauseImageName(f.ClientSet),
+				},
+			},
+		},
+	}
 }
 
 func testWebhook(f *framework.Framework) {
@@ -349,6 +555,17 @@ func testWebhook(f *framework.Framework) {
 	expectedErrMsg2 := "the pod contains unwanted label"
 	if !strings.Contains(err.Error(), expectedErrMsg2) {
 		framework.Failf("expect error contains %q, got %q", expectedErrMsg2, err.Error())
+	}
+
+	By("create a pod that causes the webhook to hang")
+	client = f.ClientSet
+	// Creating the pod, the request should be rejected
+	pod = hangingPod(f)
+	_, err = client.CoreV1().Pods(f.Namespace.Name).Create(pod)
+	Expect(err).NotTo(BeNil())
+	expectedTimeoutErr := "request did not complete within allowed duration"
+	if !strings.Contains(err.Error(), expectedTimeoutErr) {
+		framework.Failf("expect timeout error %q, got %q", expectedTimeoutErr, err.Error())
 	}
 
 	By("create a configmap that should be denied by the webhook")
@@ -403,6 +620,8 @@ func testWebhook(f *framework.Framework) {
 		},
 	}})
 	framework.ExpectNoError(err, "creating namespace %q", skippedNamespaceName)
+	// clean up the namespace
+	defer client.CoreV1().Namespaces().Delete(skippedNamespaceName, nil)
 
 	By("create a configmap that violates the webhook policy but is in a whitelisted namespace")
 	configmap = nonCompliantConfigMap(f)
@@ -412,19 +631,19 @@ func testWebhook(f *framework.Framework) {
 
 // failingWebhook returns a webhook with rule of create configmaps,
 // but with an invalid client config so that server cannot communicate with it
-func failingWebhook(namespace, name string) v1alpha1.Webhook {
-	return v1alpha1.Webhook{
+func failingWebhook(namespace, name string) v1beta1.Webhook {
+	return v1beta1.Webhook{
 		Name: name,
-		Rules: []v1alpha1.RuleWithOperations{{
-			Operations: []v1alpha1.OperationType{v1alpha1.Create},
-			Rule: v1alpha1.Rule{
+		Rules: []v1beta1.RuleWithOperations{{
+			Operations: []v1beta1.OperationType{v1beta1.Create},
+			Rule: v1beta1.Rule{
 				APIGroups:   []string{""},
 				APIVersions: []string{"v1"},
 				Resources:   []string{"configmaps"},
 			},
 		}},
-		ClientConfig: v1alpha1.WebhookClientConfig{
-			Service: &v1alpha1.ServiceReference{
+		ClientConfig: v1beta1.WebhookClientConfig{
+			Service: &v1beta1.ServiceReference{
 				Namespace: namespace,
 				Name:      serviceName,
 				Path:      strPtr("/configmaps"),
@@ -435,13 +654,14 @@ func failingWebhook(namespace, name string) v1alpha1.Webhook {
 	}
 }
 
-func registerFailClosedWebhook(f *framework.Framework, context *certContext) {
+func registerFailClosedWebhook(f *framework.Framework, context *certContext) func() {
 	client := f.ClientSet
 	By("Registering a webhook that server cannot talk to, with fail closed policy, via the AdmissionRegistration API")
 
 	namespace := f.Namespace.Name
+	configName := webhookFailClosedConfigName
 	// A webhook that cannot talk to server, with fail-closed policy
-	policyFail := v1alpha1.Fail
+	policyFail := v1beta1.Fail
 	hook := failingWebhook(namespace, "fail-closed.k8s.io")
 	hook.FailurePolicy = &policyFail
 	hook.NamespaceSelector = &metav1.LabelSelector{
@@ -454,20 +674,23 @@ func registerFailClosedWebhook(f *framework.Framework, context *certContext) {
 		},
 	}
 
-	_, err := client.AdmissionregistrationV1alpha1().ValidatingWebhookConfigurations().Create(&v1alpha1.ValidatingWebhookConfiguration{
+	_, err := client.AdmissionregistrationV1beta1().ValidatingWebhookConfigurations().Create(&v1beta1.ValidatingWebhookConfiguration{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: webhookFailClosedConfigName,
+			Name: configName,
 		},
-		Webhooks: []v1alpha1.Webhook{
+		Webhooks: []v1beta1.Webhook{
 			// Server cannot talk to this webhook, so it always fails.
 			// Because this webhook is configured fail-closed, request should be rejected after the call fails.
 			hook,
 		},
 	})
-	framework.ExpectNoError(err, "registering webhook config %s with namespace %s", webhookFailClosedConfigName, namespace)
+	framework.ExpectNoError(err, "registering webhook config %s with namespace %s", configName, namespace)
 
 	// The webhook configuration is honored in 10s.
 	time.Sleep(10 * time.Second)
+	return func() {
+		f.ClientSet.AdmissionregistrationV1beta1().ValidatingWebhookConfigurations().Delete(configName, nil)
+	}
 }
 
 func testFailClosedWebhook(f *framework.Framework) {
@@ -480,6 +703,7 @@ func testFailClosedWebhook(f *framework.Framework) {
 		},
 	}})
 	framework.ExpectNoError(err, "creating namespace %q", failNamespaceName)
+	defer client.CoreV1().Namespaces().Delete(failNamespaceName, nil)
 
 	By("create a configmap should be unconditionally rejected by the webhook")
 	configmap := &v1.ConfigMap{
@@ -492,6 +716,154 @@ func testFailClosedWebhook(f *framework.Framework) {
 	if !errors.IsInternalError(err) {
 		framework.Failf("expect an internal error, got %#v", err)
 	}
+}
+
+func registerWebhookForWebhookConfigurations(f *framework.Framework, context *certContext) func() {
+	var err error
+	client := f.ClientSet
+	By("Registering a webhook on ValidatingWebhookConfiguration and MutatingWebhookConfiguration objects, via the AdmissionRegistration API")
+
+	namespace := f.Namespace.Name
+	configName := webhookForWebhooksConfigName
+	failurePolicy := v1beta1.Fail
+
+	// This webhook will deny all requests to Delete admissionregistration objects
+	_, err = client.AdmissionregistrationV1beta1().ValidatingWebhookConfigurations().Create(&v1beta1.ValidatingWebhookConfiguration{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: configName,
+		},
+		Webhooks: []v1beta1.Webhook{
+			{
+				Name: "deny-webhook-configuration-deletions.k8s.io",
+				Rules: []v1beta1.RuleWithOperations{{
+					Operations: []v1beta1.OperationType{v1beta1.Delete},
+					Rule: v1beta1.Rule{
+						APIGroups:   []string{"admissionregistration.k8s.io"},
+						APIVersions: []string{"*"},
+						Resources: []string{
+							"validatingwebhookconfigurations",
+							"mutatingwebhookconfigurations",
+						},
+					},
+				}},
+				ClientConfig: v1beta1.WebhookClientConfig{
+					Service: &v1beta1.ServiceReference{
+						Namespace: namespace,
+						Name:      serviceName,
+						Path:      strPtr("/always-deny"),
+					},
+					CABundle: context.signingCert,
+				},
+				FailurePolicy: &failurePolicy,
+			},
+		},
+	})
+
+	framework.ExpectNoError(err, "registering webhook config %s with namespace %s", configName, namespace)
+
+	// The webhook configuration is honored in 10s.
+	time.Sleep(10 * time.Second)
+	return func() {
+		err := client.AdmissionregistrationV1beta1().ValidatingWebhookConfigurations().Delete(configName, nil)
+		framework.ExpectNoError(err, "deleting webhook config %s with namespace %s", configName, namespace)
+	}
+}
+
+// This test assumes that the deletion-rejecting webhook defined in
+// registerWebhookForWebhookConfigurations is in place.
+func testWebhookForWebhookConfigurations(f *framework.Framework) {
+	var err error
+	client := f.ClientSet
+	By("Creating a validating-webhook-configuration object")
+
+	namespace := f.Namespace.Name
+	failurePolicy := v1beta1.Ignore
+
+	_, err = client.AdmissionregistrationV1beta1().ValidatingWebhookConfigurations().Create(&v1beta1.ValidatingWebhookConfiguration{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: removableValidatingHookName,
+		},
+		Webhooks: []v1beta1.Webhook{
+			{
+				Name: "should-be-removable-validating-webhook.k8s.io",
+				Rules: []v1beta1.RuleWithOperations{{
+					Operations: []v1beta1.OperationType{v1beta1.Create},
+					// This will not match any real resources so this webhook should never be called.
+					Rule: v1beta1.Rule{
+						APIGroups:   []string{""},
+						APIVersions: []string{"v1"},
+						Resources:   []string{"invalid"},
+					},
+				}},
+				ClientConfig: v1beta1.WebhookClientConfig{
+					Service: &v1beta1.ServiceReference{
+						Namespace: namespace,
+						Name:      serviceName,
+						// This path not recognized by the webhook service,
+						// so the call to this webhook will always fail,
+						// but because the failure policy is ignore, it will
+						// have no effect on admission requests.
+						Path: strPtr(""),
+					},
+					CABundle: nil,
+				},
+				FailurePolicy: &failurePolicy,
+			},
+		},
+	})
+	framework.ExpectNoError(err, "registering webhook config %s with namespace %s", removableValidatingHookName, namespace)
+
+	// The webhook configuration is honored in 10s.
+	time.Sleep(10 * time.Second)
+
+	By("Deleting the validating-webhook-configuration, which should be possible to remove")
+
+	err = client.AdmissionregistrationV1beta1().ValidatingWebhookConfigurations().Delete(removableValidatingHookName, nil)
+	framework.ExpectNoError(err, "deleting webhook config %s with namespace %s", removableValidatingHookName, namespace)
+
+	By("Creating a mutating-webhook-configuration object")
+
+	_, err = client.AdmissionregistrationV1beta1().MutatingWebhookConfigurations().Create(&v1beta1.MutatingWebhookConfiguration{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: removableMutatingHookName,
+		},
+		Webhooks: []v1beta1.Webhook{
+			{
+				Name: "should-be-removable-mutating-webhook.k8s.io",
+				Rules: []v1beta1.RuleWithOperations{{
+					Operations: []v1beta1.OperationType{v1beta1.Create},
+					// This will not match any real resources so this webhook should never be called.
+					Rule: v1beta1.Rule{
+						APIGroups:   []string{""},
+						APIVersions: []string{"v1"},
+						Resources:   []string{"invalid"},
+					},
+				}},
+				ClientConfig: v1beta1.WebhookClientConfig{
+					Service: &v1beta1.ServiceReference{
+						Namespace: namespace,
+						Name:      serviceName,
+						// This path not recognized by the webhook service,
+						// so the call to this webhook will always fail,
+						// but because the failure policy is ignore, it will
+						// have no effect on admission requests.
+						Path: strPtr(""),
+					},
+					CABundle: nil,
+				},
+				FailurePolicy: &failurePolicy,
+			},
+		},
+	})
+	framework.ExpectNoError(err, "registering webhook config %s with namespace %s", removableMutatingHookName, namespace)
+
+	// The webhook configuration is honored in 10s.
+	time.Sleep(10 * time.Second)
+
+	By("Deleting the mutating-webhook-configuration, which should be possible to remove")
+
+	err = client.AdmissionregistrationV1beta1().MutatingWebhookConfigurations().Delete(removableMutatingHookName, nil)
+	framework.ExpectNoError(err, "deleting webhook config %s with namespace %s", removableMutatingHookName, namespace)
 }
 
 func createNamespace(f *framework.Framework, ns *v1.Namespace) error {
@@ -526,6 +898,25 @@ func nonCompliantPod(f *framework.Framework) *v1.Pod {
 	}
 }
 
+func hangingPod(f *framework.Framework) *v1.Pod {
+	return &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: hangingPodName,
+			Labels: map[string]string{
+				"webhook-e2e-test": "wait-forever",
+			},
+		},
+		Spec: v1.PodSpec{
+			Containers: []v1.Container{
+				{
+					Name:  "wait-forever",
+					Image: framework.GetPauseImageName(f.ClientSet),
+				},
+			},
+		},
+	}
+}
+
 func nonCompliantConfigMap(f *framework.Framework) *v1.ConfigMap {
 	return &v1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
@@ -533,6 +924,17 @@ func nonCompliantConfigMap(f *framework.Framework) *v1.ConfigMap {
 		},
 		Data: map[string]string{
 			"webhook-e2e-test": "webhook-disallow",
+		},
+	}
+}
+
+func toBeMutatedConfigMap(f *framework.Framework) *v1.ConfigMap {
+	return &v1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "to-be-mutated",
+		},
+		Data: map[string]string{
+			"mutation-start": "yes",
 		},
 	}
 }
@@ -563,92 +965,36 @@ func updateConfigMap(c clientset.Interface, ns, name string, update updateConfig
 	return cm, pollErr
 }
 
-func cleanWebhookTest(f *framework.Framework) {
-	client := f.ClientSet
-	_ = client.AdmissionregistrationV1alpha1().ValidatingWebhookConfigurations().Delete(webhookConfigName, nil)
-	_ = client.AdmissionregistrationV1alpha1().ValidatingWebhookConfigurations().Delete(crdWebhookConfigName, nil)
-	namespaceName := f.Namespace.Name
+func cleanWebhookTest(client clientset.Interface, namespaceName string) {
 	_ = client.CoreV1().Services(namespaceName).Delete(serviceName, nil)
 	_ = client.ExtensionsV1beta1().Deployments(namespaceName).Delete(deploymentName, nil)
 	_ = client.CoreV1().Secrets(namespaceName).Delete(secretName, nil)
 	_ = client.RbacV1beta1().RoleBindings("kube-system").Delete(roleBindingName, nil)
-	_ = client.CoreV1().ConfigMaps(skippedNamespaceName).Delete(disallowedConfigMapName, nil)
-	_ = client.CoreV1().Namespaces().Delete(skippedNamespaceName, nil)
-	_ = client.CoreV1().Namespaces().Delete(failNamespaceName, nil)
 }
 
-// newCRDForAdmissionWebhookTest generates a CRD
-func newCRDForAdmissionWebhookTest() *apiextensionsv1beta1.CustomResourceDefinition {
-	return &apiextensionsv1beta1.CustomResourceDefinition{
-		ObjectMeta: metav1.ObjectMeta{Name: crdName + "s." + crdAPIGroup},
-		Spec: apiextensionsv1beta1.CustomResourceDefinitionSpec{
-			Group:   crdAPIGroup,
-			Version: crdAPIVersion,
-			Names: apiextensionsv1beta1.CustomResourceDefinitionNames{
-				Plural:   crdName + "s",
-				Singular: crdName,
-				Kind:     crdKind,
-				ListKind: crdName + "List",
-			},
-			Scope: apiextensionsv1beta1.NamespaceScoped,
-		},
-	}
-}
-
-func createCRD(f *framework.Framework) (func(), dynamic.ResourceInterface) {
-	config, err := framework.LoadConfig()
-	if err != nil {
-		framework.Failf("failed to load config: %v", err)
-	}
-
-	apiExtensionClient, err := crdclientset.NewForConfig(config)
-	if err != nil {
-		framework.Failf("failed to initialize apiExtensionClient: %v", err)
-	}
-
-	crd := newCRDForAdmissionWebhookTest()
-
-	//create CRD and waits for the resource to be recognized and available.
-	dynamicClient, err := testserver.CreateNewCustomResourceDefinitionWatchUnsafe(crd, apiExtensionClient, f.ClientPool)
-	if err != nil {
-		framework.Failf("failed to create CustomResourceDefinition: %v", err)
-	}
-
-	resourceClient := dynamicClient.Resource(&metav1.APIResource{
-		Name:       crd.Spec.Names.Plural,
-		Namespaced: true,
-	}, f.Namespace.Name)
-
-	return func() {
-		err = testserver.DeleteCustomResourceDefinition(crd, apiExtensionClient)
-		if err != nil {
-			framework.Failf("failed to delete CustomResourceDefinition: %v", err)
-		}
-	}, resourceClient
-}
-
-func registerWebhookForCRD(f *framework.Framework, context *certContext) {
+func registerWebhookForCRD(f *framework.Framework, context *certContext, testcrd *framework.TestCrd) func() {
 	client := f.ClientSet
 	By("Registering the crd webhook via the AdmissionRegistration API")
 
 	namespace := f.Namespace.Name
-	_, err := client.AdmissionregistrationV1alpha1().ValidatingWebhookConfigurations().Create(&v1alpha1.ValidatingWebhookConfiguration{
+	configName := crdWebhookConfigName
+	_, err := client.AdmissionregistrationV1beta1().ValidatingWebhookConfigurations().Create(&v1beta1.ValidatingWebhookConfiguration{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: crdWebhookConfigName,
+			Name: configName,
 		},
-		Webhooks: []v1alpha1.Webhook{
+		Webhooks: []v1beta1.Webhook{
 			{
 				Name: "deny-unwanted-crd-data.k8s.io",
-				Rules: []v1alpha1.RuleWithOperations{{
-					Operations: []v1alpha1.OperationType{v1alpha1.Create},
-					Rule: v1alpha1.Rule{
-						APIGroups:   []string{crdAPIGroup},
-						APIVersions: []string{crdAPIVersion},
-						Resources:   []string{crdName + "s"},
+				Rules: []v1beta1.RuleWithOperations{{
+					Operations: []v1beta1.OperationType{v1beta1.Create},
+					Rule: v1beta1.Rule{
+						APIGroups:   []string{testcrd.ApiGroup},
+						APIVersions: []string{testcrd.ApiVersion},
+						Resources:   []string{testcrd.GetPluralName()},
 					},
 				}},
-				ClientConfig: v1alpha1.WebhookClientConfig{
-					Service: &v1alpha1.ServiceReference{
+				ClientConfig: v1beta1.WebhookClientConfig{
+					Service: &v1beta1.ServiceReference{
 						Namespace: namespace,
 						Name:      serviceName,
 						Path:      strPtr("/crd"),
@@ -658,15 +1004,76 @@ func registerWebhookForCRD(f *framework.Framework, context *certContext) {
 			},
 		},
 	})
-	framework.ExpectNoError(err, "registering crd webhook config %s with namespace %s", webhookConfigName, namespace)
+	framework.ExpectNoError(err, "registering crd webhook config %s with namespace %s", configName, namespace)
 
-	// The webhook configuration is honored in 1s.
+	// The webhook configuration is honored in 10s.
 	time.Sleep(10 * time.Second)
+	return func() {
+		client.AdmissionregistrationV1beta1().ValidatingWebhookConfigurations().Delete(configName, nil)
+	}
 }
 
-func testCRDWebhook(f *framework.Framework, crdClient dynamic.ResourceInterface) {
+func registerMutatingWebhookForCRD(f *framework.Framework, context *certContext, testcrd *framework.TestCrd) func() {
+	client := f.ClientSet
+	By("Registering the mutating webhook for crd via the AdmissionRegistration API")
+
+	namespace := f.Namespace.Name
+	configName := crdMutatingWebhookConfigName
+	_, err := client.AdmissionregistrationV1beta1().MutatingWebhookConfigurations().Create(&v1beta1.MutatingWebhookConfiguration{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: configName,
+		},
+		Webhooks: []v1beta1.Webhook{
+			{
+				Name: "mutate-crd-data-stage-1.k8s.io",
+				Rules: []v1beta1.RuleWithOperations{{
+					Operations: []v1beta1.OperationType{v1beta1.Create},
+					Rule: v1beta1.Rule{
+						APIGroups:   []string{testcrd.ApiGroup},
+						APIVersions: []string{testcrd.ApiVersion},
+						Resources:   []string{testcrd.GetPluralName()},
+					},
+				}},
+				ClientConfig: v1beta1.WebhookClientConfig{
+					Service: &v1beta1.ServiceReference{
+						Namespace: namespace,
+						Name:      serviceName,
+						Path:      strPtr("/mutating-crd"),
+					},
+					CABundle: context.signingCert,
+				},
+			},
+			{
+				Name: "mutate-crd-data-stage-2.k8s.io",
+				Rules: []v1beta1.RuleWithOperations{{
+					Operations: []v1beta1.OperationType{v1beta1.Create},
+					Rule: v1beta1.Rule{
+						APIGroups:   []string{testcrd.ApiGroup},
+						APIVersions: []string{testcrd.ApiVersion},
+						Resources:   []string{testcrd.GetPluralName()},
+					},
+				}},
+				ClientConfig: v1beta1.WebhookClientConfig{
+					Service: &v1beta1.ServiceReference{
+						Namespace: namespace,
+						Name:      serviceName,
+						Path:      strPtr("/mutating-crd"),
+					},
+					CABundle: context.signingCert,
+				},
+			},
+		},
+	})
+	framework.ExpectNoError(err, "registering crd webhook config %s with namespace %s", configName, namespace)
+
+	// The webhook configuration is honored in 10s.
+	time.Sleep(10 * time.Second)
+
+	return func() { client.AdmissionregistrationV1beta1().MutatingWebhookConfigurations().Delete(configName, nil) }
+}
+
+func testCRDWebhook(f *framework.Framework, crd *apiextensionsv1beta1.CustomResourceDefinition, crdClient dynamic.ResourceInterface) {
 	By("Creating a custom resource that should be denied by the webhook")
-	crd := newCRDForAdmissionWebhookTest()
 	crInstance := &unstructured.Unstructured{
 		Object: map[string]interface{}{
 			"kind":       crd.Spec.Names.Kind,
@@ -685,5 +1092,32 @@ func testCRDWebhook(f *framework.Framework, crdClient dynamic.ResourceInterface)
 	expectedErrMsg := "the custom resource contains unwanted data"
 	if !strings.Contains(err.Error(), expectedErrMsg) {
 		framework.Failf("expect error contains %q, got %q", expectedErrMsg, err.Error())
+	}
+}
+
+func testMutatingCRDWebhook(f *framework.Framework, crd *apiextensionsv1beta1.CustomResourceDefinition, crdClient dynamic.ResourceInterface) {
+	By("Creating a custom resource that should be mutated by the webhook")
+	cr := &unstructured.Unstructured{
+		Object: map[string]interface{}{
+			"kind":       crd.Spec.Names.Kind,
+			"apiVersion": crd.Spec.Group + "/" + crd.Spec.Version,
+			"metadata": map[string]interface{}{
+				"name":      "cr-instance-1",
+				"namespace": f.Namespace.Name,
+			},
+			"data": map[string]interface{}{
+				"mutation-start": "yes",
+			},
+		},
+	}
+	mutatedCR, err := crdClient.Create(cr)
+	Expect(err).To(BeNil())
+	expectedCRData := map[string]interface{}{
+		"mutation-start":   "yes",
+		"mutation-stage-1": "yes",
+		"mutation-stage-2": "yes",
+	}
+	if !reflect.DeepEqual(expectedCRData, mutatedCR.Object["data"]) {
+		framework.Failf("\nexpected %#v\n, got %#v\n", expectedCRData, mutatedCR.Object["data"])
 	}
 }

@@ -33,6 +33,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/sets"
 
+	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/healthchecks"
 	"k8s.io/ingress-gce/pkg/instances"
 	"k8s.io/ingress-gce/pkg/storage"
@@ -81,7 +82,7 @@ type Backends struct {
 	nodePool      instances.NodePool
 	healthChecker healthchecks.HealthChecker
 	snapshotter   storage.Snapshotter
-	prober        probeProvider
+	prober        ProbeProvider
 	// ignoredPorts are a set of ports excluded from GC, even
 	// after the Ingress has been deleted. Note that invoking
 	// a Delete() on these ports will still delete the backend.
@@ -89,18 +90,19 @@ type Backends struct {
 	namer        *utils.Namer
 }
 
+// Backends is a BackendPool.
+var _ BackendPool = (*Backends)(nil)
+
 func portKey(port int64) string {
 	return fmt.Sprintf("%d", port)
 }
 
 // ServicePort for tupling port and protocol
 type ServicePort struct {
-	// Port is the service node port
-	// TODO: rename it to NodePort
-	Port          int64
-	Protocol      utils.AppProtocol
 	SvcName       types.NamespacedName
 	SvcPort       intstr.IntOrString
+	NodePort      int64
+	Protocol      annotations.AppProtocol
 	SvcTargetPort string
 	NEGEnabled    bool
 }
@@ -145,26 +147,23 @@ func NewBackendPool(
 		backendPool.snapshotter = storage.NewInMemoryPool()
 		return backendPool
 	}
-	backendPool.snapshotter = storage.NewCloudListingPool(
-		func(i interface{}) (string, error) {
-			bs := i.(*compute.BackendService)
-			if !namer.NameBelongsToCluster(bs.Name) {
-				return "", fmt.Errorf("unrecognized name %v", bs.Name)
-			}
-			port, err := namer.BackendPort(bs.Name)
-			if err != nil {
-				return "", err
-			}
-			return port, nil
-		},
-		backendPool,
-		30*time.Second,
-	)
+	keyFunc := func(i interface{}) (string, error) {
+		bs := i.(*compute.BackendService)
+		if !namer.NameBelongsToCluster(bs.Name) {
+			return "", fmt.Errorf("unrecognized name %v", bs.Name)
+		}
+		port, err := namer.BackendPort(bs.Name)
+		if err != nil {
+			return "", err
+		}
+		return port, nil
+	}
+	backendPool.snapshotter = storage.NewCloudListingPool("backends", keyFunc, backendPool, 30*time.Second)
 	return backendPool
 }
 
 // Init sets the probeProvider interface value
-func (b *Backends) Init(pp probeProvider) {
+func (b *Backends) Init(pp ProbeProvider) {
 	b.prober = pp
 }
 
@@ -179,8 +178,8 @@ func (b *Backends) Get(port int64) (*compute.BackendService, error) {
 }
 
 func (b *Backends) ensureHealthCheck(sp ServicePort) (string, error) {
-	hc := b.healthChecker.New(sp.Port, sp.Protocol, sp.NEGEnabled)
-	existingLegacyHC, err := b.healthChecker.GetLegacy(sp.Port)
+	hc := b.healthChecker.New(sp.NodePort, sp.Protocol, sp.NEGEnabled)
+	existingLegacyHC, err := b.healthChecker.GetLegacy(sp.NodePort)
 	if err != nil && !utils.IsNotFoundError(err) {
 		return "", err
 	}
@@ -227,7 +226,7 @@ func (b *Backends) Ensure(svcPorts []ServicePort, igs []*compute.InstanceGroup) 
 	if igs == nil {
 		ports := []int64{}
 		for _, p := range svcPorts {
-			ports = append(ports, p.Port)
+			ports = append(ports, p.NodePort)
 		}
 		var err error
 		igs, err = instances.EnsureInstanceGroupsAndPorts(b.nodePool, b.namer, ports)
@@ -251,7 +250,7 @@ func (b *Backends) ensureBackendService(p ServicePort, igs []*compute.InstanceGr
 	// We must track the ports even if creating the backends failed, because
 	// we might've created health-check for them.
 	be := &compute.BackendService{}
-	defer func() { b.snapshotter.Add(portKey(p.Port), be) }()
+	defer func() { b.snapshotter.Add(portKey(p.NodePort), be) }()
 
 	var err error
 
@@ -262,14 +261,14 @@ func (b *Backends) ensureBackendService(p ServicePort, igs []*compute.InstanceGr
 	}
 
 	// Verify existance of a backend service for the proper port, but do not specify any backends/igs
-	beName := b.namer.Backend(p.Port)
-	be, _ = b.Get(p.Port)
+	beName := b.namer.Backend(p.NodePort)
+	be, _ = b.Get(p.NodePort)
 	if be == nil {
 		namedPort := &compute.NamedPort{
-			Name: b.namer.NamedPort(p.Port),
-			Port: p.Port,
+			Name: b.namer.NamedPort(p.NodePort),
+			Port: p.NodePort,
 		}
-		glog.V(2).Infof("Creating backend service for port %v named port %v", p.Port, namedPort)
+		glog.V(2).Infof("Creating backend service for port %v named port %v", p.NodePort, namedPort)
 		be, err = b.create(namedPort, hcLink, p, beName)
 		if err != nil {
 			return err
@@ -301,7 +300,7 @@ func (b *Backends) ensureBackendService(p ServicePort, igs []*compute.InstanceGr
 
 	// If previous health check was legacy type, we need to delete it.
 	if existingHCLink != hcLink && strings.Contains(existingHCLink, "/httpHealthChecks/") {
-		if err = b.healthChecker.DeleteLegacy(p.Port); err != nil {
+		if err = b.healthChecker.DeleteLegacy(p.NodePort); err != nil {
 			glog.Warning("Failed to delete legacy HttpHealthCheck %v; Will not try again, err: %v", beName, err)
 		}
 	}
@@ -343,15 +342,15 @@ func (b *Backends) Delete(port int64) (err error) {
 func (b *Backends) List() ([]interface{}, error) {
 	// TODO: for consistency with the rest of this sub-package this method
 	// should return a list of backend ports.
-	interList := []interface{}{}
-	be, err := b.cloud.ListGlobalBackendServices()
+	backends, err := b.cloud.ListGlobalBackendServices()
 	if err != nil {
-		return interList, err
+		return nil, err
 	}
-	for i := range be.Items {
-		interList = append(interList, be.Items[i])
+	var ret []interface{}
+	for _, x := range backends {
+		ret = append(ret, x)
 	}
-	return interList, nil
+	return ret, nil
 }
 
 func getBackendsForIGs(igs []*compute.InstanceGroup, bm BalancingMode) []*compute.Backend {
@@ -454,7 +453,7 @@ func (b *Backends) edgeHop(be *compute.BackendService, igs []*compute.InstanceGr
 func (b *Backends) GC(svcNodePorts []ServicePort) error {
 	knownPorts := sets.NewString()
 	for _, p := range svcNodePorts {
-		knownPorts.Insert(portKey(p.Port))
+		knownPorts.Insert(portKey(p.NodePort))
 	}
 	pool := b.snapshotter.Snapshot()
 	for port := range pool {
@@ -515,7 +514,7 @@ func (b *Backends) Link(port ServicePort, zones []string) error {
 		negs = append(negs, neg)
 	}
 
-	backendService, err := b.cloud.GetAlphaGlobalBackendService(b.namer.Backend(port.Port))
+	backendService, err := b.cloud.GetAlphaGlobalBackendService(b.namer.Backend(port.NodePort))
 	if err != nil {
 		return err
 	}

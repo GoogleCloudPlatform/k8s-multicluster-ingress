@@ -18,12 +18,12 @@ package cmd
 
 import (
 	"bytes"
+	"fmt"
 	"net/http"
 	"testing"
 
 	"k8s.io/client-go/rest/fake"
 	cmdtesting "k8s.io/kubernetes/pkg/kubectl/cmd/testing"
-	"k8s.io/kubernetes/pkg/printers"
 )
 
 type testcase struct {
@@ -98,30 +98,31 @@ func TestConvertObject(t *testing.T) {
 		},
 	}
 
-	f, tf, _, _ := cmdtesting.NewAPIFactory()
-	tf.UnstructuredClient = &fake.RESTClient{
-		Client: fake.CreateHTTPClient(func(req *http.Request) (*http.Response, error) {
-			t.Fatalf("unexpected request: %#v\n%#v", req.URL, req)
-			return nil, nil
-		}),
-	}
-	tf.Namespace = "test"
-	buf := bytes.NewBuffer([]byte{})
-
 	for _, tc := range testcases {
-		cmd := NewCmdConvert(f, buf)
-		cmd.Flags().Set("filename", tc.file)
-		cmd.Flags().Set("output-version", tc.outputVersion)
-		cmd.Flags().Set("local", "true")
-		cmd.Flags().Set("output", "go-template")
-
 		for _, field := range tc.fields {
-			buf.Reset()
-			tf.Printer, _ = printers.NewTemplatePrinter([]byte(field.template))
-			cmd.Run(cmd, []string{})
-			if buf.String() != field.expected {
-				t.Errorf("unexpected output when converting %s to %q, expected: %q, but got %q", tc.file, tc.outputVersion, field.expected, buf.String())
-			}
+			t.Run(fmt.Sprintf("%s %s", tc.name, field), func(t *testing.T) {
+				tf := cmdtesting.NewTestFactory()
+				defer tf.Cleanup()
+
+				tf.UnstructuredClient = &fake.RESTClient{
+					Client: fake.CreateHTTPClient(func(req *http.Request) (*http.Response, error) {
+						t.Fatalf("unexpected request: %#v\n%#v", req.URL, req)
+						return nil, nil
+					}),
+				}
+				tf.Namespace = "test"
+
+				buf := bytes.NewBuffer([]byte{})
+				cmd := NewCmdConvert(tf, buf)
+				cmd.Flags().Set("filename", tc.file)
+				cmd.Flags().Set("output-version", tc.outputVersion)
+				cmd.Flags().Set("local", "true")
+				cmd.Flags().Set("output", "go-template="+field.template)
+				cmd.Run(cmd, []string{})
+				if buf.String() != field.expected {
+					t.Errorf("unexpected output when converting %s to %q, expected: %q, but got %q", tc.file, tc.outputVersion, field.expected, buf.String())
+				}
+			})
 		}
 	}
 }

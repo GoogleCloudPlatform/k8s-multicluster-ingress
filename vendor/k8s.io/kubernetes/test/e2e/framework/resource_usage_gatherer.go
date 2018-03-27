@@ -137,6 +137,7 @@ type resourceGatherWorker struct {
 	inKubemark                  bool
 	resourceDataGatheringPeriod time.Duration
 	probeDuration               time.Duration
+	printVerboseLogs            bool
 }
 
 func (w *resourceGatherWorker) singleProbe() {
@@ -161,7 +162,9 @@ func (w *resourceGatherWorker) singleProbe() {
 		}
 		for k, v := range nodeUsage {
 			data[k] = v
-			Logf("Get container %v usage on node %v. CPUUsageInCores: %v, MemoryUsageInBytes: %v, MemoryWorkingSetInBytes: %v", k, w.nodeName, v.CPUUsageInCores, v.MemoryUsageInBytes, v.MemoryWorkingSetInBytes)
+			if w.printVerboseLogs {
+				Logf("Get container %v usage on node %v. CPUUsageInCores: %v, MemoryUsageInBytes: %v, MemoryWorkingSetInBytes: %v", k, w.nodeName, v.CPUUsageInCores, v.MemoryUsageInBytes, v.MemoryWorkingSetInBytes)
+			}
 		}
 	}
 	w.dataSeries = append(w.dataSeries, data)
@@ -188,7 +191,7 @@ func (w *resourceGatherWorker) gather(initialSleep time.Duration) {
 	}
 }
 
-type containerResourceGatherer struct {
+type ContainerResourceGatherer struct {
 	client       clientset.Interface
 	stopCh       chan struct{}
 	workers      []resourceGatherWorker
@@ -202,10 +205,11 @@ type ResourceGathererOptions struct {
 	MasterOnly                  bool
 	ResourceDataGatheringPeriod time.Duration
 	ProbeDuration               time.Duration
+	PrintVerboseLogs            bool
 }
 
-func NewResourceUsageGatherer(c clientset.Interface, options ResourceGathererOptions, pods *v1.PodList) (*containerResourceGatherer, error) {
-	g := containerResourceGatherer{
+func NewResourceUsageGatherer(c clientset.Interface, options ResourceGathererOptions, pods *v1.PodList) (*ContainerResourceGatherer, error) {
+	g := ContainerResourceGatherer{
 		client:       c,
 		stopCh:       make(chan struct{}),
 		containerIDs: make([]string, 0),
@@ -215,10 +219,13 @@ func NewResourceUsageGatherer(c clientset.Interface, options ResourceGathererOpt
 	if options.InKubemark {
 		g.workerWg.Add(1)
 		g.workers = append(g.workers, resourceGatherWorker{
-			inKubemark: true,
-			stopCh:     g.stopCh,
-			wg:         &g.workerWg,
-			finished:   false,
+			inKubemark:                  true,
+			stopCh:                      g.stopCh,
+			wg:                          &g.workerWg,
+			finished:                    false,
+			resourceDataGatheringPeriod: options.ResourceDataGatheringPeriod,
+			probeDuration:               options.ProbeDuration,
+			printVerboseLogs:            options.PrintVerboseLogs,
 		})
 	} else {
 		// Tracks kube-system pods if no valid PodList is passed in.
@@ -257,6 +264,7 @@ func NewResourceUsageGatherer(c clientset.Interface, options ResourceGathererOpt
 					inKubemark:                  false,
 					resourceDataGatheringPeriod: options.ResourceDataGatheringPeriod,
 					probeDuration:               options.ProbeDuration,
+					printVerboseLogs:            options.PrintVerboseLogs,
 				})
 				if options.MasterOnly {
 					break
@@ -269,7 +277,7 @@ func NewResourceUsageGatherer(c clientset.Interface, options ResourceGathererOpt
 
 // StartGatheringData starts a stat gathering worker blocks for each node to track,
 // and blocks until StopAndSummarize is called.
-func (g *containerResourceGatherer) StartGatheringData() {
+func (g *ContainerResourceGatherer) StartGatheringData() {
 	if len(g.workers) == 0 {
 		return
 	}
@@ -286,7 +294,7 @@ func (g *containerResourceGatherer) StartGatheringData() {
 // generates resource summary for the passed-in percentiles, and returns the summary.
 // It returns an error if the resource usage at any percentile is beyond the
 // specified resource constraints.
-func (g *containerResourceGatherer) StopAndSummarize(percentiles []int, constraints map[string]ResourceConstraint) (*ResourceUsageSummary, error) {
+func (g *ContainerResourceGatherer) StopAndSummarize(percentiles []int, constraints map[string]ResourceConstraint) (*ResourceUsageSummary, error) {
 	close(g.stopCh)
 	Logf("Closed stop channel. Waiting for %v workers", len(g.workers))
 	finished := make(chan struct{})

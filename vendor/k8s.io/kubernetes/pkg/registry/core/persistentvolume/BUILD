@@ -15,6 +15,7 @@ go_library(
     importpath = "k8s.io/kubernetes/pkg/registry/core/persistentvolume",
     deps = [
         "//pkg/api/legacyscheme:go_default_library",
+        "//pkg/api/persistentvolume:go_default_library",
         "//pkg/apis/core:go_default_library",
         "//pkg/apis/core/validation:go_default_library",
         "//pkg/volume/validation:go_default_library",
@@ -32,8 +33,7 @@ go_library(
 go_test(
     name = "go_default_test",
     srcs = ["strategy_test.go"],
-    importpath = "k8s.io/kubernetes/pkg/registry/core/persistentvolume",
-    library = ":go_default_library",
+    embed = [":go_default_library"],
     deps = [
         "//pkg/api/legacyscheme:go_default_library",
         "//pkg/api/testapi:go_default_library",

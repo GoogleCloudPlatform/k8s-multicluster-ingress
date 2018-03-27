@@ -44,6 +44,9 @@ const (
 	RuntimeOperationsKey        = "runtime_operations"
 	RuntimeOperationsLatencyKey = "runtime_operations_latency_microseconds"
 	RuntimeOperationsErrorsKey  = "runtime_operations_errors"
+	// Metrics keys of device plugin operations
+	DevicePluginRegistrationCountKey = "device_plugin_registration_count"
+	DevicePluginAllocationLatencyKey = "device_plugin_alloc_latency_microseconds"
 )
 
 var (
@@ -131,60 +134,28 @@ var (
 		},
 		[]string{"eviction_signal"},
 	)
-	VolumeStatsCapacityBytes = prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
+	DevicePluginRegistrationCount = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
 			Subsystem: KubeletSubsystem,
-			Name:      VolumeStatsCapacityBytesKey,
-			Help:      "Capacity in bytes of the volume",
+			Name:      DevicePluginRegistrationCountKey,
+			Help:      "Cumulative number of device plugin registrations. Broken down by resource name.",
 		},
-		[]string{"namespace", "persistentvolumeclaim"},
+		[]string{"resource_name"},
 	)
-	VolumeStatsAvailableBytes = prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
+	DevicePluginAllocationLatency = prometheus.NewSummaryVec(
+		prometheus.SummaryOpts{
 			Subsystem: KubeletSubsystem,
-			Name:      VolumeStatsAvailableBytesKey,
-			Help:      "Number of available bytes in the volume",
+			Name:      DevicePluginAllocationLatencyKey,
+			Help:      "Latency in microseconds to serve a device plugin Allocation request. Broken down by resource name.",
 		},
-		[]string{"namespace", "persistentvolumeclaim"},
-	)
-	VolumeStatsUsedBytes = prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Subsystem: KubeletSubsystem,
-			Name:      VolumeStatsUsedBytesKey,
-			Help:      "Number of used bytes in the volume",
-		},
-		[]string{"namespace", "persistentvolumeclaim"},
-	)
-	VolumeStatsInodes = prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Subsystem: KubeletSubsystem,
-			Name:      VolumeStatsInodesKey,
-			Help:      "Maximum number of inodes in the volume",
-		},
-		[]string{"namespace", "persistentvolumeclaim"},
-	)
-	VolumeStatsInodesFree = prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Subsystem: KubeletSubsystem,
-			Name:      VolumeStatsInodesFreeKey,
-			Help:      "Number of free inodes in the volume",
-		},
-		[]string{"namespace", "persistentvolumeclaim"},
-	)
-	VolumeStatsInodesUsed = prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Subsystem: KubeletSubsystem,
-			Name:      VolumeStatsInodesUsedKey,
-			Help:      "Number of used inodes in the volume",
-		},
-		[]string{"namespace", "persistentvolumeclaim"},
+		[]string{"resource_name"},
 	)
 )
 
 var registerMetrics sync.Once
 
 // Register all metrics.
-func Register(containerCache kubecontainer.RuntimeCache) {
+func Register(containerCache kubecontainer.RuntimeCache, collectors ...prometheus.Collector) {
 	// Register the metrics.
 	registerMetrics.Do(func() {
 		prometheus.MustRegister(PodWorkerLatency)
@@ -199,12 +170,11 @@ func Register(containerCache kubecontainer.RuntimeCache) {
 		prometheus.MustRegister(RuntimeOperationsLatency)
 		prometheus.MustRegister(RuntimeOperationsErrors)
 		prometheus.MustRegister(EvictionStatsAge)
-		prometheus.MustRegister(VolumeStatsCapacityBytes)
-		prometheus.MustRegister(VolumeStatsAvailableBytes)
-		prometheus.MustRegister(VolumeStatsUsedBytes)
-		prometheus.MustRegister(VolumeStatsInodes)
-		prometheus.MustRegister(VolumeStatsInodesFree)
-		prometheus.MustRegister(VolumeStatsInodesUsed)
+		prometheus.MustRegister(DevicePluginRegistrationCount)
+		prometheus.MustRegister(DevicePluginAllocationLatency)
+		for _, collector := range collectors {
+			prometheus.MustRegister(collector)
+		}
 	})
 }
 

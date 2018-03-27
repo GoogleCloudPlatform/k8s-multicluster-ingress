@@ -27,6 +27,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/diff"
 	genericapirequest "k8s.io/apiserver/pkg/endpoints/request"
 	"k8s.io/apiserver/pkg/registry/generic"
+	genericregistrytest "k8s.io/apiserver/pkg/registry/generic/testing"
 	"k8s.io/apiserver/pkg/registry/rest"
 	etcdtesting "k8s.io/apiserver/pkg/storage/etcd/testing"
 	"k8s.io/kubernetes/pkg/apis/apps"
@@ -41,17 +42,6 @@ func newStorage(t *testing.T) (StatefulSetStorage, *etcdtesting.EtcdTestServer) 
 	restOptions := generic.RESTOptions{StorageConfig: etcdStorage, Decorator: generic.UndecoratedStorage, DeleteCollectionWorkers: 1, ResourcePrefix: "statefulsets"}
 	storage := NewStorage(restOptions)
 	return storage, server
-}
-
-// createStatefulSet is a helper function that returns a StatefulSet with the updated resource version.
-func createStatefulSet(storage *REST, ps apps.StatefulSet, t *testing.T) (apps.StatefulSet, error) {
-	ctx := genericapirequest.WithNamespace(genericapirequest.NewContext(), ps.Namespace)
-	obj, err := storage.Create(ctx, &ps, rest.ValidateAllObjectFunc, false)
-	if err != nil {
-		t.Errorf("Failed to create StatefulSet, %v", err)
-	}
-	newPS := obj.(*apps.StatefulSet)
-	return *newPS, nil
 }
 
 func validNewStatefulSet() *apps.StatefulSet {
@@ -93,7 +83,7 @@ func TestCreate(t *testing.T) {
 	storage, server := newStorage(t)
 	defer server.Terminate(t)
 	defer storage.StatefulSet.Store.DestroyFunc()
-	test := registrytest.New(t, storage.StatefulSet.Store)
+	test := genericregistrytest.New(t, storage.StatefulSet.Store)
 	ps := validNewStatefulSet()
 	ps.ObjectMeta = metav1.ObjectMeta{}
 	test.TestCreate(
@@ -146,7 +136,7 @@ func TestGet(t *testing.T) {
 	storage, server := newStorage(t)
 	defer server.Terminate(t)
 	defer storage.StatefulSet.Store.DestroyFunc()
-	test := registrytest.New(t, storage.StatefulSet.Store)
+	test := genericregistrytest.New(t, storage.StatefulSet.Store)
 	test.TestGet(validNewStatefulSet())
 }
 
@@ -154,7 +144,7 @@ func TestList(t *testing.T) {
 	storage, server := newStorage(t)
 	defer server.Terminate(t)
 	defer storage.StatefulSet.Store.DestroyFunc()
-	test := registrytest.New(t, storage.StatefulSet.Store)
+	test := genericregistrytest.New(t, storage.StatefulSet.Store)
 	test.TestList(validNewStatefulSet())
 }
 
@@ -162,7 +152,7 @@ func TestDelete(t *testing.T) {
 	storage, server := newStorage(t)
 	defer server.Terminate(t)
 	defer storage.StatefulSet.Store.DestroyFunc()
-	test := registrytest.New(t, storage.StatefulSet.Store)
+	test := genericregistrytest.New(t, storage.StatefulSet.Store)
 	test.TestDelete(validNewStatefulSet())
 }
 
@@ -170,7 +160,7 @@ func TestWatch(t *testing.T) {
 	storage, server := newStorage(t)
 	defer server.Terminate(t)
 	defer storage.StatefulSet.Store.DestroyFunc()
-	test := registrytest.New(t, storage.StatefulSet.Store)
+	test := genericregistrytest.New(t, storage.StatefulSet.Store)
 	test.TestWatch(
 		validNewStatefulSet(),
 		// matching labels
