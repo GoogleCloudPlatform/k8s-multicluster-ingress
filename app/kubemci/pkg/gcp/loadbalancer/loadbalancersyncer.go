@@ -33,7 +33,6 @@ import (
 	ingressbe "k8s.io/ingress-gce/pkg/backends"
 	ingressig "k8s.io/ingress-gce/pkg/instances"
 	ingresslb "k8s.io/ingress-gce/pkg/loadbalancers"
-	ingressutils "k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce"
 	"k8s.io/kubernetes/pkg/printers"
 
@@ -163,7 +162,7 @@ func (l *LoadBalancerSyncer) CreateLoadBalancer(ing *v1beta1.Ingress, forceUpdat
 		fmt.Println(umErr)
 		err = multierror.Append(err, umErr)
 	}
-	ingAnnotations := annotations.IngAnnotations(ing.ObjectMeta.Annotations)
+	ingAnnotations := annotations.FromIngress(ing)
 	// Configure HTTP target proxy and forwarding rule, if required.
 	if ingAnnotations.AllowHTTP() {
 		tpLink, tpErr := l.tps.EnsureHttpTargetProxy(l.lbName, umLink, forceUpdate)
@@ -492,7 +491,7 @@ func (l *LoadBalancerSyncer) ingToNodePorts(ing *v1beta1.Ingress, client kubecli
 func (l *LoadBalancerSyncer) getServiceNodePort(be v1beta1.IngressBackend, namespace string, client kubeclient.Interface) (ingressbe.ServicePort, error) {
 	svc, err := getSvc(be.ServiceName, namespace, client)
 	// Refactor this code to get serviceport from a given service and share it with kubernetes/ingress.
-	appProtocols, err := annotations.SvcAnnotations(svc.GetAnnotations()).ApplicationProtocols()
+	appProtocols, err := annotations.FromService(svc).ApplicationProtocols()
 	if err != nil {
 		return ingressbe.ServicePort{}, err
 	}
@@ -519,13 +518,13 @@ PortLoop:
 		return ingressbe.ServicePort{}, fmt.Errorf("could not find matching nodeport for backend %+v and service %s/%s. Looking for port %+v in %v", be, namespace, be.ServiceName, be.ServicePort, svc.Spec.Ports)
 	}
 
-	proto := ingressutils.ProtocolHTTP
+	proto := annotations.ProtocolHTTP
 	if protoStr, exists := appProtocols[port.Name]; exists {
-		proto = ingressutils.AppProtocol(protoStr)
+		proto = annotations.AppProtocol(protoStr)
 	}
 
 	p := ingressbe.ServicePort{
-		Port:     int64(port.NodePort),
+		NodePort: int64(port.NodePort),
 		Protocol: proto,
 		SvcName:  types.NamespacedName{Namespace: namespace, Name: be.ServiceName},
 		SvcPort:  be.ServicePort,

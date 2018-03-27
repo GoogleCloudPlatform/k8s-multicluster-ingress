@@ -86,7 +86,7 @@ func TestEnsureFirewallRule(t *testing.T) {
 		fws := NewFirewallRuleSyncer(namer, fwp, ig)
 		err := fws.EnsureFirewallRule(lbName, []ingressbe.ServicePort{
 			{
-				Port:     c.port,
+				NodePort: c.port,
 				Protocol: "HTTP",
 				SvcName:  types.NamespacedName{Name: kubeSvcName},
 			},
@@ -132,7 +132,7 @@ func TestDeleteFirewallRule(t *testing.T) {
 	}
 	err := fws.EnsureFirewallRule(lbName, []ingressbe.ServicePort{
 		{
-			Port:     port,
+			NodePort: port,
 			Protocol: "HTTP",
 			SvcName:  types.NamespacedName{Name: kubeSvcName},
 		},
@@ -178,7 +178,7 @@ func TestRemoveFromClusters(t *testing.T) {
 	}
 	err := fws.EnsureFirewallRule(lbName, []ingressbe.ServicePort{
 		{
-			Port:     port,
+			NodePort: port,
 			Protocol: "HTTP",
 			SvcName:  types.NamespacedName{Name: kubeSvcName},
 		},

@@ -53,7 +53,7 @@ var _ SSLCertSyncerInterface = &SSLCertSyncer{}
 // See interfaces.go comment.
 func (s *SSLCertSyncer) EnsureSSLCert(lbName string, ing *v1beta1.Ingress, client kubeclient.Interface, forceUpdate bool) (string, error) {
 	fmt.Println("Ensuring ssl cert")
-	annotations := annotations.IngAnnotations(ing.ObjectMeta.Annotations)
+	annotations := annotations.FromIngress(ing)
 	if annotations.UseNamedTLS() != "" {
 		return s.ensurePreSharedSSLCert(lbName, ing, forceUpdate)
 	}
@@ -61,7 +61,7 @@ func (s *SSLCertSyncer) EnsureSSLCert(lbName string, ing *v1beta1.Ingress, clien
 }
 
 func (s *SSLCertSyncer) ensurePreSharedSSLCert(lbName string, ing *v1beta1.Ingress, forceUpdate bool) (string, error) {
-	ingAnnotations := annotations.IngAnnotations(ing.ObjectMeta.Annotations)
+	ingAnnotations := annotations.FromIngress(ing)
 	certName := ingAnnotations.UseNamedTLS()
 	if certName == "" {
 		return "", fmt.Errorf("unexpected empty value for %s annotation", annotations.PreSharedCertKey)

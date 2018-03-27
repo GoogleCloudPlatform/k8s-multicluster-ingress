@@ -81,7 +81,7 @@ func TestEnsureBackendService(t *testing.T) {
 		glog.Infof("test case starting:%v", c.desc)
 		beMap, err := bss.EnsureBackendService(lbName, []ingressbe.ServicePort{
 			{
-				Port:     port,
+				NodePort: port,
 				Protocol: "HTTP",
 				SvcName:  types.NamespacedName{Name: kubeSvcName},
 			},
@@ -138,7 +138,7 @@ func TestDeleteBackendService(t *testing.T) {
 	bss := NewBackendServiceSyncer(namer, bsp)
 	ports := []ingressbe.ServicePort{
 		{
-			Port:     port,
+			NodePort: port,
 			Protocol: "HTTP",
 			SvcName:  types.NamespacedName{Name: kubeSvcName},
 		},
@@ -182,7 +182,7 @@ func TestRemoveFromClusters(t *testing.T) {
 	bss := NewBackendServiceSyncer(namer, bsp)
 	ports := []ingressbe.ServicePort{
 		{
-			Port:     port,
+			NodePort: port,
 			Protocol: "HTTP",
 			SvcName:  types.NamespacedName{Name: kubeSvcName},
 		},

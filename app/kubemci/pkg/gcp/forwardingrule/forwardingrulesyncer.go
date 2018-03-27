@@ -167,7 +167,7 @@ func getStatus(fr *compute.ForwardingRule) (*status.LoadBalancerStatus, error) {
 }
 
 func (s *ForwardingRuleSyncer) ListLoadBalancerStatuses() ([]status.LoadBalancerStatus, error) {
-	var rules *compute.ForwardingRuleList
+	var rules []*compute.ForwardingRule
 	var err error
 	result := []status.LoadBalancerStatus{}
 	if rules, err = s.frp.ListGlobalForwardingRules(); err != nil {
@@ -183,7 +183,7 @@ func (s *ForwardingRuleSyncer) ListLoadBalancerStatuses() ([]status.LoadBalancer
 	}
 	glog.V(5).Infof("rules: %+v", rules)
 	lbsSeen := map[string]bool{}
-	for _, item := range rules.Items {
+	for _, item := range rules {
 		if strings.HasPrefix(item.Name, "mci1") {
 			if lbStatus, decodeErr := status.FromString(item.Description); decodeErr != nil {
 				decodeErr = fmt.Errorf("Error decoding load balancer status: %s", decodeErr)

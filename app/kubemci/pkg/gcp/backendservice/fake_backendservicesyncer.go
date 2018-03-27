@@ -66,14 +66,14 @@ func (h *FakeBackendServiceSyncer) RemoveFromClusters(ports []ingressbe.ServiceP
 	// Convert array to maps for easier lookups.
 	affectedPorts := make(map[int64]bool, len(ports))
 	for _, v := range ports {
-		affectedPorts[v.Port] = true
+		affectedPorts[v.NodePort] = true
 	}
 	removeLinks := make(map[string]bool, len(removeIGLinks))
 	for _, v := range removeIGLinks {
 		removeLinks[v] = true
 	}
 	for _, v := range h.EnsuredBackendServices {
-		if _, has := affectedPorts[v.Port.Port]; !has {
+		if _, has := affectedPorts[v.Port.NodePort]; !has {
 			continue
 		}
 		newIGLinks := []string{}

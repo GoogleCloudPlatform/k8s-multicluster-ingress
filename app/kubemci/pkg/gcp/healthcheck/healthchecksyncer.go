@@ -89,7 +89,7 @@ func (h *HealthCheckSyncer) EnsureHealthCheck(lbName string, ports []ingressbe.S
 			err = multierror.Append(err, hcErr)
 			continue
 		}
-		ensuredHealthChecks[p.Port] = hc
+		ensuredHealthChecks[p.NodePort] = hc
 	}
 	return ensuredHealthChecks, err
 }
@@ -143,7 +143,7 @@ func (h *HealthCheckSyncer) DeleteHealthChecks(ports []ingressbe.ServicePort) er
 }
 
 func (h *HealthCheckSyncer) deleteHealthCheck(port ingressbe.ServicePort) error {
-	name := h.namer.HealthCheckName(port.Port)
+	name := h.namer.HealthCheckName(port.NodePort)
 	glog.V(2).Infof("Deleting health check %s", name)
 	err := h.hcp.DeleteHealthCheck(name)
 	if err != nil {
@@ -242,7 +242,7 @@ func healthCheckMatches(desiredHC, existingHC compute.HealthCheck) bool {
 func (h *HealthCheckSyncer) desiredHealthCheck(lbName string, port ingressbe.ServicePort, path string) (compute.HealthCheck, error) {
 	// Compute the desired health check.
 	hc := compute.HealthCheck{
-		Name:        h.namer.HealthCheckName(port.Port),
+		Name:        h.namer.HealthCheckName(port.NodePort),
 		Description: fmt.Sprintf("Health check for service %s as part of kubernetes multicluster loadbalancer %s", port.Description(), lbName),
 		// How often to health check.
 		CheckIntervalSec: int64(DefaultHealthCheckInterval.Seconds()),
@@ -258,14 +258,14 @@ func (h *HealthCheckSyncer) desiredHealthCheck(lbName string, port ingressbe.Ser
 	switch port.Protocol {
 	case "HTTP":
 		hc.HttpHealthCheck = &compute.HTTPHealthCheck{
-			Port:        port.Port,
+			Port:        port.NodePort,
 			RequestPath: path,
 			ProxyHeader: "NONE",
 		}
 		break
 	case "HTTPS":
 		hc.HttpsHealthCheck = &compute.HTTPSHealthCheck{
-			Port:        port.Port, // TODO(nikhiljindal): Allow customization.
+			Port:        port.NodePort,
 			RequestPath: path,
 			ProxyHeader: "NONE",
 		}
