@@ -47,15 +47,13 @@ type Tester struct {
 	generatesName       bool
 	returnDeletedObject bool
 	namer               func(int) string
-	scheme              *runtime.Scheme
 }
 
-func New(t *testing.T, storage rest.Storage, scheme *runtime.Scheme) *Tester {
+func New(t *testing.T, storage rest.Storage) *Tester {
 	return &Tester{
 		T:       t,
 		storage: storage,
 		namer:   defaultNamer,
-		scheme:  scheme,
 	}
 }
 
@@ -1291,9 +1289,20 @@ func (t *Tester) testListTableConversion(obj runtime.Object, assignFn AssignFunc
 		t.Errorf("expected: %#v, got: %#v", objs, items)
 	}
 
+	m, err := meta.ListAccessor(listObj)
+	if err != nil {
+		t.Fatalf("list should support ListMeta %T: %v", listObj, err)
+	}
+	m.SetContinue("continuetoken")
+	m.SetResourceVersion("11")
+	m.SetSelfLink("/list/link")
+
 	table, err := t.storage.(rest.TableConvertor).ConvertToTable(ctx, listObj, nil)
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
+	}
+	if table.ResourceVersion != "11" || table.SelfLink != "/list/link" || table.Continue != "continuetoken" {
+		t.Errorf("printer lost list meta: %#v", table.ListMeta)
 	}
 	if len(table.Rows) != len(items) {
 		t.Errorf("unexpected number of rows: %v", len(table.Rows))
@@ -1321,7 +1330,7 @@ func (t *Tester) testListTableConversion(obj runtime.Object, assignFn AssignFunc
 			t.Errorf("column %d has unexpected format: %q with type %q", j, column.Format, column.Type)
 		}
 		if column.Priority < 0 || column.Priority > 2 {
-			t.Errorf("column %d has unexpected priority", j, column.Priority)
+			t.Errorf("column %d has unexpected priority: %q", j, column.Priority)
 		}
 		if len(column.Description) == 0 {
 			t.Errorf("column %d has no description", j)
@@ -1332,7 +1341,7 @@ func (t *Tester) testListTableConversion(obj runtime.Object, assignFn AssignFunc
 	}
 	for i, row := range table.Rows {
 		if len(row.Cells) != len(table.ColumnDefinitions) {
-			t.Errorf("row %d did not have the correct number of cells: %d in %v", len(table.ColumnDefinitions), row.Cells)
+			t.Errorf("row %d did not have the correct number of cells: %d in %v", i, len(table.ColumnDefinitions), row.Cells)
 		}
 		for j, cell := range row.Cells {
 			// do not add to this test without discussion - may break clients

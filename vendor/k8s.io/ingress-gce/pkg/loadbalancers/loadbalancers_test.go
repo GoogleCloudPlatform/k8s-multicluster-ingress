@@ -23,10 +23,11 @@ import (
 	compute "google.golang.org/api/compute/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 
+	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/backends"
 	"k8s.io/ingress-gce/pkg/healthchecks"
 	"k8s.io/ingress-gce/pkg/instances"
-	"k8s.io/ingress-gce/pkg/networkendpointgroup"
+	"k8s.io/ingress-gce/pkg/neg"
 	"k8s.io/ingress-gce/pkg/utils"
 )
 
@@ -35,14 +36,14 @@ const (
 )
 
 var (
-	testDefaultBeNodePort = backends.ServicePort{Port: 3000, Protocol: utils.ProtocolHTTP}
+	testDefaultBeNodePort = backends.ServicePort{NodePort: 3000, Protocol: annotations.ProtocolHTTP}
 )
 
 func newFakeLoadBalancerPool(f LoadBalancers, t *testing.T, namer *utils.Namer) LoadBalancerPool {
 	fakeBackends := backends.NewFakeBackendServices(func(op int, be *compute.BackendService) error { return nil })
 	fakeIGs := instances.NewFakeInstanceGroups(sets.NewString(), namer)
 	fakeHCP := healthchecks.NewFakeHealthCheckProvider()
-	fakeNEG := networkendpointgroup.NewFakeNetworkEndpointGroupCloud("test-subnet", "test-network")
+	fakeNEG := neg.NewFakeNetworkEndpointGroupCloud("test-subnet", "test-network")
 	healthChecker := healthchecks.NewHealthChecker(fakeHCP, "/", namer)
 	nodePool := instances.NewNodePool(fakeIGs, namer)
 	nodePool.Init(&instances.FakeZoneLister{Zones: []string{defaultZone}})
@@ -218,6 +219,51 @@ func TestCertRetentionAfterRestart(t *testing.T) {
 	secondPool.Sync([]*L7RuntimeInfo{lbInfo})
 	verifyCertAndProxyLink(primaryCertName, lbInfo.TLS.Cert, f, t)
 
+}
+
+// TestPreSharedToSecretBasedCertUpdate updates from pre-shared cert
+// to secret based cert and verifies the pre-shared cert is retained.
+func TestPreSharedToSecretBasedCertUpdate(t *testing.T) {
+	namer := utils.NewNamer("uid1", "fw1")
+	primaryCertName := namer.SSLCert(namer.LoadBalancer("test"), true)
+	secondaryCertName := namer.SSLCert(namer.LoadBalancer("test"), false)
+
+	lbInfo := &L7RuntimeInfo{
+		Name:      namer.LoadBalancer("test"),
+		AllowHTTP: false,
+	}
+
+	f := NewFakeLoadBalancers(lbInfo.Name, namer)
+	pool := newFakeLoadBalancerPool(f, t, namer)
+
+	// Prepare pre-shared cert.
+	preSharedCert, _ := f.CreateSslCertificate(&compute.SslCertificate{
+		Name:        "test-pre-shared-cert",
+		Certificate: "abc",
+		SelfLink:    "existing",
+	})
+	lbInfo.TLSName = preSharedCert.Name
+
+	// Sync pre-shared cert.
+	pool.Sync([]*L7RuntimeInfo{lbInfo})
+	verifyCertAndProxyLink(preSharedCert.Name, preSharedCert.Certificate, f, t)
+
+	// Updates from pre-shared cert to secret based cert.
+	lbInfo.TLS = &TLSCerts{Key: "key", Cert: "cert"}
+	lbInfo.TLSName = ""
+	// Sync primary cert.
+	pool.Sync([]*L7RuntimeInfo{lbInfo})
+	verifyCertAndProxyLink(primaryCertName, lbInfo.TLS.Cert, f, t)
+
+	// Sync secondary cert.
+	lbInfo.TLS = &TLSCerts{Key: "key2", Cert: "cert2"}
+	pool.Sync([]*L7RuntimeInfo{lbInfo})
+	verifyCertAndProxyLink(secondaryCertName, lbInfo.TLS.Cert, f, t)
+
+	// Check if pre-shared cert is retained.
+	if cert, err := f.GetSslCertificate(preSharedCert.Name); err != nil || cert == nil {
+		t.Fatalf("Want pre-shared certificate %v to exist, got none, err: %v", preSharedCert.Name, err)
+	}
 }
 
 func verifyCertAndProxyLink(certName, certValue string, f *FakeLoadBalancers, t *testing.T) {
@@ -425,7 +471,7 @@ func TestNameParsing(t *testing.T) {
 	namer := utils.NewNamer(clusterName, firewallName)
 	fullName := namer.ForwardingRule(namer.LoadBalancer("testlb"), utils.HTTPProtocol)
 	annotationsMap := map[string]string{
-		fmt.Sprintf("%v/forwarding-rule", utils.K8sAnnotationPrefix): fullName,
+		fmt.Sprintf("%v/forwarding-rule", annotations.StatusPrefix): fullName,
 	}
 	components := namer.ParseName(GCEResourceName(annotationsMap, "forwarding-rule"))
 	t.Logf("components = %+v", components)

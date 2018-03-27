@@ -18,4 +18,3 @@ visit these files first. Examples include PREREQUISITES and README.
 * Files specific to a controller, or files that contain information about
 various controllers, are named using all lower case. Examples include
 configuration and catalog files.
-

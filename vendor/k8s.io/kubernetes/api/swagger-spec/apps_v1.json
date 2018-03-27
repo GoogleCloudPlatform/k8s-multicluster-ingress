@@ -70,7 +70,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -232,7 +232,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -341,7 +341,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -717,7 +717,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -836,7 +836,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -939,7 +939,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -1042,7 +1042,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -1204,7 +1204,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -1313,7 +1313,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -1689,7 +1689,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -1808,7 +1808,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -1911,7 +1911,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -2184,7 +2184,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -2346,7 +2346,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -2455,7 +2455,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -2831,7 +2831,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -2950,7 +2950,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -3053,7 +3053,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -3496,7 +3496,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -3658,7 +3658,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -3767,7 +3767,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -4143,7 +4143,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -4262,7 +4262,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -4365,7 +4365,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -4808,7 +4808,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -4970,7 +4970,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -5079,7 +5079,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -5455,7 +5455,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -5574,7 +5574,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -5677,7 +5677,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -6652,7 +6652,7 @@
      },
      "dnsPolicy": {
       "type": "string",
-      "description": "Set DNS policy for containers within the pod. One of 'ClusterFirstWithHostNet', 'ClusterFirst' or 'Default'. Defaults to \"ClusterFirst\". To have DNS options set along with hostNetwork, you have to specify DNS policy explicitly to 'ClusterFirstWithHostNet'."
+      "description": "Set DNS policy for the pod. Defaults to \"ClusterFirst\". Valid values are 'ClusterFirstWithHostNet', 'ClusterFirst', 'Default' or 'None'. DNS parameters given in DNSConfig will be merged with the policy selected with DNSPolicy. To have DNS options set along with hostNetwork, you have to specify DNS policy explicitly to 'ClusterFirstWithHostNet'."
      },
      "nodeSelector": {
       "type": "object",
@@ -6685,6 +6685,10 @@
      "hostIPC": {
       "type": "boolean",
       "description": "Use the host's ipc namespace. Optional: Default to false."
+     },
+     "shareProcessNamespace": {
+      "type": "boolean",
+      "description": "Share a single process namespace between all of the containers in a pod. When this is set containers will be able to view and signal processes from other containers in the same pod, and the first process in each container will not be assigned PID 1. HostPID and ShareProcessNamespace cannot both be set. Optional: Default to false. This field is alpha-level and is honored only by servers that enable the PodShareProcessNamespace feature."
      },
      "securityContext": {
       "$ref": "v1.PodSecurityContext",
@@ -6729,12 +6733,16 @@
      },
      "priorityClassName": {
       "type": "string",
-      "description": "If specified, indicates the pod's priority. \"SYSTEM\" is a special keyword which indicates the highest priority. Any other name must be defined by creating a PriorityClass object with that name. If not specified, the pod priority will be default or zero if there is no default."
+      "description": "If specified, indicates the pod's priority. \"system-node-critical\" and \"system-cluster-critical\" are two special keywords which indicate the highest priorities with the former being the highest priority. Any other name must be defined by creating a PriorityClass object with that name. If not specified, the pod priority will be default or zero if there is no default."
      },
      "priority": {
       "type": "integer",
       "format": "int32",
       "description": "The priority value. Various system components use this field to find the priority of the pod. When Priority Admission Controller is enabled, it prevents users from setting this field. The admission controller populates this field from PriorityClassName. The higher the value, the higher the priority."
+     },
+     "dnsConfig": {
+      "$ref": "v1.PodDNSConfig",
+      "description": "Specifies the DNS parameters of a pod. Parameters specified here will be merged to the generated DNS configuration based on DNSPolicy."
      }
     }
    },
@@ -6795,7 +6803,7 @@
      },
      "flexVolume": {
       "$ref": "v1.FlexVolumeSource",
-      "description": "FlexVolume represents a generic volume resource that is provisioned/attached using an exec based plugin. This is an alpha feature and may change in future."
+      "description": "FlexVolume represents a generic volume resource that is provisioned/attached using an exec based plugin."
      },
      "cinder": {
       "$ref": "v1.CinderVolumeSource",
@@ -7049,7 +7057,7 @@
     "properties": {
      "targetPortal": {
       "type": "string",
-      "description": "iSCSI target portal. The portal is either an IP or ip_addr:port if the port is other than default (typically TCP ports 860 and 3260)."
+      "description": "iSCSI Target Portal. The Portal is either an IP or ip_addr:port if the port is other than default (typically TCP ports 860 and 3260)."
      },
      "iqn": {
       "type": "string",
@@ -7058,11 +7066,11 @@
      "lun": {
       "type": "integer",
       "format": "int32",
-      "description": "iSCSI target lun number."
+      "description": "iSCSI Target Lun number."
      },
      "iscsiInterface": {
       "type": "string",
-      "description": "Optional: Defaults to 'default' (tcp). iSCSI interface name that uses an iSCSI transport."
+      "description": "iSCSI Interface Name that uses an iSCSI transport. Defaults to 'default' (tcp)."
      },
      "fsType": {
       "type": "string",
@@ -7077,7 +7085,7 @@
       "items": {
        "type": "string"
       },
-      "description": "iSCSI target portal List. The portal is either an IP or ip_addr:port if the port is other than default (typically TCP ports 860 and 3260)."
+      "description": "iSCSI Target Portal List. The portal is either an IP or ip_addr:port if the port is other than default (typically TCP ports 860 and 3260)."
      },
      "chapAuthDiscovery": {
       "type": "boolean",
@@ -7089,11 +7097,11 @@
      },
      "secretRef": {
       "$ref": "v1.LocalObjectReference",
-      "description": "CHAP secret for iSCSI target and initiator authentication"
+      "description": "CHAP Secret for iSCSI target and initiator authentication"
      },
      "initiatorName": {
       "type": "string",
-      "description": "Custom iSCSI initiator name. If initiatorName is specified with iscsiInterface simultaneously, new iSCSI interface \u003ctarget portal\u003e:\u003cvolume name\u003e will be created for the connection."
+      "description": "Custom iSCSI Initiator Name. If initiatorName is specified with iscsiInterface simultaneously, new iSCSI interface \u003ctarget portal\u003e:\u003cvolume name\u003e will be created for the connection."
      }
     }
    },
@@ -7193,7 +7201,7 @@
    },
    "v1.FlexVolumeSource": {
     "id": "v1.FlexVolumeSource",
-    "description": "FlexVolume represents a generic volume resource that is provisioned/attached using an exec based plugin. This is an alpha feature and may change in future.",
+    "description": "FlexVolume represents a generic volume resource that is provisioned/attached using an exec based plugin.",
     "required": [
      "driver"
     ],
@@ -7825,6 +7833,13 @@
       },
       "description": "Pod volumes to mount into the container's filesystem. Cannot be updated."
      },
+     "volumeDevices": {
+      "type": "array",
+      "items": {
+       "$ref": "v1.VolumeDevice"
+      },
+      "description": "volumeDevices is the list of block devices to be used by the container. This is an alpha feature and may change in the future."
+     },
      "livenessProbe": {
       "$ref": "v1.Probe",
       "description": "Periodic probe of container liveness. Container will be restarted if the probe fails. Cannot be updated. More info: https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle#container-probes"
@@ -7904,7 +7919,7 @@
     "properties": {
      "prefix": {
       "type": "string",
-      "description": "An optional identifer to prepend to each key in the ConfigMap. Must be a C_IDENTIFIER."
+      "description": "An optional identifier to prepend to each key in the ConfigMap. Must be a C_IDENTIFIER."
      },
      "configMapRef": {
       "$ref": "v1.ConfigMapEnvSource",
@@ -8069,13 +8084,31 @@
      },
      "mountPropagation": {
       "$ref": "v1.MountPropagationMode",
-      "description": "mountPropagation determines how mounts are propagated from the host to container and the other way around. When not set, MountPropagationHostToContainer is used. This field is alpha in 1.8 and can be reworked or removed in a future release."
+      "description": "mountPropagation determines how mounts are propagated from the host to container and the other way around. When not set, MountPropagationHostToContainer is used. This field is beta in 1.10."
      }
     }
    },
    "v1.MountPropagationMode": {
     "id": "v1.MountPropagationMode",
     "properties": {}
+   },
+   "v1.VolumeDevice": {
+    "id": "v1.VolumeDevice",
+    "description": "volumeDevice describes a mapping of a raw block device within a container.",
+    "required": [
+     "name",
+     "devicePath"
+    ],
+    "properties": {
+     "name": {
+      "type": "string",
+      "description": "name must match the name of a persistentVolumeClaim in the pod"
+     },
+     "devicePath": {
+      "type": "string",
+      "description": "devicePath is the path inside of the container that the device will be mapped to."
+     }
+    }
    },
    "v1.Probe": {
     "id": "v1.Probe",
@@ -8253,6 +8286,11 @@
       "format": "int64",
       "description": "The UID to run the entrypoint of the container process. Defaults to user specified in image metadata if unspecified. May also be set in PodSecurityContext.  If set in both SecurityContext and PodSecurityContext, the value specified in SecurityContext takes precedence."
      },
+     "runAsGroup": {
+      "type": "integer",
+      "format": "int64",
+      "description": "The GID to run the entrypoint of the container process. Uses runtime default if unset. May also be set in PodSecurityContext.  If set in both SecurityContext and PodSecurityContext, the value specified in SecurityContext takes precedence."
+     },
      "runAsNonRoot": {
       "type": "boolean",
       "description": "Indicates that the container must run as a non-root user. If true, the Kubelet will validate the image at runtime to ensure that it does not run as UID 0 (root) and fail to start the container if it does. If unset or false, no such validation will be performed. May also be set in PodSecurityContext.  If set in both SecurityContext and PodSecurityContext, the value specified in SecurityContext takes precedence."
@@ -8325,6 +8363,11 @@
       "type": "integer",
       "format": "int64",
       "description": "The UID to run the entrypoint of the container process. Defaults to user specified in image metadata if unspecified. May also be set in SecurityContext.  If set in both SecurityContext and PodSecurityContext, the value specified in SecurityContext takes precedence for that container."
+     },
+     "runAsGroup": {
+      "type": "integer",
+      "format": "int64",
+      "description": "The GID to run the entrypoint of the container process. Uses runtime default if unset. May also be set in SecurityContext.  If set in both SecurityContext and PodSecurityContext, the value specified in SecurityContext takes precedence for that container."
      },
      "runAsNonRoot": {
       "type": "boolean",
@@ -8582,6 +8625,46 @@
      }
     }
    },
+   "v1.PodDNSConfig": {
+    "id": "v1.PodDNSConfig",
+    "description": "PodDNSConfig defines the DNS parameters of a pod in addition to those generated from DNSPolicy.",
+    "properties": {
+     "nameservers": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "description": "A list of DNS name server IP addresses. This will be appended to the base nameservers generated from DNSPolicy. Duplicated nameservers will be removed."
+     },
+     "searches": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "description": "A list of DNS search domains for host-name lookup. This will be appended to the base search paths generated from DNSPolicy. Duplicated search paths will be removed."
+     },
+     "options": {
+      "type": "array",
+      "items": {
+       "$ref": "v1.PodDNSConfigOption"
+      },
+      "description": "A list of DNS resolver options. This will be merged with the base options generated from DNSPolicy. Duplicated entries will be removed. Resolution options given in Options will override those that appear in the base DNSPolicy."
+     }
+    }
+   },
+   "v1.PodDNSConfigOption": {
+    "id": "v1.PodDNSConfigOption",
+    "description": "PodDNSConfigOption defines DNS resolver options of a pod.",
+    "properties": {
+     "name": {
+      "type": "string",
+      "description": "Required."
+     },
+     "value": {
+      "type": "string"
+     }
+    }
+   },
    "v1.DaemonSetUpdateStrategy": {
     "id": "v1.DaemonSetUpdateStrategy",
     "description": "DaemonSetUpdateStrategy is a struct used to control the update strategy for a DaemonSet.",
@@ -8824,7 +8907,7 @@
      },
      "maxSurge": {
       "type": "string",
-      "description": "The maximum number of pods that can be scheduled above the desired number of pods. Value can be an absolute number (ex: 5) or a percentage of desired pods (ex: 10%). This can not be 0 if MaxUnavailable is 0. Absolute number is calculated from percentage by rounding up. Defaults to 25%. Example: when this is set to 30%, the new RC can be scaled up immediately when the rolling update starts, such that the total number of old and new pods do not exceed 130% of desired pods. Once old pods have been killed, new RC can be scaled up further, ensuring that total number of pods running at any time during the update is atmost 130% of desired pods."
+      "description": "The maximum number of pods that can be scheduled above the desired number of pods. Value can be an absolute number (ex: 5) or a percentage of desired pods (ex: 10%). This can not be 0 if MaxUnavailable is 0. Absolute number is calculated from percentage by rounding up. Defaults to 25%. Example: when this is set to 30%, the new RC can be scaled up immediately when the rolling update starts, such that the total number of old and new pods do not exceed 130% of desired pods. Once old pods have been killed, new RC can be scaled up further, ensuring that total number of pods running at any time during the update is at most 130% of desired pods."
      }
     }
    },
@@ -9268,11 +9351,19 @@
      "storageClassName": {
       "type": "string",
       "description": "Name of the StorageClass required by the claim. More info: https://kubernetes.io/docs/concepts/storage/persistent-volumes#class-1"
+     },
+     "volumeMode": {
+      "$ref": "v1.PersistentVolumeMode",
+      "description": "volumeMode defines what type of volume is required by the claim. Value of Filesystem is implied when not included in claim spec. This is an alpha feature and may change in the future."
      }
     }
    },
    "v1.PersistentVolumeAccessMode": {
     "id": "v1.PersistentVolumeAccessMode",
+    "properties": {}
+   },
+   "v1.PersistentVolumeMode": {
+    "id": "v1.PersistentVolumeMode",
     "properties": {}
    },
    "v1.PersistentVolumeClaimStatus": {

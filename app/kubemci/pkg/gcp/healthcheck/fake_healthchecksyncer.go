@@ -15,7 +15,7 @@
 package healthcheck
 
 import (
-	"google.golang.org/api/compute/v1"
+	compute "google.golang.org/api/compute/v1"
 	"k8s.io/client-go/kubernetes"
 	ingressbe "k8s.io/ingress-gce/pkg/backends"
 )
@@ -45,7 +45,7 @@ func (f *FakeHealthCheckSyncer) EnsureHealthCheck(lbName string, ports []ingress
 			LBName: lbName,
 			Port:   p,
 		})
-		hcMap[p.Port] = &compute.HealthCheck{}
+		hcMap[p.NodePort] = &compute.HealthCheck{}
 	}
 	return hcMap, nil
 }

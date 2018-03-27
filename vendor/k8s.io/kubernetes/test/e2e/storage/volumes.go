@@ -53,9 +53,11 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	clientset "k8s.io/client-go/kubernetes"
-	"k8s.io/kubernetes/pkg/cloudprovider/providers/vsphere"
 	kubeletapis "k8s.io/kubernetes/pkg/kubelet/apis"
 	"k8s.io/kubernetes/test/e2e/framework"
+	"k8s.io/kubernetes/test/e2e/storage/utils"
+	vspheretest "k8s.io/kubernetes/test/e2e/storage/vsphere"
+	imageutils "k8s.io/kubernetes/test/utils/image"
 )
 
 func DeleteCinderVolume(name string) error {
@@ -80,7 +82,7 @@ func DeleteCinderVolume(name string) error {
 }
 
 // These tests need privileged containers, which are disabled by default.
-var _ = SIGDescribe("Volumes", func() {
+var _ = utils.SIGDescribe("Volumes", func() {
 	f := framework.NewDefaultFramework("volume")
 
 	// note that namespace deletion is handled by delete-namespace flag
@@ -259,14 +261,14 @@ var _ = SIGDescribe("Volumes", func() {
 			config := framework.VolumeTestConfig{
 				Namespace:   namespace.Name,
 				Prefix:      "cephfs",
-				ServerImage: framework.CephServerImage,
+				ServerImage: imageutils.GetE2EImage(imageutils.VolumeRBDServer),
 				ServerPorts: []int{6789},
 			}
 
 			defer framework.VolumeTestCleanup(f, config)
 			_, serverIP := framework.CreateStorageServer(cs, config)
 			By("sleeping a bit to give ceph server time to initialize")
-			time.Sleep(20 * time.Second)
+			time.Sleep(framework.VolumeServerPodStartupSleep)
 
 			// create ceph secret
 			secret := &v1.Secret{
@@ -277,10 +279,9 @@ var _ = SIGDescribe("Volumes", func() {
 				ObjectMeta: metav1.ObjectMeta{
 					Name: config.Prefix + "-secret",
 				},
-				// Must use the ceph keyring at contrib/for-tests/volumes-ceph/ceph/init.sh
-				// and encode in base64
+				// from test/images/volumes-tester/rbd/keyring
 				Data: map[string][]byte{
-					"key": []byte("AQAMgXhVwBCeDhAA9nlPaFyfUSatGD4drFWDvQ=="),
+					"key": []byte("AQDRrKNVbEevChAAEmRC+pW/KBVHxa0w/POILA=="),
 				},
 				Type: "kubernetes.io/cephfs",
 			}
@@ -501,20 +502,18 @@ var _ = SIGDescribe("Volumes", func() {
 	Describe("vsphere [Feature:Volumes]", func() {
 		It("should be mountable", func() {
 			framework.SkipUnlessProviderIs("vsphere")
+			vspheretest.Bootstrap(f)
+			nodeInfo := vspheretest.GetReadySchedulableRandomNodeInfo()
 			var volumePath string
 			config := framework.VolumeTestConfig{
 				Namespace: namespace.Name,
 				Prefix:    "vsphere",
 			}
-			By("creating a test vsphere volume")
-			vsp, err := vsphere.GetVSphere()
-			Expect(err).NotTo(HaveOccurred())
-
-			volumePath, err = createVSphereVolume(vsp, nil)
+			volumePath, err := nodeInfo.VSphere.CreateVolume(&vspheretest.VolumeOptions{}, nodeInfo.DataCenterRef)
 			Expect(err).NotTo(HaveOccurred())
 
 			defer func() {
-				vsp.DeleteVolume(volumePath)
+				nodeInfo.VSphere.DeleteVolume(volumePath, nodeInfo.DataCenterRef)
 			}()
 
 			defer func() {

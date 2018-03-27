@@ -17,7 +17,6 @@ limitations under the License.
 package controller
 
 import (
-	"fmt"
 	"testing"
 	"time"
 
@@ -25,12 +24,10 @@ import (
 
 	api_v1 "k8s.io/api/core/v1"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/sets"
+
 	"k8s.io/ingress-gce/pkg/annotations"
-	"k8s.io/ingress-gce/pkg/backends"
-	"k8s.io/ingress-gce/pkg/utils"
+	"k8s.io/ingress-gce/pkg/flags"
 )
 
 // Pods created in loops start from this time, for routines that
@@ -38,7 +35,7 @@ import (
 var firstPodCreationTime = time.Date(2006, 01, 02, 15, 04, 05, 0, time.UTC)
 
 func TestZoneListing(t *testing.T) {
-	cm := NewFakeClusterManager(DefaultClusterUID, DefaultFirewallName)
+	cm := NewFakeClusterManager(flags.DefaultClusterUID, DefaultFirewallName)
 	lbc := newLoadBalancerController(t, cm)
 	zoneToNode := map[string][]string{
 		"zone-1": {"n1"},
@@ -63,7 +60,7 @@ func TestZoneListing(t *testing.T) {
 }
 
 func TestInstancesAddedToZones(t *testing.T) {
-	cm := NewFakeClusterManager(DefaultClusterUID, DefaultFirewallName)
+	cm := NewFakeClusterManager(flags.DefaultClusterUID, DefaultFirewallName)
 	lbc := newLoadBalancerController(t, cm)
 	zoneToNode := map[string][]string{
 		"zone-1": {"n1", "n2"},
@@ -91,152 +88,6 @@ func TestInstancesAddedToZones(t *testing.T) {
 	}
 }
 
-func TestProbeGetter(t *testing.T) {
-	cm := NewFakeClusterManager(DefaultClusterUID, DefaultFirewallName)
-	lbc := newLoadBalancerController(t, cm)
-
-	nodePortToHealthCheck := map[backends.ServicePort]string{
-		{Port: 3001, Protocol: utils.ProtocolHTTP}:  "/healthz",
-		{Port: 3002, Protocol: utils.ProtocolHTTPS}: "/foo",
-	}
-	addPods(lbc, nodePortToHealthCheck, api_v1.NamespaceDefault)
-	for p, exp := range nodePortToHealthCheck {
-		got, err := lbc.Translator.GetProbe(p)
-		if err != nil || got == nil {
-			t.Errorf("Failed to get probe for node port %v: %v", p, err)
-		} else if getProbePath(got) != exp {
-			t.Errorf("Wrong path for node port %v, got %v expected %v", p, getProbePath(got), exp)
-		}
-	}
-}
-
-func TestProbeGetterNamedPort(t *testing.T) {
-	cm := NewFakeClusterManager(DefaultClusterUID, DefaultFirewallName)
-	lbc := newLoadBalancerController(t, cm)
-	nodePortToHealthCheck := map[backends.ServicePort]string{
-		{Port: 3001, Protocol: utils.ProtocolHTTP}: "/healthz",
-	}
-	addPods(lbc, nodePortToHealthCheck, api_v1.NamespaceDefault)
-	for _, p := range lbc.podLister.Indexer.List() {
-		pod := p.(*api_v1.Pod)
-		pod.Spec.Containers[0].Ports[0].Name = "test"
-		pod.Spec.Containers[0].ReadinessProbe.Handler.HTTPGet.Port = intstr.IntOrString{Type: intstr.String, StrVal: "test"}
-	}
-	for p, exp := range nodePortToHealthCheck {
-		got, err := lbc.Translator.GetProbe(p)
-		if err != nil || got == nil {
-			t.Errorf("Failed to get probe for node port %v: %v", p, err)
-		} else if getProbePath(got) != exp {
-			t.Errorf("Wrong path for node port %v, got %v expected %v", p, getProbePath(got), exp)
-		}
-	}
-
-}
-
-func TestProbeGetterCrossNamespace(t *testing.T) {
-	cm := NewFakeClusterManager(DefaultClusterUID, DefaultFirewallName)
-	lbc := newLoadBalancerController(t, cm)
-
-	firstPod := &api_v1.Pod{
-		ObjectMeta: meta_v1.ObjectMeta{
-			// labels match those added by "addPods", but ns and health check
-			// path is different. If this pod was created in the same ns, it
-			// would become the health check.
-			Labels:            map[string]string{"app-3001": "test"},
-			Name:              fmt.Sprintf("test-pod-new-ns"),
-			Namespace:         "new-ns",
-			CreationTimestamp: meta_v1.NewTime(firstPodCreationTime.Add(-time.Duration(time.Hour))),
-		},
-		Spec: api_v1.PodSpec{
-			Containers: []api_v1.Container{
-				{
-					Ports: []api_v1.ContainerPort{{ContainerPort: 80}},
-					ReadinessProbe: &api_v1.Probe{
-						Handler: api_v1.Handler{
-							HTTPGet: &api_v1.HTTPGetAction{
-								Scheme: api_v1.URISchemeHTTP,
-								Path:   "/badpath",
-								Port: intstr.IntOrString{
-									Type:   intstr.Int,
-									IntVal: 80,
-								},
-							},
-						},
-					},
-				},
-			},
-		},
-	}
-	lbc.podLister.Indexer.Add(firstPod)
-	nodePortToHealthCheck := map[backends.ServicePort]string{
-		{Port: 3001, Protocol: utils.ProtocolHTTP}: "/healthz",
-	}
-	addPods(lbc, nodePortToHealthCheck, api_v1.NamespaceDefault)
-
-	for p, exp := range nodePortToHealthCheck {
-		got, err := lbc.Translator.GetProbe(p)
-		if err != nil || got == nil {
-			t.Errorf("Failed to get probe for node port %v: %v", p, err)
-		} else if getProbePath(got) != exp {
-			t.Errorf("Wrong path for node port %v, got %v expected %v", p, getProbePath(got), exp)
-		}
-	}
-}
-
-func addPods(lbc *LoadBalancerController, nodePortToHealthCheck map[backends.ServicePort]string, ns string) {
-	delay := time.Minute
-	for np, u := range nodePortToHealthCheck {
-		l := map[string]string{fmt.Sprintf("app-%d", np.Port): "test"}
-		svc := &api_v1.Service{
-			Spec: api_v1.ServiceSpec{
-				Selector: l,
-				Ports: []api_v1.ServicePort{
-					{
-						NodePort: int32(np.Port),
-						TargetPort: intstr.IntOrString{
-							Type:   intstr.Int,
-							IntVal: 80,
-						},
-					},
-				},
-			},
-		}
-		svc.Name = fmt.Sprintf("%d", np.Port)
-		svc.Namespace = ns
-		lbc.svcLister.Indexer.Add(svc)
-
-		pod := &api_v1.Pod{
-			ObjectMeta: meta_v1.ObjectMeta{
-				Labels:            l,
-				Name:              fmt.Sprintf("%d", np.Port),
-				Namespace:         ns,
-				CreationTimestamp: meta_v1.NewTime(firstPodCreationTime.Add(delay)),
-			},
-			Spec: api_v1.PodSpec{
-				Containers: []api_v1.Container{
-					{
-						Ports: []api_v1.ContainerPort{{Name: "test", ContainerPort: 80}},
-						ReadinessProbe: &api_v1.Probe{
-							Handler: api_v1.Handler{
-								HTTPGet: &api_v1.HTTPGetAction{
-									Scheme: api_v1.URIScheme(string(np.Protocol)),
-									Path:   u,
-									Port: intstr.IntOrString{
-										Type:   intstr.Int,
-										IntVal: 80,
-									},
-								},
-							},
-						},
-					},
-				},
-			},
-		}
-		lbc.podLister.Indexer.Add(pod)
-		delay = 2 * delay
-	}
-}
-
 func addNodes(lbc *LoadBalancerController, zoneToNode map[string][]string) {
 	for zone, nodes := range zoneToNode {
 		for _, node := range nodes {
@@ -253,7 +104,7 @@ func addNodes(lbc *LoadBalancerController, zoneToNode map[string][]string) {
 					},
 				},
 			}
-			lbc.nodeLister.Indexer.Add(n)
+			lbc.nodeLister.Add(n)
 		}
 	}
 	lbc.CloudClusterManager.instancePool.Init(lbc.Translator)
@@ -303,97 +154,70 @@ func TestAddInstanceGroupsAnnotation(t *testing.T) {
 	}
 }
 
-func TestGatherFirewallPorts(t *testing.T) {
-	cm := NewFakeClusterManager(DefaultClusterUID, DefaultFirewallName)
-	lbc := newLoadBalancerController(t, cm)
-	lbc.CloudClusterManager.defaultBackendNodePort.Port = int64(30000)
-
-	ep1 := "ep1"
-	ep2 := "ep2"
-
-	svcPorts := []backends.ServicePort{
-		{Port: int64(30001)},
-		{Port: int64(30002)},
+func TestNodeStatusChanged(t *testing.T) {
+	testCases := []struct {
+		desc   string
+		mutate func(node *api_v1.Node)
+		expect bool
+	}{
 		{
-			SvcName: types.NamespacedName{
-				"ns",
-				ep1,
-			},
-			Port:          int64(30003),
-			NEGEnabled:    true,
-			SvcTargetPort: "80",
+			"no change",
+			func(node *api_v1.Node) {},
+			false,
 		},
 		{
-			SvcName: types.NamespacedName{
-				"ns",
-				ep2,
+			"unSchedulable changes",
+			func(node *api_v1.Node) {
+				node.Spec.Unschedulable = true
 			},
-			Port:          int64(30004),
-			NEGEnabled:    true,
-			SvcTargetPort: "named-port",
+			true,
+		},
+		{
+			"readiness changes",
+			func(node *api_v1.Node) {
+				node.Status.Conditions[0].Status = api_v1.ConditionFalse
+				node.Status.Conditions[0].LastTransitionTime = meta_v1.NewTime(time.Now())
+			},
+			true,
+		},
+		{
+			"new heartbeat",
+			func(node *api_v1.Node) {
+				node.Status.Conditions[0].LastHeartbeatTime = meta_v1.NewTime(time.Now())
+			},
+			false,
 		},
 	}
 
-	lbc.endpointLister.Indexer.Add(newDefaultEndpoint(ep1))
-	lbc.endpointLister.Indexer.Add(newDefaultEndpoint(ep2))
-
-	res := lbc.Translator.gatherFirewallPorts(svcPorts, true)
-	expect := map[int64]bool{
-		int64(30000): true,
-		int64(30001): true,
-		int64(30002): true,
-		int64(80):    true,
-		int64(8080):  true,
-		int64(8081):  true,
-	}
-	if len(res) != len(expect) {
-		t.Errorf("got firewall ports == %v, want %v", res, expect)
-	}
-
-	for _, p := range res {
-		if _, ok := expect[p]; !ok {
-			t.Errorf("firewall port %v is missing, (got %v, want %v)", p, res, expect)
+	for _, tc := range testCases {
+		node := testNode()
+		tc.mutate(node)
+		res := nodeStatusChanged(testNode(), node)
+		if res != tc.expect {
+			t.Fatalf("Test case %q got: %v, expected: %v", tc.desc, res, tc.expect)
 		}
 	}
 }
 
-func newDefaultEndpoint(name string) *api_v1.Endpoints {
-	return &api_v1.Endpoints{
+func testNode() *api_v1.Node {
+	return &api_v1.Node{
 		ObjectMeta: meta_v1.ObjectMeta{
-			Name:      name,
 			Namespace: "ns",
+			Name:      "node",
+			Annotations: map[string]string{
+				"key1": "value1",
+			},
 		},
-		Subsets: []api_v1.EndpointSubset{
-			{
-				Ports: []api_v1.EndpointPort{
-					{
-						Name:     "",
-						Port:     int32(80),
-						Protocol: api_v1.ProtocolTCP,
-					},
-					{
-						Name:     "named-port",
-						Port:     int32(8080),
-						Protocol: api_v1.ProtocolTCP,
-					},
-				},
-			},
-			{
-				Ports: []api_v1.EndpointPort{
-					{
-						Name:     "named-port",
-						Port:     int32(80),
-						Protocol: api_v1.ProtocolTCP,
-					},
-				},
-			},
-			{
-				Ports: []api_v1.EndpointPort{
-					{
-						Name:     "named-port",
-						Port:     int32(8081),
-						Protocol: api_v1.ProtocolTCP,
-					},
+		Spec: api_v1.NodeSpec{
+			Unschedulable: false,
+		},
+		Status: api_v1.NodeStatus{
+			Conditions: []api_v1.NodeCondition{
+				{
+					Type:               api_v1.NodeReady,
+					Status:             api_v1.ConditionTrue,
+					LastHeartbeatTime:  meta_v1.NewTime(time.Date(2000, 01, 1, 1, 0, 0, 0, time.UTC)),
+					LastTransitionTime: meta_v1.NewTime(time.Date(2000, 01, 1, 1, 0, 0, 0, time.UTC)),
 				},
 			},
 		},

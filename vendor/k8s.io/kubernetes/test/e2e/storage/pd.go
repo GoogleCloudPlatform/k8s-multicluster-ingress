@@ -40,6 +40,7 @@ import (
 	v1core "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/kubernetes/pkg/api/testapi"
 	"k8s.io/kubernetes/test/e2e/framework"
+	"k8s.io/kubernetes/test/e2e/storage/utils"
 )
 
 const (
@@ -52,7 +53,7 @@ const (
 	minNodes            = 2
 )
 
-var _ = SIGDescribe("Pod Disks", func() {
+var _ = utils.SIGDescribe("Pod Disks", func() {
 	var (
 		ns         string
 		cs         clientset.Interface
@@ -68,6 +69,8 @@ var _ = SIGDescribe("Pod Disks", func() {
 		framework.SkipUnlessNodeCountIsAtLeast(minNodes)
 		cs = f.ClientSet
 		ns = f.Namespace.Name
+
+		framework.SkipIfMultizone(cs)
 
 		podClient = cs.CoreV1().Pods(ns)
 		nodeClient = cs.CoreV1().Nodes()
@@ -215,7 +218,6 @@ var _ = SIGDescribe("Pod Disks", func() {
 	})
 
 	Context("schedule a pod w/ RW PD(s) mounted to 1 or more containers, write to PD, verify content, delete pod, and repeat in rapid succession [Slow]", func() {
-		var diskNames []string
 		type testT struct {
 			numContainers int
 			numPDs        int
@@ -243,6 +245,7 @@ var _ = SIGDescribe("Pod Disks", func() {
 				var host0Pod *v1.Pod
 				var err error
 				fileAndContentToVerify := make(map[string]string)
+				diskNames := make([]string, 0, numPDs)
 
 				By(fmt.Sprintf("creating %d PD(s)", numPDs))
 				for i := 0; i < numPDs; i++ {
@@ -389,8 +392,8 @@ var _ = SIGDescribe("Pod Disks", func() {
 					Expect(true, strings.Contains(string(output), string(host0Name)))
 
 					By("deleting host0")
-					resp, err := gceCloud.DeleteInstance(framework.TestContext.CloudConfig.ProjectID, framework.TestContext.CloudConfig.Zone, string(host0Name))
-					framework.ExpectNoError(err, fmt.Sprintf("Failed to delete host0Pod: err=%v response=%#v", err, resp))
+					err = gceCloud.DeleteInstance(framework.TestContext.CloudConfig.ProjectID, framework.TestContext.CloudConfig.Zone, string(host0Name))
+					framework.ExpectNoError(err, fmt.Sprintf("Failed to delete host0Pod: err=%v", err))
 					By("expecting host0 node to be re-created")
 					numNodes := countReadyNodes(cs, host0Name)
 					Expect(numNodes).To(Equal(origNodeCnt), fmt.Sprintf("Requires current node count (%d) to return to original node count (%d)", numNodes, origNodeCnt))

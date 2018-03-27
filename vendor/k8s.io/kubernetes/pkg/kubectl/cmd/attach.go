@@ -71,7 +71,8 @@ func NewCmdAttach(f cmdutil.Factory, cmdIn io.Reader, cmdOut, cmdErr io.Writer) 
 		Attach: &DefaultRemoteAttach{},
 	}
 	cmd := &cobra.Command{
-		Use:     "attach (POD | TYPE/NAME) -c CONTAINER",
+		Use: "attach (POD | TYPE/NAME) -c CONTAINER",
+		DisableFlagsInUseLine: true,
 		Short:   i18n.T("Attach to a running container"),
 		Long:    "Attach to a process that is already running inside an existing container.",
 		Example: attachExample,
@@ -82,9 +83,9 @@ func NewCmdAttach(f cmdutil.Factory, cmdIn io.Reader, cmdOut, cmdErr io.Writer) 
 		},
 	}
 	cmdutil.AddPodRunningTimeoutFlag(cmd, defaultPodAttachTimeout)
-	cmd.Flags().StringVarP(&options.ContainerName, "container", "c", "", "Container name. If omitted, the first container in the pod will be chosen")
-	cmd.Flags().BoolVarP(&options.Stdin, "stdin", "i", false, "Pass stdin to the container")
-	cmd.Flags().BoolVarP(&options.TTY, "tty", "t", false, "Stdin is a TTY")
+	cmd.Flags().StringVarP(&options.ContainerName, "container", "c", options.ContainerName, "Container name. If omitted, the first container in the pod will be chosen")
+	cmd.Flags().BoolVarP(&options.Stdin, "stdin", "i", options.Stdin, "Pass stdin to the container")
+	cmd.Flags().BoolVarP(&options.TTY, "tty", "t", options.TTY, "Stdin is a TTY")
 	return cmd
 }
 
@@ -114,7 +115,8 @@ func (*DefaultRemoteAttach) Attach(method string, url *url.URL, config *restclie
 type AttachOptions struct {
 	StreamOptions
 
-	CommandName string
+	CommandName       string
+	SuggestedCmdUsage string
 
 	Pod *api.Pod
 
@@ -144,6 +146,7 @@ func (p *AttachOptions) Complete(f cmdutil.Factory, cmd *cobra.Command, argsIn [
 	}
 
 	builder := f.NewBuilder().
+		Internal().
 		NamespaceParam(namespace).DefaultNamespace()
 
 	switch len(argsIn) {
@@ -165,6 +168,15 @@ func (p *AttachOptions) Complete(f cmdutil.Factory, cmd *cobra.Command, argsIn [
 
 	p.PodName = attachablePod.Name
 	p.Namespace = namespace
+
+	fullCmdName := ""
+	cmdParent := cmd.Parent()
+	if cmdParent != nil {
+		fullCmdName = cmdParent.CommandPath()
+	}
+	if len(fullCmdName) > 0 && cmdutil.IsSiblingCommandExists(cmd, "describe") {
+		p.SuggestedCmdUsage = fmt.Sprintf("Use '%s describe pod/%s -n %s' to see all of the containers in this pod.", fullCmdName, p.PodName, p.Namespace)
+	}
 
 	config, err := f.ClientConfig()
 	if err != nil {
@@ -258,11 +270,6 @@ func (p *AttachOptions) Run() error {
 	}
 
 	fn := func() error {
-
-		if !p.Quiet && stderr != nil {
-			fmt.Fprintln(stderr, "If you don't see a command prompt, try pressing enter.")
-		}
-
 		restClient, err := restclient.RESTClientFor(p.Config)
 		if err != nil {
 			return err
@@ -284,6 +291,9 @@ func (p *AttachOptions) Run() error {
 		return p.Attach.Attach("POST", req.URL(), p.Config, p.In, p.Out, p.Err, t.Raw, sizeQueue)
 	}
 
+	if !p.Quiet && stderr != nil {
+		fmt.Fprintln(stderr, "If you don't see a command prompt, try pressing enter.")
+	}
 	if err := t.Safe(fn); err != nil {
 		return err
 	}
@@ -309,6 +319,11 @@ func (p *AttachOptions) containerToAttachTo(pod *api.Pod) (*api.Container, error
 			}
 		}
 		return nil, fmt.Errorf("container not found (%s)", p.ContainerName)
+	}
+
+	if len(p.SuggestedCmdUsage) > 0 {
+		fmt.Fprintf(p.Err, "Defaulting container name to %s.\n", pod.Spec.Containers[0].Name)
+		fmt.Fprintf(p.Err, "%s\n", p.SuggestedCmdUsage)
 	}
 
 	glog.V(4).Infof("defaulting container name to %s", pod.Spec.Containers[0].Name)

@@ -14,8 +14,5 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// utils contains odd structs, constants etc that don't fit cleanly into any
-// sub-module because they're shared. Ideally this module wouldn't exist, but
-// sharing these odd bits reduces margin for error.
-
+// Package utils contains shared data structures and functions.
 package utils

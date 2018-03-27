@@ -87,7 +87,7 @@ type PrefixWriter interface {
 	Write(level int, format string, a ...interface{})
 	// WriteLine writes an entire line with no indentation level.
 	WriteLine(a ...interface{})
-	// Flush forces indendation to be reset.
+	// Flush forces indentation to be reset.
 	Flush()
 }
 
@@ -636,7 +636,7 @@ func describePod(pod *api.Pod, events *api.EventList) (string, error) {
 		printLabelsMultiline(w, "Labels", pod.Labels)
 		printAnnotationsMultiline(w, "Annotations", pod.Annotations)
 		if pod.DeletionTimestamp != nil {
-			w.Write(LEVEL_0, "Status:\tTerminating (expires %s)\n", pod.DeletionTimestamp.Time.Format(time.RFC1123Z))
+			w.Write(LEVEL_0, "Status:\tTerminating (lasts %s)\n", translateTimestamp(*pod.DeletionTimestamp))
 			w.Write(LEVEL_0, "Termination Grace Period:\t%ds\n", *pod.DeletionGracePeriodSeconds)
 		} else {
 			w.Write(LEVEL_0, "Status:\t%s\n", string(pod.Status.Phase))
@@ -650,6 +650,9 @@ func describePod(pod *api.Pod, events *api.EventList) (string, error) {
 		w.Write(LEVEL_0, "IP:\t%s\n", pod.Status.PodIP)
 		if controlledBy := printController(pod); len(controlledBy) > 0 {
 			w.Write(LEVEL_0, "Controlled By:\t%s\n", controlledBy)
+		}
+		if len(pod.Status.NominatedNodeName) > 0 {
+			w.Write(LEVEL_0, "NominatedNodeName:\t%s\n", pod.Status.NominatedNodeName)
 		}
 
 		if len(pod.Spec.InitContainers) > 0 {
@@ -856,6 +859,26 @@ func printISCSIVolumeSource(iscsi *api.ISCSIVolumeSource, w PrefixWriter) {
 		iscsi.TargetPortal, iscsi.IQN, iscsi.Lun, iscsi.ISCSIInterface, iscsi.FSType, iscsi.ReadOnly, iscsi.Portals, iscsi.DiscoveryCHAPAuth, iscsi.SessionCHAPAuth, iscsi.SecretRef, initiator)
 }
 
+func printISCSIPersistentVolumeSource(iscsi *api.ISCSIPersistentVolumeSource, w PrefixWriter) {
+	initiatorName := "<none>"
+	if iscsi.InitiatorName != nil {
+		initiatorName = *iscsi.InitiatorName
+	}
+	w.Write(LEVEL_2, "Type:\tISCSI (an ISCSI Disk resource that is attached to a kubelet's host machine and then exposed to the pod)\n"+
+		"    TargetPortal:\t%v\n"+
+		"    IQN:\t%v\n"+
+		"    Lun:\t%v\n"+
+		"    ISCSIInterface\t%v\n"+
+		"    FSType:\t%v\n"+
+		"    ReadOnly:\t%v\n"+
+		"    Portals:\t%v\n"+
+		"    DiscoveryCHAPAuth:\t%v\n"+
+		"    SessionCHAPAuth:\t%v\n"+
+		"    SecretRef:\t%v\n"+
+		"    InitiatorName:\t%v\n",
+		iscsi.TargetPortal, iscsi.IQN, iscsi.Lun, iscsi.ISCSIInterface, iscsi.FSType, iscsi.ReadOnly, iscsi.Portals, iscsi.DiscoveryCHAPAuth, iscsi.SessionCHAPAuth, iscsi.SecretRef, initiatorName)
+}
+
 func printGlusterfsVolumeSource(glusterfs *api.GlusterfsVolumeSource, w PrefixWriter) {
 	w.Write(LEVEL_2, "Type:\tGlusterfs (a Glusterfs mount on the host that shares a pod's lifetime)\n"+
 		"    EndpointsName:\t%v\n"+
@@ -923,7 +946,7 @@ func printAzureDiskVolumeSource(d *api.AzureDiskVolumeSource, w PrefixWriter) {
 func printVsphereVolumeSource(vsphere *api.VsphereVirtualDiskVolumeSource, w PrefixWriter) {
 	w.Write(LEVEL_2, "Type:\tvSphereVolume (a Persistent Disk resource in vSphere)\n"+
 		"    VolumePath:\t%v\n"+
-		"    FSType:\t%v\n",
+		"    FSType:\t%v\n"+
 		"    StoragePolicyName:\t%v\n",
 		vsphere.VolumePath, vsphere.FSType, vsphere.StoragePolicyName)
 }
@@ -1056,12 +1079,22 @@ func printAzureFilePersistentVolumeSource(azureFile *api.AzureFilePersistentVolu
 		azureFile.SecretName, ns, azureFile.ShareName, azureFile.ReadOnly)
 }
 
+func printFlexPersistentVolumeSource(flex *api.FlexPersistentVolumeSource, w PrefixWriter) {
+	w.Write(LEVEL_2, "Type:\tFlexVolume (a generic volume resource that is provisioned/attached using an exec based plugin)\n"+
+		"    Driver:\t%v\n"+
+		"    FSType:\t%v\n"+
+		"    SecretRef:\t%v\n"+
+		"    ReadOnly:\t%v\n"+
+		"    Options:\t%v\n",
+		flex.Driver, flex.FSType, flex.SecretRef, flex.ReadOnly, flex.Options)
+}
+
 func printFlexVolumeSource(flex *api.FlexVolumeSource, w PrefixWriter) {
 	w.Write(LEVEL_2, "Type:\tFlexVolume (a generic volume resource that is provisioned/attached using an exec based plugin)\n"+
 		"    Driver:\t%v\n"+
 		"    FSType:\t%v\n"+
 		"    SecretRef:\t%v\n"+
-		"    ReadOnly:\t%v\n",
+		"    ReadOnly:\t%v\n"+
 		"    Options:\t%v\n",
 		flex.Driver, flex.FSType, flex.SecretRef, flex.ReadOnly, flex.Options)
 }
@@ -1071,6 +1104,14 @@ func printFlockerVolumeSource(flocker *api.FlockerVolumeSource, w PrefixWriter) 
 		"    DatasetName:\t%v\n"+
 		"    DatasetUUID:\t%v\n",
 		flocker.DatasetName, flocker.DatasetUUID)
+}
+
+func printCSIPersistentVolumeSource(csi *api.CSIPersistentVolumeSource, w PrefixWriter) {
+	w.Write(LEVEL_2, "Type:\tCSI (a Container Storage Interface (CSI) volume source)\n"+
+		"    Driver:\t%v\n"+
+		"    VolumeHandle:\t%v\n"+
+		"    ReadOnly:\t%v\n",
+		csi.Driver, csi.VolumeHandle, csi.ReadOnly)
 }
 
 type PersistentVolumeDescriber struct {
@@ -1093,14 +1134,61 @@ func (d *PersistentVolumeDescriber) Describe(namespace, name string, describerSe
 	return describePersistentVolume(pv, events)
 }
 
+func printVolumeNodeAffinity(w PrefixWriter, affinity *api.VolumeNodeAffinity) {
+	w.Write(LEVEL_0, "Node Affinity:\t")
+	if affinity == nil || affinity.Required == nil {
+		w.WriteLine("<none>")
+		return
+	}
+	w.WriteLine("")
+
+	if affinity.Required != nil {
+		w.Write(LEVEL_1, "Required Terms:\t")
+		if len(affinity.Required.NodeSelectorTerms) == 0 {
+			w.WriteLine("<none>")
+		} else {
+			w.WriteLine("")
+			for i, term := range affinity.Required.NodeSelectorTerms {
+				printNodeSelectorTermsMultilineWithIndent(w, LEVEL_2, fmt.Sprintf("Term %v", i), "\t", term.MatchExpressions)
+			}
+		}
+	}
+}
+
+// printLabelsMultiline prints multiple labels with a user-defined alignment.
+func printNodeSelectorTermsMultilineWithIndent(w PrefixWriter, indentLevel int, title, innerIndent string, reqs []api.NodeSelectorRequirement) {
+	w.Write(indentLevel, "%s:%s", title, innerIndent)
+
+	if len(reqs) == 0 {
+		w.WriteLine("<none>")
+		return
+	}
+
+	for i, req := range reqs {
+		if i != 0 {
+			w.Write(indentLevel, "%s", innerIndent)
+		}
+		exprStr := fmt.Sprintf("%s %s", req.Key, strings.ToLower(string(req.Operator)))
+		if len(req.Values) > 0 {
+			exprStr = fmt.Sprintf("%s [%s]", exprStr, strings.Join(req.Values, ", "))
+		}
+		w.Write(LEVEL_0, "%s\n", exprStr)
+	}
+}
+
 func describePersistentVolume(pv *api.PersistentVolume, events *api.EventList) (string, error) {
 	return tabbedString(func(out io.Writer) error {
 		w := NewPrefixWriter(out)
 		w.Write(LEVEL_0, "Name:\t%s\n", pv.Name)
 		printLabelsMultiline(w, "Labels", pv.Labels)
 		printAnnotationsMultiline(w, "Annotations", pv.Annotations)
+		w.Write(LEVEL_0, "Finalizers:\t%v\n", pv.ObjectMeta.Finalizers)
 		w.Write(LEVEL_0, "StorageClass:\t%s\n", helper.GetPersistentVolumeClass(pv))
-		w.Write(LEVEL_0, "Status:\t%s\n", pv.Status.Phase)
+		if pv.ObjectMeta.DeletionTimestamp != nil {
+			w.Write(LEVEL_0, "Status:\tTerminating (lasts %s)\n", translateTimestamp(*pv.ObjectMeta.DeletionTimestamp))
+		} else {
+			w.Write(LEVEL_0, "Status:\t%v\n", pv.Status.Phase)
+		}
 		if pv.Spec.ClaimRef != nil {
 			w.Write(LEVEL_0, "Claim:\t%s\n", pv.Spec.ClaimRef.Namespace+"/"+pv.Spec.ClaimRef.Name)
 		} else {
@@ -1108,8 +1196,12 @@ func describePersistentVolume(pv *api.PersistentVolume, events *api.EventList) (
 		}
 		w.Write(LEVEL_0, "Reclaim Policy:\t%v\n", pv.Spec.PersistentVolumeReclaimPolicy)
 		w.Write(LEVEL_0, "Access Modes:\t%s\n", helper.GetAccessModesAsString(pv.Spec.AccessModes))
+		if pv.Spec.VolumeMode != nil {
+			w.Write(LEVEL_0, "VolumeMode:\t%v\n", *pv.Spec.VolumeMode)
+		}
 		storage := pv.Spec.Capacity[api.ResourceStorage]
 		w.Write(LEVEL_0, "Capacity:\t%s\n", storage.String())
+		printVolumeNodeAffinity(w, pv.Spec.NodeAffinity)
 		w.Write(LEVEL_0, "Message:\t%s\n", pv.Status.Message)
 		w.Write(LEVEL_0, "Source:\n")
 
@@ -1123,7 +1215,7 @@ func describePersistentVolume(pv *api.PersistentVolume, events *api.EventList) (
 		case pv.Spec.NFS != nil:
 			printNFSVolumeSource(pv.Spec.NFS, w)
 		case pv.Spec.ISCSI != nil:
-			printISCSIVolumeSource(pv.Spec.ISCSI, w)
+			printISCSIPersistentVolumeSource(pv.Spec.ISCSI, w)
 		case pv.Spec.Glusterfs != nil:
 			printGlusterfsVolumeSource(pv.Spec.Glusterfs, w)
 		case pv.Spec.RBD != nil:
@@ -1153,9 +1245,11 @@ func describePersistentVolume(pv *api.PersistentVolume, events *api.EventList) (
 		case pv.Spec.AzureFile != nil:
 			printAzureFilePersistentVolumeSource(pv.Spec.AzureFile, w)
 		case pv.Spec.FlexVolume != nil:
-			printFlexVolumeSource(pv.Spec.FlexVolume, w)
+			printFlexPersistentVolumeSource(pv.Spec.FlexVolume, w)
 		case pv.Spec.Flocker != nil:
 			printFlockerVolumeSource(pv.Spec.Flocker, w)
+		case pv.Spec.CSI != nil:
+			printCSIPersistentVolumeSource(pv.Spec.CSI, w)
 		default:
 			w.Write(LEVEL_1, "<unknown>\n")
 		}
@@ -1191,10 +1285,15 @@ func describePersistentVolumeClaim(pvc *api.PersistentVolumeClaim, events *api.E
 		w.Write(LEVEL_0, "Name:\t%s\n", pvc.Name)
 		w.Write(LEVEL_0, "Namespace:\t%s\n", pvc.Namespace)
 		w.Write(LEVEL_0, "StorageClass:\t%s\n", helper.GetPersistentVolumeClaimClass(pvc))
-		w.Write(LEVEL_0, "Status:\t%v\n", pvc.Status.Phase)
+		if pvc.ObjectMeta.DeletionTimestamp != nil {
+			w.Write(LEVEL_0, "Status:\tTerminating (lasts %s)\n", translateTimestamp(*pvc.ObjectMeta.DeletionTimestamp))
+		} else {
+			w.Write(LEVEL_0, "Status:\t%v\n", pvc.Status.Phase)
+		}
 		w.Write(LEVEL_0, "Volume:\t%s\n", pvc.Spec.VolumeName)
 		printLabelsMultiline(w, "Labels", pvc.Labels)
 		printAnnotationsMultiline(w, "Annotations", pvc.Annotations)
+		w.Write(LEVEL_0, "Finalizers:\t%v\n", pvc.ObjectMeta.Finalizers)
 		storage := pvc.Spec.Resources.Requests[api.ResourceStorage]
 		capacity := ""
 		accessModes := ""
@@ -1205,6 +1304,23 @@ func describePersistentVolumeClaim(pvc *api.PersistentVolumeClaim, events *api.E
 		}
 		w.Write(LEVEL_0, "Capacity:\t%s\n", capacity)
 		w.Write(LEVEL_0, "Access Modes:\t%s\n", accessModes)
+		if pvc.Spec.VolumeMode != nil {
+			w.Write(LEVEL_0, "VolumeMode:\t%v\n", *pvc.Spec.VolumeMode)
+		}
+		if len(pvc.Status.Conditions) > 0 {
+			w.Write(LEVEL_0, "Conditions:\n")
+			w.Write(LEVEL_1, "Type\tStatus\tLastProbeTime\tLastTransitionTime\tReason\tMessage\n")
+			w.Write(LEVEL_1, "----\t------\t-----------------\t------------------\t------\t-------\n")
+			for _, c := range pvc.Status.Conditions {
+				w.Write(LEVEL_1, "%v \t%v \t%s \t%s \t%v \t%v\n",
+					c.Type,
+					c.Status,
+					c.LastProbeTime.Time.Format(time.RFC1123Z),
+					c.LastTransitionTime.Time.Format(time.RFC1123Z),
+					c.Reason,
+					c.Message)
+			}
+		}
 		if events != nil {
 			DescribeEvents(events, w)
 		}
@@ -1264,11 +1380,13 @@ func describeContainerBasicInfo(container api.Container, status api.ContainerSta
 	if strings.Contains(portString, ",") {
 		w.Write(LEVEL_2, "Ports:\t%s\n", portString)
 	} else {
-		if len(portString) == 0 {
-			w.Write(LEVEL_2, "Port:\t<none>\n")
-		} else {
-			w.Write(LEVEL_2, "Port:\t%s\n", portString)
-		}
+		w.Write(LEVEL_2, "Port:\t%s\n", stringOrNone(portString))
+	}
+	hostPortString := describeContainerHostPorts(container.Ports)
+	if strings.Contains(hostPortString, ",") {
+		w.Write(LEVEL_2, "Host Ports:\t%s\n", hostPortString)
+	} else {
+		w.Write(LEVEL_2, "Host Port:\t%s\n", stringOrNone(hostPortString))
 	}
 }
 
@@ -1276,6 +1394,14 @@ func describeContainerPorts(cPorts []api.ContainerPort) string {
 	ports := make([]string, 0, len(cPorts))
 	for _, cPort := range cPorts {
 		ports = append(ports, fmt.Sprintf("%d/%s", cPort.ContainerPort, cPort.Protocol))
+	}
+	return strings.Join(ports, ", ")
+}
+
+func describeContainerHostPorts(cPorts []api.ContainerPort) string {
+	ports := make([]string, 0, len(cPorts))
+	for _, cPort := range cPorts {
+		ports = append(ports, fmt.Sprintf("%d/%s", cPort.HostPort, cPort.Protocol))
 	}
 	return strings.Join(ports, ", ")
 }
@@ -1335,6 +1461,7 @@ func describeContainerProbe(container api.Container, w PrefixWriter) {
 }
 
 func describeContainerVolumes(container api.Container, w PrefixWriter) {
+	// Show volumeMounts
 	none := ""
 	if len(container.VolumeMounts) == 0 {
 		none = "\t<none>"
@@ -1352,6 +1479,14 @@ func describeContainerVolumes(container api.Container, w PrefixWriter) {
 			flags = append(flags, fmt.Sprintf("path=%q", mount.SubPath))
 		}
 		w.Write(LEVEL_3, "%s from %s (%s)\n", mount.MountPath, mount.Name, strings.Join(flags, ","))
+	}
+	// Show volumeDevices if exists
+	if len(container.VolumeDevices) > 0 {
+		w.Write(LEVEL_2, "Devices:%s\n", none)
+		sort.Sort(SortableVolumeDevices(container.VolumeDevices))
+		for _, device := range container.VolumeDevices {
+			w.Write(LEVEL_3, "%s from %s\n", device.DevicePath, device.Name)
+		}
 	}
 }
 
@@ -2004,12 +2139,7 @@ func describeIngressTLS(w PrefixWriter, ingTLS []extensions.IngressTLS) {
 func describeIngressAnnotations(w PrefixWriter, annotations map[string]string) {
 	w.Write(LEVEL_0, "Annotations:\n")
 	for k, v := range annotations {
-		if !strings.HasPrefix(k, "ingress") {
-			continue
-		}
-		parts := strings.Split(k, "/")
-		name := parts[len(parts)-1]
-		w.Write(LEVEL_1, "%v:\t%s\n", name, v)
+		w.Write(LEVEL_1, "%v:\t%s\n", k, v)
 	}
 	return
 }
@@ -2515,8 +2645,9 @@ func describeNode(node *api.Node, nodeNonTerminatedPodsList *api.PodList, events
 		}
 		printLabelsMultiline(w, "Labels", node.Labels)
 		printAnnotationsMultiline(w, "Annotations", node.Annotations)
-		printNodeTaintsMultiline(w, "Taints", node.Spec.Taints)
 		w.Write(LEVEL_0, "CreationTimestamp:\t%s\n", node.CreationTimestamp.Time.Format(time.RFC1123Z))
+		printNodeTaintsMultiline(w, "Taints", node.Spec.Taints)
+		w.Write(LEVEL_0, "Unschedulable:\t%v\n", node.Spec.Unschedulable)
 		if len(node.Status.Conditions) > 0 {
 			w.Write(LEVEL_0, "Conditions:\n  Type\tStatus\tLastHeartbeatTime\tLastTransitionTime\tReason\tMessage\n")
 			w.Write(LEVEL_1, "----\t------\t-----------------\t------------------\t------\t-------\n")
@@ -2575,10 +2706,11 @@ func describeNode(node *api.Node, nodeNonTerminatedPodsList *api.PodList, events
 		if len(node.Spec.ExternalID) > 0 {
 			w.Write(LEVEL_0, "ExternalID:\t%s\n", node.Spec.ExternalID)
 		}
+		if len(node.Spec.ProviderID) > 0 {
+			w.Write(LEVEL_0, "ProviderID:\t%s\n", node.Spec.ProviderID)
+		}
 		if canViewPods && nodeNonTerminatedPodsList != nil {
-			if err := describeNodeResource(nodeNonTerminatedPodsList, node, w); err != nil {
-				return err
-			}
+			describeNodeResource(nodeNonTerminatedPodsList, node, w)
 		} else {
 			w.Write(LEVEL_0, "Pods:\tnot authorized\n")
 		}
@@ -2748,6 +2880,22 @@ func describeHorizontalPodAutoscaler(hpa *autoscaling.HorizontalPodAutoscaler, e
 		w.Write(LEVEL_0, "Metrics:\t( current / target )\n")
 		for i, metric := range hpa.Spec.Metrics {
 			switch metric.Type {
+			case autoscaling.ExternalMetricSourceType:
+				if metric.External.TargetAverageValue != nil {
+					current := "<unknown>"
+					if len(hpa.Status.CurrentMetrics) > i && hpa.Status.CurrentMetrics[i].External != nil &&
+						hpa.Status.CurrentMetrics[i].External.CurrentAverageValue != nil {
+						current = hpa.Status.CurrentMetrics[i].External.CurrentAverageValue.String()
+					}
+					w.Write(LEVEL_1, "%q (target average value):\t%s / %s\n", metric.External.MetricName, current, metric.External.TargetAverageValue.String())
+				} else {
+					current := "<unknown>"
+					if len(hpa.Status.CurrentMetrics) > i && hpa.Status.CurrentMetrics[i].External != nil {
+						current = hpa.Status.CurrentMetrics[i].External.CurrentValue.String()
+					}
+					w.Write(LEVEL_1, "%q (target value):\t%s / %s\n", metric.External.MetricName, current, metric.External.TargetValue.String())
+
+				}
 			case autoscaling.PodsMetricSourceType:
 				current := "<unknown>"
 				if len(hpa.Status.CurrentMetrics) > i && hpa.Status.CurrentMetrics[i].Pods != nil {
@@ -2818,7 +2966,7 @@ func describeHorizontalPodAutoscaler(hpa *autoscaling.HorizontalPodAutoscaler, e
 	})
 }
 
-func describeNodeResource(nodeNonTerminatedPodsList *api.PodList, node *api.Node, w PrefixWriter) error {
+func describeNodeResource(nodeNonTerminatedPodsList *api.PodList, node *api.Node, w PrefixWriter) {
 	w.Write(LEVEL_0, "Non-terminated Pods:\t(%d in total)\n", len(nodeNonTerminatedPodsList.Items))
 	w.Write(LEVEL_1, "Namespace\tName\t\tCPU Requests\tCPU Limits\tMemory Requests\tMemory Limits\n")
 	w.Write(LEVEL_1, "---------\t----\t\t------------\t----------\t---------------\t-------------\n")
@@ -2828,10 +2976,7 @@ func describeNodeResource(nodeNonTerminatedPodsList *api.PodList, node *api.Node
 	}
 
 	for _, pod := range nodeNonTerminatedPodsList.Items {
-		req, limit, err := resourcehelper.PodRequestsAndLimits(&pod)
-		if err != nil {
-			return err
-		}
+		req, limit := resourcehelper.PodRequestsAndLimits(&pod)
 		cpuReq, cpuLimit, memoryReq, memoryLimit := req[api.ResourceCPU], limit[api.ResourceCPU], req[api.ResourceMemory], limit[api.ResourceMemory]
 		fractionCpuReq := float64(cpuReq.MilliValue()) / float64(allocatable.Cpu().MilliValue()) * 100
 		fractionCpuLimit := float64(cpuLimit.MilliValue()) / float64(allocatable.Cpu().MilliValue()) * 100
@@ -2844,28 +2989,29 @@ func describeNodeResource(nodeNonTerminatedPodsList *api.PodList, node *api.Node
 
 	w.Write(LEVEL_0, "Allocated resources:\n  (Total limits may be over 100 percent, i.e., overcommitted.)\n  CPU Requests\tCPU Limits\tMemory Requests\tMemory Limits\n")
 	w.Write(LEVEL_1, "------------\t----------\t---------------\t-------------\n")
-	reqs, limits, err := getPodsTotalRequestsAndLimits(nodeNonTerminatedPodsList)
-	if err != nil {
-		return err
-	}
+	reqs, limits := getPodsTotalRequestsAndLimits(nodeNonTerminatedPodsList)
 	cpuReqs, cpuLimits, memoryReqs, memoryLimits := reqs[api.ResourceCPU], limits[api.ResourceCPU], reqs[api.ResourceMemory], limits[api.ResourceMemory]
-	fractionCpuReqs := float64(cpuReqs.MilliValue()) / float64(allocatable.Cpu().MilliValue()) * 100
-	fractionCpuLimits := float64(cpuLimits.MilliValue()) / float64(allocatable.Cpu().MilliValue()) * 100
-	fractionMemoryReqs := float64(memoryReqs.Value()) / float64(allocatable.Memory().Value()) * 100
-	fractionMemoryLimits := float64(memoryLimits.Value()) / float64(allocatable.Memory().Value()) * 100
+	fractionCpuReqs := float64(0)
+	fractionCpuLimits := float64(0)
+	if allocatable.Cpu().MilliValue() != 0 {
+		fractionCpuReqs = float64(cpuReqs.MilliValue()) / float64(allocatable.Cpu().MilliValue()) * 100
+		fractionCpuLimits = float64(cpuLimits.MilliValue()) / float64(allocatable.Cpu().MilliValue()) * 100
+	}
+	fractionMemoryReqs := float64(0)
+	fractionMemoryLimits := float64(0)
+	if allocatable.Memory().Value() != 0 {
+		fractionMemoryReqs = float64(memoryReqs.Value()) / float64(allocatable.Memory().Value()) * 100
+		fractionMemoryLimits = float64(memoryLimits.Value()) / float64(allocatable.Memory().Value()) * 100
+	}
 	w.Write(LEVEL_1, "%s (%d%%)\t%s (%d%%)\t%s (%d%%)\t%s (%d%%)\n",
 		cpuReqs.String(), int64(fractionCpuReqs), cpuLimits.String(), int64(fractionCpuLimits),
 		memoryReqs.String(), int64(fractionMemoryReqs), memoryLimits.String(), int64(fractionMemoryLimits))
-	return nil
 }
 
-func getPodsTotalRequestsAndLimits(podList *api.PodList) (reqs map[api.ResourceName]resource.Quantity, limits map[api.ResourceName]resource.Quantity, err error) {
+func getPodsTotalRequestsAndLimits(podList *api.PodList) (reqs map[api.ResourceName]resource.Quantity, limits map[api.ResourceName]resource.Quantity) {
 	reqs, limits = map[api.ResourceName]resource.Quantity{}, map[api.ResourceName]resource.Quantity{}
 	for _, pod := range podList.Items {
-		podReqs, podLimits, err := resourcehelper.PodRequestsAndLimits(&pod)
-		if err != nil {
-			return nil, nil, err
-		}
+		podReqs, podLimits := resourcehelper.PodRequestsAndLimits(&pod)
 		for podReqName, podReqValue := range podReqs {
 			if value, ok := reqs[podReqName]; !ok {
 				reqs[podReqName] = *podReqValue.Copy()
@@ -3211,6 +3357,15 @@ func describeStorageClass(sc *storage.StorageClass, events *api.EventList) (stri
 		w.Write(LEVEL_0, "Annotations:\t%s\n", labels.FormatLabels(sc.Annotations))
 		w.Write(LEVEL_0, "Provisioner:\t%s\n", sc.Provisioner)
 		w.Write(LEVEL_0, "Parameters:\t%s\n", labels.FormatLabels(sc.Parameters))
+		w.Write(LEVEL_0, "AllowVolumeExpansion:\t%s\n", printBoolPtr(sc.AllowVolumeExpansion))
+		if len(sc.MountOptions) == 0 {
+			w.Write(LEVEL_0, "MountOptions:\t<none>\n")
+		} else {
+			w.Write(LEVEL_0, "MountOptions:\n")
+			for _, option := range sc.MountOptions {
+				w.Write(LEVEL_1, "%s\n", option)
+			}
+		}
 		if sc.ReclaimPolicy != nil {
 			w.Write(LEVEL_0, "ReclaimPolicy:\t%s\n", *sc.ReclaimPolicy)
 		}
@@ -3296,8 +3451,8 @@ func describePriorityClass(pc *scheduling.PriorityClass, events *api.EventList) 
 	return tabbedString(func(out io.Writer) error {
 		w := NewPrefixWriter(out)
 		w.Write(LEVEL_0, "Name:\t%s\n", pc.Name)
-		w.Write(LEVEL_0, "Value:\t%s\n", pc.Value)
-		w.Write(LEVEL_0, "GlobalDefault:\t%s\n", pc.GlobalDefault)
+		w.Write(LEVEL_0, "Value:\t%v\n", pc.Value)
+		w.Write(LEVEL_0, "GlobalDefault:\t%v\n", pc.GlobalDefault)
 		w.Write(LEVEL_0, "Description:\t%s\n", pc.Description)
 
 		w.Write(LEVEL_0, "Annotations:\t%s\n", labels.FormatLabels(pc.Annotations))
@@ -3331,11 +3486,15 @@ func describePodSecurityPolicy(psp *extensions.PodSecurityPolicy) (string, error
 		w.Write(LEVEL_0, "\nSettings:\n")
 
 		w.Write(LEVEL_1, "Allow Privileged:\t%t\n", psp.Spec.Privileged)
+		w.Write(LEVEL_1, "Allow Privilege Escalation:\t%v\n", psp.Spec.AllowPrivilegeEscalation)
 		w.Write(LEVEL_1, "Default Add Capabilities:\t%v\n", capsToString(psp.Spec.DefaultAddCapabilities))
 		w.Write(LEVEL_1, "Required Drop Capabilities:\t%s\n", capsToString(psp.Spec.RequiredDropCapabilities))
 		w.Write(LEVEL_1, "Allowed Capabilities:\t%s\n", capsToString(psp.Spec.AllowedCapabilities))
 		w.Write(LEVEL_1, "Allowed Volume Types:\t%s\n", fsTypeToString(psp.Spec.Volumes))
 
+		if len(psp.Spec.AllowedFlexVolumes) > 0 {
+			w.Write(LEVEL_1, "Allowed FlexVolume Types:\t%s\n", flexVolumesToString(psp.Spec.AllowedFlexVolumes))
+		}
 		w.Write(LEVEL_1, "Allow Host Network:\t%t\n", psp.Spec.HostNetwork)
 		w.Write(LEVEL_1, "Allow Host Ports:\t%s\n", hostPortRangeToString(psp.Spec.HostPorts))
 		w.Write(LEVEL_1, "Allow Host PID:\t%t\n", psp.Spec.HostPID)
@@ -3369,10 +3528,14 @@ func describePodSecurityPolicy(psp *extensions.PodSecurityPolicy) (string, error
 }
 
 func stringOrNone(s string) string {
+	return stringOrDefaultValue(s, "<none>")
+}
+
+func stringOrDefaultValue(s, defaultValue string) string {
 	if len(s) > 0 {
 		return s
 	}
-	return "<none>"
+	return defaultValue
 }
 
 func fsTypeToString(volumes []extensions.FSType) string {
@@ -3381,6 +3544,14 @@ func fsTypeToString(volumes []extensions.FSType) string {
 		strVolumes = append(strVolumes, string(v))
 	}
 	return stringOrNone(strings.Join(strVolumes, ","))
+}
+
+func flexVolumesToString(flexVolumes []extensions.AllowedFlexVolume) string {
+	volumes := []string{}
+	for _, flexVolume := range flexVolumes {
+		volumes = append(volumes, "driver="+flexVolume.Driver)
+	}
+	return stringOrDefaultValue(strings.Join(volumes, ","), "<all>")
 }
 
 func hostPortRangeToString(ranges []extensions.HostPortRange) string {
@@ -3637,23 +3808,19 @@ func printTaintsMultilineWithIndent(w PrefixWriter, initialIndent, title, innerI
 	}
 
 	// to print taints in the sorted order
-	keys := make([]string, 0, len(taints))
-	for _, taint := range taints {
-		keys = append(keys, string(taint.Effect)+","+taint.Key)
-	}
-	sort.Strings(keys)
-
-	for i, key := range keys {
-		for _, taint := range taints {
-			if string(taint.Effect)+","+taint.Key == key {
-				if i != 0 {
-					w.Write(LEVEL_0, "%s", initialIndent)
-					w.Write(LEVEL_0, "%s", innerIndent)
-				}
-				w.Write(LEVEL_0, "%s\n", taint.ToString())
-				i++
-			}
+	sort.Slice(taints, func(i, j int) bool {
+		cmpKey := func(taint api.Taint) string {
+			return string(taint.Effect) + "," + taint.Key
 		}
+		return cmpKey(taints[i]) < cmpKey(taints[j])
+	})
+
+	for i, taint := range taints {
+		if i != 0 {
+			w.Write(LEVEL_0, "%s", initialIndent)
+			w.Write(LEVEL_0, "%s", innerIndent)
+		}
+		w.Write(LEVEL_0, "%s\n", taint.ToString())
 	}
 }
 
@@ -3672,33 +3839,26 @@ func printTolerationsMultilineWithIndent(w PrefixWriter, initialIndent, title, i
 	}
 
 	// to print tolerations in the sorted order
-	keys := make([]string, 0, len(tolerations))
-	for _, toleration := range tolerations {
-		keys = append(keys, toleration.Key)
-	}
-	sort.Strings(keys)
+	sort.Slice(tolerations, func(i, j int) bool {
+		return tolerations[i].Key < tolerations[j].Key
+	})
 
-	for i, key := range keys {
-		for _, toleration := range tolerations {
-			if toleration.Key == key {
-				if i != 0 {
-					w.Write(LEVEL_0, "%s", initialIndent)
-					w.Write(LEVEL_0, "%s", innerIndent)
-				}
-				w.Write(LEVEL_0, "%s", toleration.Key)
-				if len(toleration.Value) != 0 {
-					w.Write(LEVEL_0, "=%s", toleration.Value)
-				}
-				if len(toleration.Effect) != 0 {
-					w.Write(LEVEL_0, ":%s", toleration.Effect)
-				}
-				if toleration.TolerationSeconds != nil {
-					w.Write(LEVEL_0, " for %ds", *toleration.TolerationSeconds)
-				}
-				w.Write(LEVEL_0, "\n")
-				i++
-			}
+	for i, toleration := range tolerations {
+		if i != 0 {
+			w.Write(LEVEL_0, "%s", initialIndent)
+			w.Write(LEVEL_0, "%s", innerIndent)
 		}
+		w.Write(LEVEL_0, "%s", toleration.Key)
+		if len(toleration.Value) != 0 {
+			w.Write(LEVEL_0, "=%s", toleration.Value)
+		}
+		if len(toleration.Effect) != 0 {
+			w.Write(LEVEL_0, ":%s", toleration.Effect)
+		}
+		if toleration.TolerationSeconds != nil {
+			w.Write(LEVEL_0, " for %ds", *toleration.TolerationSeconds)
+		}
+		w.Write(LEVEL_0, "\n")
 	}
 }
 
@@ -3771,6 +3931,20 @@ func (list SortableVolumeMounts) Swap(i, j int) {
 
 func (list SortableVolumeMounts) Less(i, j int) bool {
 	return list[i].MountPath < list[j].MountPath
+}
+
+type SortableVolumeDevices []api.VolumeDevice
+
+func (list SortableVolumeDevices) Len() int {
+	return len(list)
+}
+
+func (list SortableVolumeDevices) Swap(i, j int) {
+	list[i], list[j] = list[j], list[i]
+}
+
+func (list SortableVolumeDevices) Less(i, j int) bool {
+	return list[i].DevicePath < list[j].DevicePath
 }
 
 // TODO: get rid of this and plumb the caller correctly

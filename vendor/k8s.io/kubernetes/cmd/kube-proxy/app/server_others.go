@@ -43,6 +43,7 @@ import (
 	"k8s.io/kubernetes/pkg/proxy/userspace"
 	"k8s.io/kubernetes/pkg/util/configz"
 	utildbus "k8s.io/kubernetes/pkg/util/dbus"
+	utilipset "k8s.io/kubernetes/pkg/util/ipset"
 	utiliptables "k8s.io/kubernetes/pkg/util/iptables"
 	utilipvs "k8s.io/kubernetes/pkg/util/ipvs"
 	utilnode "k8s.io/kubernetes/pkg/util/node"
@@ -53,7 +54,17 @@ import (
 )
 
 // NewProxyServer returns a new ProxyServer.
-func NewProxyServer(config *proxyconfigapi.KubeProxyConfiguration, cleanupAndExit bool, scheme *runtime.Scheme, master string) (*ProxyServer, error) {
+func NewProxyServer(o *Options) (*ProxyServer, error) {
+	return newProxyServer(o.config, o.CleanupAndExit, o.CleanupIPVS, o.scheme, o.master)
+}
+
+func newProxyServer(
+	config *proxyconfigapi.KubeProxyConfiguration,
+	cleanupAndExit bool,
+	cleanupIPVS bool,
+	scheme *runtime.Scheme,
+	master string) (*ProxyServer, error) {
+
 	if config == nil {
 		return nil, errors.New("config is required")
 	}
@@ -72,6 +83,8 @@ func NewProxyServer(config *proxyconfigapi.KubeProxyConfiguration, cleanupAndExi
 
 	var iptInterface utiliptables.Interface
 	var ipvsInterface utilipvs.Interface
+	var kernelHandler ipvs.KernelHandler
+	var ipsetInterface utilipset.Interface
 	var dbus utildbus.Interface
 
 	// Create a iptables utils.
@@ -80,6 +93,8 @@ func NewProxyServer(config *proxyconfigapi.KubeProxyConfiguration, cleanupAndExi
 	dbus = utildbus.New()
 	iptInterface = utiliptables.New(execer, dbus, protocol)
 	ipvsInterface = utilipvs.New(execer)
+	kernelHandler = ipvs.NewLinuxKernelHandler()
+	ipsetInterface = utilipset.New(execer)
 
 	// We omit creation of pretty much everything if we run in cleanup mode
 	if cleanupAndExit {
@@ -87,6 +102,7 @@ func NewProxyServer(config *proxyconfigapi.KubeProxyConfiguration, cleanupAndExi
 			execer:         execer,
 			IptInterface:   iptInterface,
 			IpvsInterface:  ipvsInterface,
+			IpsetInterface: ipsetInterface,
 			CleanupAndExit: cleanupAndExit,
 		}, nil
 	}
@@ -119,7 +135,7 @@ func NewProxyServer(config *proxyconfigapi.KubeProxyConfiguration, cleanupAndExi
 	var serviceEventHandler proxyconfig.ServiceHandler
 	var endpointsEventHandler proxyconfig.EndpointsHandler
 
-	proxyMode := getProxyMode(string(config.Mode), iptInterface, iptables.LinuxKernelCompatTester{})
+	proxyMode := getProxyMode(string(config.Mode), iptInterface, kernelHandler, ipsetInterface, iptables.LinuxKernelCompatTester{})
 	if proxyMode == proxyModeIPTables {
 		glog.V(0).Info("Using iptables Proxier.")
 		nodeIP := net.ParseIP(config.BindAddress)
@@ -145,6 +161,7 @@ func NewProxyServer(config *proxyconfigapi.KubeProxyConfiguration, cleanupAndExi
 			nodeIP,
 			recorder,
 			healthzUpdater,
+			config.NodePortAddresses,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("unable to create proxier: %v", err)
@@ -157,14 +174,17 @@ func NewProxyServer(config *proxyconfigapi.KubeProxyConfiguration, cleanupAndExi
 		glog.V(0).Info("Tearing down inactive rules.")
 		// TODO this has side effects that should only happen when Run() is invoked.
 		userspace.CleanupLeftovers(iptInterface)
-		// IPVS Proxier will generate some iptables rules,
-		// need to clean them before switching to other proxy mode.
-		ipvs.CleanupLeftovers(ipvsInterface, iptInterface)
+		// IPVS Proxier will generate some iptables rules, need to clean them before switching to other proxy mode.
+		// Besides, ipvs proxier will create some ipvs rules as well.  Because there is no way to tell if a given
+		// ipvs rule is created by IPVS proxier or not.  Users should explicitly specify `--clean-ipvs=true` to flush
+		// all ipvs rules when kube-proxy start up.  Users do this operation should be with caution.
+		ipvs.CleanupLeftovers(ipvsInterface, iptInterface, ipsetInterface, cleanupIPVS)
 	} else if proxyMode == proxyModeIPVS {
 		glog.V(0).Info("Using ipvs Proxier.")
 		proxierIPVS, err := ipvs.NewProxier(
 			iptInterface,
 			ipvsInterface,
+			ipsetInterface,
 			utilsysctl.New(),
 			execer,
 			config.IPVS.SyncPeriod.Duration,
@@ -177,6 +197,7 @@ func NewProxyServer(config *proxyconfigapi.KubeProxyConfiguration, cleanupAndExi
 			recorder,
 			healthzServer,
 			config.IPVS.Scheduler,
+			config.NodePortAddresses,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("unable to create proxier: %v", err)
@@ -207,6 +228,7 @@ func NewProxyServer(config *proxyconfigapi.KubeProxyConfiguration, cleanupAndExi
 			config.IPTables.SyncPeriod.Duration,
 			config.IPTables.MinSyncPeriod.Duration,
 			config.UDPIdleTimeout.Duration,
+			config.NodePortAddresses,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("unable to create proxier: %v", err)
@@ -218,9 +240,11 @@ func NewProxyServer(config *proxyconfigapi.KubeProxyConfiguration, cleanupAndExi
 		glog.V(0).Info("Tearing down inactive rules.")
 		// TODO this has side effects that should only happen when Run() is invoked.
 		iptables.CleanupLeftovers(iptInterface)
-		// IPVS Proxier will generate some iptables rules,
-		// need to clean them before switching to other proxy mode.
-		ipvs.CleanupLeftovers(ipvsInterface, iptInterface)
+		// IPVS Proxier will generate some iptables rules, need to clean them before switching to other proxy mode.
+		// Besides, ipvs proxier will create some ipvs rules as well.  Because there is no way to tell if a given
+		// ipvs rule is created by IPVS proxier or not.  Users should explicitly specify `--clean-ipvs=true` to flush
+		// all ipvs rules when kube-proxy start up.  Users do this operation should be with caution.
+		ipvs.CleanupLeftovers(ipvsInterface, iptInterface, ipsetInterface, cleanupIPVS)
 	}
 
 	iptInterface.AddReloadFunc(proxier.Sync)
@@ -230,6 +254,7 @@ func NewProxyServer(config *proxyconfigapi.KubeProxyConfiguration, cleanupAndExi
 		EventClient:            eventClient,
 		IptInterface:           iptInterface,
 		IpvsInterface:          ipvsInterface,
+		IpsetInterface:         ipsetInterface,
 		execer:                 execer,
 		Proxier:                proxier,
 		Broadcaster:            eventBroadcaster,
@@ -249,7 +274,7 @@ func NewProxyServer(config *proxyconfigapi.KubeProxyConfiguration, cleanupAndExi
 	}, nil
 }
 
-func getProxyMode(proxyMode string, iptver iptables.IPTablesVersioner, kcompat iptables.KernelCompatTester) string {
+func getProxyMode(proxyMode string, iptver iptables.IPTablesVersioner, khandle ipvs.KernelHandler, ipsetver ipvs.IPSetVersioner, kcompat iptables.KernelCompatTester) string {
 	if proxyMode == proxyModeUserspace {
 		return proxyModeUserspace
 	}
@@ -260,7 +285,7 @@ func getProxyMode(proxyMode string, iptver iptables.IPTablesVersioner, kcompat i
 
 	if utilfeature.DefaultFeatureGate.Enabled(features.SupportIPVSProxyMode) {
 		if proxyMode == proxyModeIPVS {
-			return tryIPVSProxy(iptver, kcompat)
+			return tryIPVSProxy(iptver, khandle, ipsetver, kcompat)
 		} else {
 			glog.Warningf("Can't use ipvs proxier, trying iptables proxier")
 			return tryIPTablesProxy(iptver, kcompat)
@@ -270,10 +295,10 @@ func getProxyMode(proxyMode string, iptver iptables.IPTablesVersioner, kcompat i
 	return tryIPTablesProxy(iptver, kcompat)
 }
 
-func tryIPVSProxy(iptver iptables.IPTablesVersioner, kcompat iptables.KernelCompatTester) string {
+func tryIPVSProxy(iptver iptables.IPTablesVersioner, khandle ipvs.KernelHandler, ipsetver ipvs.IPSetVersioner, kcompat iptables.KernelCompatTester) string {
 	// guaranteed false on error, error only necessary for debugging
-	// IPVS Proxier relies on iptables
-	useIPVSProxy, err := ipvs.CanUseIPVSProxier()
+	// IPVS Proxier relies on ip_vs_* kernel modules and ipset
+	useIPVSProxy, err := ipvs.CanUseIPVSProxier(khandle, ipsetver)
 	if err != nil {
 		// Try to fallback to iptables before falling back to userspace
 		utilruntime.HandleError(fmt.Errorf("can't determine whether to use ipvs proxy, error: %v", err))
@@ -281,8 +306,6 @@ func tryIPVSProxy(iptver iptables.IPTablesVersioner, kcompat iptables.KernelComp
 	if useIPVSProxy {
 		return proxyModeIPVS
 	}
-
-	// TODO: Check ipvs version
 
 	// Try to fallback to iptables before falling back to userspace
 	glog.V(1).Infof("Can't use ipvs proxier, trying iptables proxier")

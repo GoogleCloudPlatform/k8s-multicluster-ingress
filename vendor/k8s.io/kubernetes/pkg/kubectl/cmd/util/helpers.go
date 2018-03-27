@@ -43,10 +43,8 @@ import (
 	"k8s.io/apimachinery/pkg/util/strategicpatch"
 	"k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/client-go/tools/clientcmd"
-	"k8s.io/kubernetes/pkg/api/legacyscheme"
 	"k8s.io/kubernetes/pkg/kubectl"
 	"k8s.io/kubernetes/pkg/kubectl/resource"
-	"k8s.io/kubernetes/pkg/printers"
 	utilexec "k8s.io/utils/exec"
 )
 
@@ -401,7 +399,7 @@ func AddValidateFlags(cmd *cobra.Command) {
 }
 
 func AddValidateOptionFlags(cmd *cobra.Command, options *ValidateOptions) {
-	cmd.Flags().BoolVar(&options.EnableValidation, "validate", true, "If true, use a schema to validate the input before sending it")
+	cmd.Flags().BoolVar(&options.EnableValidation, "validate", options.EnableValidation, "If true, use a schema to validate the input before sending it")
 }
 
 func AddFilenameOptionFlags(cmd *cobra.Command, options *resource.FilenameOptions, usage string) {
@@ -427,7 +425,7 @@ func AddApplyAnnotationFlags(cmd *cobra.Command) {
 }
 
 func AddApplyAnnotationVarFlags(cmd *cobra.Command, applyAnnotation *bool) {
-	cmd.Flags().BoolVar(applyAnnotation, ApplyAnnotationsFlag, false, "If true, the configuration of current object will be saved in its annotation. Otherwise, the annotation will be unchanged. This flag is useful when you want to perform kubectl apply on this object in the future.")
+	cmd.Flags().BoolVar(applyAnnotation, ApplyAnnotationsFlag, *applyAnnotation, "If true, the configuration of current object will be saved in its annotation. Otherwise, the annotation will be unchanged. This flag is useful when you want to perform kubectl apply on this object in the future.")
 }
 
 // AddGeneratorFlags adds flags common to resource generation commands
@@ -524,7 +522,7 @@ func AddRecordFlag(cmd *cobra.Command) {
 }
 
 func AddRecordVarFlag(cmd *cobra.Command, record *bool) {
-	cmd.Flags().BoolVar(record, "record", false, "Record current kubectl command in the resource annotation. If set to false, do not record the command. If set to true, record the command. If not set, default to updating the existing annotation value only if one already exists.")
+	cmd.Flags().BoolVar(record, "record", *record, "Record current kubectl command in the resource annotation. If set to false, do not record the command. If set to true, record the command. If not set, default to updating the existing annotation value only if one already exists.")
 }
 
 func GetRecordFlag(cmd *cobra.Command) bool {
@@ -601,7 +599,7 @@ func AddInclude3rdPartyFlags(cmd *cobra.Command) {
 }
 
 func AddInclude3rdPartyVarFlags(cmd *cobra.Command, include3rdParty *bool) {
-	cmd.Flags().BoolVar(include3rdParty, "include-extended-apis", true, "If true, include definitions of new APIs via calls to the API server. [default true]")
+	cmd.Flags().BoolVar(include3rdParty, "include-extended-apis", *include3rdParty, "If true, include definitions of new APIs via calls to the API server. [default true]")
 	cmd.Flags().MarkDeprecated("include-extended-apis", "No longer required.")
 }
 
@@ -687,56 +685,6 @@ func MustPrintWithKinds(objs []runtime.Object, infos []*resource.Info, sorter *k
 	}
 
 	return false
-}
-
-// FilterResourceList receives a list of runtime objects.
-// If any objects are filtered, that number is returned along with a modified list.
-func FilterResourceList(obj runtime.Object, filterFuncs kubectl.Filters, filterOpts *printers.PrintOptions) (int, []runtime.Object, error) {
-	items, err := meta.ExtractList(obj)
-	if err != nil {
-		return 0, []runtime.Object{obj}, utilerrors.NewAggregate([]error{err})
-	}
-	if errs := runtime.DecodeList(items, legacyscheme.Codecs.UniversalDecoder(), unstructured.UnstructuredJSONScheme); len(errs) > 0 {
-		return 0, []runtime.Object{obj}, utilerrors.NewAggregate(errs)
-	}
-
-	filterCount := 0
-	list := make([]runtime.Object, 0, len(items))
-	for _, obj := range items {
-		if isFiltered, err := filterFuncs.Filter(obj, filterOpts); !isFiltered {
-			if err != nil {
-				glog.V(2).Infof("Unable to filter resource: %v", err)
-				continue
-			}
-			list = append(list, obj)
-		} else if isFiltered {
-			filterCount++
-		}
-	}
-	return filterCount, list, nil
-}
-
-// PrintFilterCount displays informational messages based on the number of resources found, hidden, or
-// config flags shown.
-func PrintFilterCount(out io.Writer, found, hidden, errors int, options *printers.PrintOptions, ignoreNotFound bool) {
-	switch {
-	case errors > 0 || ignoreNotFound:
-		// print nothing
-	case found <= hidden:
-		if found == 0 {
-			fmt.Fprintln(out, "No resources found.")
-		} else {
-			fmt.Fprintln(out, "No resources found, use --show-all to see completed objects.")
-		}
-	case hidden > 0 && !options.ShowAll && !options.NoHeaders:
-		if glog.V(2) {
-			if hidden > 1 {
-				fmt.Fprintf(out, "info: %d objects not shown, use --show-all to see completed objects.\n", hidden)
-			} else {
-				fmt.Fprintf(out, "info: 1 object not shown, use --show-all to see completed objects.\n")
-			}
-		}
-	}
 }
 
 // IsSiblingCommandExists receives a pointer to a cobra command and a target string.

@@ -17,11 +17,14 @@ limitations under the License.
 package dns
 
 import (
+	"encoding/json"
 	"fmt"
-	"net"
 	"runtime"
+	"strings"
 
-	apps "k8s.io/api/apps/v1beta2"
+	"github.com/mholt/caddy/caddyfile"
+
+	apps "k8s.io/api/apps/v1"
 	"k8s.io/api/core/v1"
 	rbac "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -39,7 +42,10 @@ import (
 
 const (
 	// KubeDNSServiceAccountName describes the name of the ServiceAccount for the kube-dns addon
-	KubeDNSServiceAccountName = "kube-dns"
+	KubeDNSServiceAccountName  = "kube-dns"
+	kubeDNSStubDomain          = "stubDomains"
+	kubeDNSUpstreamNameservers = "upstreamNameservers"
+	kubeDNSFederation          = "federations"
 )
 
 // EnsureDNSAddon creates the kube-dns or CoreDNS addon
@@ -59,29 +65,31 @@ func kubeDNSAddon(cfg *kubeadmapi.MasterConfiguration, client clientset.Interfac
 		return err
 	}
 
-	dnsip, err := getDNSIP(client)
+	dnsip, err := kubeadmconstants.GetDNSIP(cfg.Networking.ServiceSubnet)
 	if err != nil {
 		return err
 	}
 
-	var dnsBindAddr string
+	var dnsBindAddr, dnsProbeAddr string
 	if dnsip.To4() == nil {
 		dnsBindAddr = "::1"
+		dnsProbeAddr = "[" + dnsBindAddr + "]"
 	} else {
 		dnsBindAddr = "127.0.0.1"
+		dnsProbeAddr = dnsBindAddr
 	}
 
 	// Get the YAML manifest conditionally based on the k8s version
 	kubeDNSDeploymentBytes := GetKubeDNSManifest(k8sVersion)
 	dnsDeploymentBytes, err := kubeadmutil.ParseTemplate(kubeDNSDeploymentBytes,
-		struct{ ImageRepository, Arch, Version, DNSBindAddr, DNSDomain, DNSProbeType, MasterTaintKey string }{
+		struct{ ImageRepository, Arch, Version, DNSBindAddr, DNSProbeAddr, DNSDomain, MasterTaintKey string }{
 			ImageRepository: cfg.ImageRepository,
 			Arch:            runtime.GOARCH,
 			// Get the kube-dns version conditionally based on the k8s version
 			Version:        GetDNSVersion(k8sVersion, kubeadmconstants.KubeDNS),
 			DNSBindAddr:    dnsBindAddr,
+			DNSProbeAddr:   dnsProbeAddr,
 			DNSDomain:      cfg.Networking.DNSDomain,
-			DNSProbeType:   GetKubeDNSProbeType(k8sVersion),
 			MasterTaintKey: kubeadmconstants.LabelNodeRoleMaster,
 		})
 	if err != nil {
@@ -139,16 +147,39 @@ func coreDNSAddon(cfg *kubeadmapi.MasterConfiguration, client clientset.Interfac
 		return fmt.Errorf("error when parsing CoreDNS deployment template: %v", err)
 	}
 
+	// Get the kube-dns ConfigMap for translation to equivalent CoreDNS Config.
+	kubeDNSConfigMap, err := client.CoreV1().ConfigMaps(metav1.NamespaceSystem).Get(kubeadmconstants.KubeDNS, metav1.GetOptions{})
+	if err != nil && !apierrors.IsNotFound(err) {
+		return err
+	}
+
+	stubDomain, err := translateStubDomainOfKubeDNSToProxyCoreDNS(kubeDNSStubDomain, kubeDNSConfigMap)
+	if err != nil {
+		return err
+	}
+
+	upstreamNameserver, err := translateUpstreamNameServerOfKubeDNSToUpstreamProxyCoreDNS(kubeDNSUpstreamNameservers, kubeDNSConfigMap)
+	if err != nil {
+		return err
+	}
+	coreDNSDomain := cfg.Networking.DNSDomain
+	federations, err := translateFederationsofKubeDNSToCoreDNS(kubeDNSFederation, coreDNSDomain, kubeDNSConfigMap)
+	if err != nil {
+		return err
+	}
+
 	// Get the config file for CoreDNS
-	coreDNSConfigMapBytes, err := kubeadmutil.ParseTemplate(CoreDNSConfigMap, struct{ DNSDomain, ServiceCIDR string }{
-		ServiceCIDR: cfg.Networking.ServiceSubnet,
-		DNSDomain:   cfg.Networking.DNSDomain,
+	coreDNSConfigMapBytes, err := kubeadmutil.ParseTemplate(CoreDNSConfigMap, struct{ DNSDomain, UpstreamNameserver, Federation, StubDomain string }{
+		DNSDomain:          coreDNSDomain,
+		UpstreamNameserver: upstreamNameserver,
+		Federation:         federations,
+		StubDomain:         stubDomain,
 	})
 	if err != nil {
 		return fmt.Errorf("error when parsing CoreDNS configMap template: %v", err)
 	}
 
-	dnsip, err := getDNSIP(client)
+	dnsip, err := kubeadmconstants.GetDNSIP(cfg.Networking.ServiceSubnet)
 	if err != nil {
 		return err
 	}
@@ -201,7 +232,7 @@ func createCoreDNSAddon(deploymentBytes, serviceBytes, configBytes []byte, clien
 
 	coreDNSServiceAccount := &v1.ServiceAccount{}
 	if err := kuberuntime.DecodeInto(legacyscheme.Codecs.UniversalDecoder(), []byte(CoreDNSServiceAccount), coreDNSServiceAccount); err != nil {
-		return fmt.Errorf("unable to decode CoreDNS configmap %v", err)
+		return fmt.Errorf("unable to decode CoreDNS serviceaccount %v", err)
 	}
 
 	// Create the ConfigMap for CoreDNS or update it in case it already exists
@@ -244,21 +275,104 @@ func createDNSService(dnsService *v1.Service, serviceBytes []byte, client client
 	return nil
 }
 
-// getDNSIP fetches the kubernetes service's ClusterIP and appends a "0" to it in order to get the DNS IP
-func getDNSIP(client clientset.Interface) (net.IP, error) {
-	k8ssvc, err := client.CoreV1().Services(metav1.NamespaceDefault).Get("kubernetes", metav1.GetOptions{})
-	if err != nil {
-		return nil, fmt.Errorf("couldn't fetch information about the kubernetes service: %v", err)
-	}
+// translateStubDomainOfKubeDNSToProxyCoreDNS translates StubDomain Data in kube-dns ConfigMap
+// in the form of Proxy for the CoreDNS Corefile.
+func translateStubDomainOfKubeDNSToProxyCoreDNS(dataField string, kubeDNSConfigMap *v1.ConfigMap) (string, error) {
+	if proxy, ok := kubeDNSConfigMap.Data[dataField]; ok {
+		stubDomainData := make(map[string][]string)
+		err := json.Unmarshal([]byte(proxy), &stubDomainData)
+		if err != nil {
+			return "", fmt.Errorf("failed to parse JSON from 'kube-dns ConfigMap: %v", err)
+		}
 
-	if len(k8ssvc.Spec.ClusterIP) == 0 {
-		return nil, fmt.Errorf("couldn't fetch a valid clusterIP from the kubernetes service")
-	}
+		var proxyStanza []interface{}
+		for domain, proxyIP := range stubDomainData {
+			pStanza := map[string]interface{}{}
+			pStanza["keys"] = []string{domain + ":53"}
+			pStanza["body"] = [][]string{
+				{"errors"},
+				{"cache", "30"},
+				append([]string{"proxy", "."}, proxyIP...),
+			}
+			proxyStanza = append(proxyStanza, pStanza)
+		}
+		stanzasBytes, err := json.Marshal(proxyStanza)
+		if err != nil {
+			return "", err
+		}
 
-	// Build an IP by taking the kubernetes service's clusterIP and appending a "0" and checking that it's valid
-	dnsIP := net.ParseIP(fmt.Sprintf("%s0", k8ssvc.Spec.ClusterIP))
-	if dnsIP == nil {
-		return nil, fmt.Errorf("could not parse dns ip %q: %v", dnsIP, err)
+		corefileStanza, err := caddyfile.FromJSON(stanzasBytes)
+		if err != nil {
+			return "", err
+		}
+
+		return prepCorefileFormat(string(corefileStanza), 4), nil
 	}
-	return dnsIP, nil
+	return "", nil
+}
+
+// translateUpstreamNameServerOfKubeDNSToUpstreamProxyCoreDNS translates UpstreamNameServer Data in kube-dns ConfigMap
+// in the form of Proxy for the CoreDNS Corefile.
+func translateUpstreamNameServerOfKubeDNSToUpstreamProxyCoreDNS(dataField string, kubeDNSConfigMap *v1.ConfigMap) (string, error) {
+	if upstreamValues, ok := kubeDNSConfigMap.Data[dataField]; ok {
+		var upstreamProxyIP []string
+
+		err := json.Unmarshal([]byte(upstreamValues), &upstreamProxyIP)
+		if err != nil {
+			return "", fmt.Errorf("failed to parse JSON from 'kube-dns ConfigMap: %v", err)
+		}
+
+		coreDNSProxyStanzaList := strings.Join(upstreamProxyIP, " ")
+		return coreDNSProxyStanzaList, nil
+	}
+	return "/etc/resolv.conf", nil
+}
+
+// translateFederationsofKubeDNSToCoreDNS translates Federations Data in kube-dns ConfigMap
+// to Federation for CoreDNS Corefile.
+func translateFederationsofKubeDNSToCoreDNS(dataField, coreDNSDomain string, kubeDNSConfigMap *v1.ConfigMap) (string, error) {
+	if federation, ok := kubeDNSConfigMap.Data[dataField]; ok {
+		var (
+			federationStanza []interface{}
+			body             [][]string
+		)
+		federationData := make(map[string]string)
+
+		err := json.Unmarshal([]byte(federation), &federationData)
+		if err != nil {
+			return "", fmt.Errorf("failed to parse JSON from kube-dns ConfigMap: %v", err)
+		}
+		fStanza := map[string]interface{}{}
+
+		for name, domain := range federationData {
+			body = append(body, []string{name, domain})
+		}
+		federationStanza = append(federationStanza, fStanza)
+		fStanza["keys"] = []string{"federation " + coreDNSDomain}
+		fStanza["body"] = body
+		stanzasBytes, err := json.Marshal(federationStanza)
+		if err != nil {
+			return "", err
+		}
+
+		corefileStanza, err := caddyfile.FromJSON(stanzasBytes)
+		if err != nil {
+			return "", err
+		}
+
+		return prepCorefileFormat(string(corefileStanza), 8), nil
+	}
+	return "", nil
+}
+
+// prepCorefileFormat indents the output of the Corefile caddytext and replaces tabs with spaces
+// to neatly format the configmap, making it readable.
+func prepCorefileFormat(s string, indentation int) string {
+	r := []string{}
+	for _, line := range strings.Split(s, "\n") {
+		indented := strings.Repeat(" ", indentation) + line
+		r = append(r, indented)
+	}
+	corefile := strings.Join(r, "\n")
+	return "\n" + strings.Replace(corefile, "\t", "   ", -1)
 }

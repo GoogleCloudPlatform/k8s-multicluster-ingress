@@ -73,6 +73,7 @@ func RunClusterInfo(f cmdutil.Factory, out io.Writer, cmd *cobra.Command) error 
 
 	// TODO use generalized labels once they are implemented (#341)
 	b := f.NewBuilder().
+		Internal().
 		NamespaceParam(cmdNamespace).DefaultNamespace().
 		LabelSelectorParam("kubernetes.io/cluster-service=true").
 		ResourceTypeOrNameArgs(false, []string{"services"}...).
@@ -134,7 +135,7 @@ func printService(out io.Writer, name, link string) {
 	ct.ChangeColor(ct.Green, false, ct.None, false)
 	fmt.Fprint(out, name)
 	ct.ResetColor()
-	fmt.Fprintf(out, " is running at ")
+	fmt.Fprint(out, " is running at ")
 	ct.ChangeColor(ct.Yellow, false, ct.None, false)
 	fmt.Fprint(out, link)
 	ct.ResetColor()

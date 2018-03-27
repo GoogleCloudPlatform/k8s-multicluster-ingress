@@ -30,9 +30,9 @@ import (
 	"k8s.io/kubernetes/pkg/client/clientset_generated/internalclientset/fake"
 	informers "k8s.io/kubernetes/pkg/client/informers/informers_generated/internalversion"
 	kubeadmission "k8s.io/kubernetes/pkg/kubeapiserver/admission"
+	"k8s.io/kubernetes/pkg/scheduler/algorithm"
 	"k8s.io/kubernetes/pkg/util/tolerations"
 	pluginapi "k8s.io/kubernetes/plugin/pkg/admission/podtolerationrestriction/apis/podtolerationrestriction"
-	"k8s.io/kubernetes/plugin/pkg/scheduler/algorithm"
 )
 
 // TestPodAdmission verifies various scenarios involving pod/namespace tolerations
@@ -361,7 +361,7 @@ func newHandlerForTest(c clientset.Interface) (*podTolerationsPlugin, informers.
 		return nil, nil, err
 	}
 	handler := NewPodTolerationsPlugin(pluginConfig)
-	pluginInitializer := kubeadmission.NewPluginInitializer(c, f, nil, nil, nil, nil, nil)
+	pluginInitializer := kubeadmission.NewPluginInitializer(c, f, nil, nil, nil)
 	pluginInitializer.Initialize(handler)
 	err = admission.ValidateInitialization(handler)
 	return handler, f, err

@@ -28,14 +28,13 @@ import (
 	extensions "k8s.io/api/extensions/v1beta1"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/apimachinery/pkg/util/uuid"
 	"k8s.io/client-go/kubernetes/fake"
-	"k8s.io/kubernetes/pkg/api"
 
 	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/context"
 	"k8s.io/ingress-gce/pkg/firewalls"
+	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/loadbalancers"
 	"k8s.io/ingress-gce/pkg/tls"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -55,8 +54,9 @@ func defaultBackendName(clusterName string) string {
 // newLoadBalancerController create a loadbalancer controller.
 func newLoadBalancerController(t *testing.T, cm *fakeClusterManager) *LoadBalancerController {
 	kubeClient := fake.NewSimpleClientset()
+	stopCh := make(chan struct{})
 	ctx := context.NewControllerContext(kubeClient, api_v1.NamespaceAll, 1*time.Second, true)
-	lb, err := NewLoadBalancerController(kubeClient, ctx, cm.ClusterManager, true)
+	lb, err := NewLoadBalancerController(kubeClient, stopCh, ctx, cm.ClusterManager, true)
 	if err != nil {
 		t.Fatalf("%v", err)
 	}
@@ -97,10 +97,14 @@ func toIngressRules(hostRules map[string]utils.FakeIngressRuleValueMap) []extens
 
 // newIngress returns a new Ingress with the given path map.
 func newIngress(hostRules map[string]utils.FakeIngressRuleValueMap) *extensions.Ingress {
-	return &extensions.Ingress{
+	ret := &extensions.Ingress{
+		TypeMeta: meta_v1.TypeMeta{
+			Kind:       "Ingress",
+			APIVersion: "extensions/v1beta1",
+		},
 		ObjectMeta: meta_v1.ObjectMeta{
 			Name:      fmt.Sprintf("%v", uuid.NewUUID()),
-			Namespace: api.NamespaceNone,
+			Namespace: "default",
 		},
 		Spec: extensions.IngressSpec{
 			Backend: &extensions.IngressBackend{
@@ -117,6 +121,8 @@ func newIngress(hostRules map[string]utils.FakeIngressRuleValueMap) *extensions.
 			},
 		},
 	}
+	ret.SelfLink = fmt.Sprintf("%s/%s", ret.Namespace, ret.Name)
+	return ret
 }
 
 // validIngress returns a valid Ingress.
@@ -175,7 +181,7 @@ func newPortManager(st, end int, namer *utils.Namer) *nodePortManager {
 // a nodePortManager is supplied, it also adds all backends to the service store
 // with a nodePort acquired through it.
 func addIngress(lbc *LoadBalancerController, ing *extensions.Ingress, pm *nodePortManager) {
-	lbc.ingLister.Store.Add(ing)
+	lbc.ctx.IngressInformer.GetIndexer().Add(ing)
 	if pm == nil {
 		return
 	}
@@ -196,14 +202,14 @@ func addIngress(lbc *LoadBalancerController, ing *extensions.Ingress, pm *nodePo
 			}
 			svcPort.NodePort = int32(pm.getNodePort(path.Backend.ServiceName))
 			svc.Spec.Ports = []api_v1.ServicePort{svcPort}
-			lbc.svcLister.Indexer.Add(svc)
+			lbc.ctx.ServiceInformer.GetIndexer().Add(svc)
 		}
 	}
 }
 
 func TestLbCreateDelete(t *testing.T) {
 	testFirewallName := "quux"
-	cm := NewFakeClusterManager(DefaultClusterUID, testFirewallName)
+	cm := NewFakeClusterManager(flags.DefaultClusterUID, testFirewallName)
 	lbc := newLoadBalancerController(t, cm)
 	inputMap1 := map[string]utils.FakeIngressRuleValueMap{
 		"foo.example.com": {
@@ -245,34 +251,21 @@ func TestLbCreateDelete(t *testing.T) {
 	// we shouldn't pull shared backends out from existing loadbalancers.
 	unexpected := []int{pm.portMap["foo2svc"], pm.portMap["bar2svc"]}
 	expected := []int{pm.portMap["foo1svc"], pm.portMap["bar1svc"]}
-	firewallPorts := sets.NewString()
 	pm.namer.SetFirewall(testFirewallName)
 	firewallName := pm.namer.FirewallRule()
 
-	if firewallRule, err := cm.firewallPool.(*firewalls.FirewallRules).GetFirewall(firewallName); err != nil {
+	// Check existence of firewall rule
+	_, err := cm.firewallPool.(*firewalls.FirewallRules).GetFirewall(firewallName)
+	if err != nil {
 		t.Fatalf("%v", err)
-	} else {
-		if len(firewallRule.Allowed) != 1 {
-			t.Fatalf("Expected a single firewall rule")
-		}
-		for _, p := range firewallRule.Allowed[0].Ports {
-			firewallPorts.Insert(p)
-		}
 	}
 
-	for _, port := range expected {
-		if _, err := cm.backendPool.Get(int64(port)); err != nil {
-			t.Fatalf("%v", err)
-		}
-		if !firewallPorts.Has(fmt.Sprintf("%v", port)) {
-			t.Fatalf("Expected a firewall rule for port %v", port)
-		}
-	}
 	for _, port := range unexpected {
 		if be, err := cm.backendPool.Get(int64(port)); err == nil {
 			t.Fatalf("Found backend %+v for port %v", be, port)
 		}
 	}
+
 	lbc.ingLister.Store.Delete(ings[1])
 	lbc.sync(getKey(ings[1], t))
 
@@ -284,20 +277,20 @@ func TestLbCreateDelete(t *testing.T) {
 		}
 	}
 	if len(cm.fakeLbs.Fw) != 0 || len(cm.fakeLbs.Um) != 0 || len(cm.fakeLbs.Tp) != 0 {
-		t.Fatalf("Loadbalancer leaked resources")
+		t.Errorf("Loadbalancer leaked resources")
 	}
 	for _, lbName := range []string{getKey(ings[0], t), getKey(ings[1], t)} {
 		if l7, err := cm.l7Pool.Get(lbName); err == nil {
-			t.Fatalf("Found unexpected loadbalandcer %+v: %v", l7, err)
+			t.Fatalf("Got loadbalancer %+v: %v, want none", l7, err)
 		}
 	}
 	if firewallRule, err := cm.firewallPool.(*firewalls.FirewallRules).GetFirewall(firewallName); err == nil {
-		t.Fatalf("Found unexpected firewall rule %v", firewallRule)
+		t.Errorf("Got firewall rule %+v, want none", firewallRule)
 	}
 }
 
 func TestLbFaultyUpdate(t *testing.T) {
-	cm := NewFakeClusterManager(DefaultClusterUID, DefaultFirewallName)
+	cm := NewFakeClusterManager(flags.DefaultClusterUID, DefaultFirewallName)
 	lbc := newLoadBalancerController(t, cm)
 	inputMap := map[string]utils.FakeIngressRuleValueMap{
 		"foo.example.com": {
@@ -338,7 +331,7 @@ func TestLbFaultyUpdate(t *testing.T) {
 }
 
 func TestLbDefaulting(t *testing.T) {
-	cm := NewFakeClusterManager(DefaultClusterUID, DefaultFirewallName)
+	cm := NewFakeClusterManager(flags.DefaultClusterUID, DefaultFirewallName)
 	lbc := newLoadBalancerController(t, cm)
 	// Make sure the controller plugs in the default values accepted by GCE.
 	ing := newIngress(map[string]utils.FakeIngressRuleValueMap{"": {"": "foo1svc"}})
@@ -358,7 +351,7 @@ func TestLbDefaulting(t *testing.T) {
 }
 
 func TestLbNoService(t *testing.T) {
-	cm := NewFakeClusterManager(DefaultClusterUID, DefaultFirewallName)
+	cm := NewFakeClusterManager(flags.DefaultClusterUID, DefaultFirewallName)
 	lbc := newLoadBalancerController(t, cm)
 	inputMap := map[string]utils.FakeIngressRuleValueMap{
 		"foo.example.com": {
@@ -366,6 +359,7 @@ func TestLbNoService(t *testing.T) {
 		},
 	}
 	ing := newIngress(inputMap)
+	ing.Namespace = "ns1"
 	ing.Spec.Backend.ServiceName = "foo1svc"
 	ingStoreKey := getKey(ing, t)
 
@@ -384,16 +378,15 @@ func TestLbNoService(t *testing.T) {
 	// Creates the service, next sync should have complete url map.
 	pm := newPortManager(1, 65536, cm.Namer)
 	addIngress(lbc, ing, pm)
-	lbc.enqueueIngressForService(&api_v1.Service{
+	svc := &api_v1.Service{
 		ObjectMeta: meta_v1.ObjectMeta{
 			Name:      "foo1svc",
 			Namespace: ing.Namespace,
 		},
-	})
-	// TODO: This will hang if the previous step failed to insert into queue
-	key, _ := lbc.ingQueue.queue.Get()
-	lbc.sync(key.(string))
+	}
 
+	lbc.enqueueIngressForService(svc)
+	lbc.sync(fmt.Sprintf("%s/%s", ing.Namespace, ing.Name))
 	inputMap[utils.DefaultBackendKey] = map[string]string{
 		utils.DefaultBackendKey: "foo1svc",
 	}
@@ -404,7 +397,7 @@ func TestLbNoService(t *testing.T) {
 }
 
 func TestLbChangeStaticIP(t *testing.T) {
-	cm := NewFakeClusterManager(DefaultClusterUID, DefaultFirewallName)
+	cm := NewFakeClusterManager(flags.DefaultClusterUID, DefaultFirewallName)
 	lbc := newLoadBalancerController(t, cm)
 	inputMap := map[string]utils.FakeIngressRuleValueMap{
 		"foo.example.com": {

@@ -70,7 +70,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -232,7 +232,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -341,7 +341,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -717,7 +717,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -836,7 +836,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -939,7 +939,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -1518,7 +1518,7 @@
     "properties": {
      "prefix": {
       "type": "string",
-      "description": "An optional identifer to prepend to each key in the ConfigMap. Must be a C_IDENTIFIER."
+      "description": "An optional identifier to prepend to each key in the ConfigMap. Must be a C_IDENTIFIER."
      },
      "configMapRef": {
       "$ref": "v1.ConfigMapEnvSource",
@@ -1615,7 +1615,7 @@
      },
      "flexVolume": {
       "$ref": "v1.FlexVolumeSource",
-      "description": "FlexVolume represents a generic volume resource that is provisioned/attached using an exec based plugin. This is an alpha feature and may change in future."
+      "description": "FlexVolume represents a generic volume resource that is provisioned/attached using an exec based plugin."
      },
      "cinder": {
       "$ref": "v1.CinderVolumeSource",
@@ -1869,7 +1869,7 @@
     "properties": {
      "targetPortal": {
       "type": "string",
-      "description": "iSCSI target portal. The portal is either an IP or ip_addr:port if the port is other than default (typically TCP ports 860 and 3260)."
+      "description": "iSCSI Target Portal. The Portal is either an IP or ip_addr:port if the port is other than default (typically TCP ports 860 and 3260)."
      },
      "iqn": {
       "type": "string",
@@ -1878,11 +1878,11 @@
      "lun": {
       "type": "integer",
       "format": "int32",
-      "description": "iSCSI target lun number."
+      "description": "iSCSI Target Lun number."
      },
      "iscsiInterface": {
       "type": "string",
-      "description": "Optional: Defaults to 'default' (tcp). iSCSI interface name that uses an iSCSI transport."
+      "description": "iSCSI Interface Name that uses an iSCSI transport. Defaults to 'default' (tcp)."
      },
      "fsType": {
       "type": "string",
@@ -1897,7 +1897,7 @@
       "items": {
        "type": "string"
       },
-      "description": "iSCSI target portal List. The portal is either an IP or ip_addr:port if the port is other than default (typically TCP ports 860 and 3260)."
+      "description": "iSCSI Target Portal List. The portal is either an IP or ip_addr:port if the port is other than default (typically TCP ports 860 and 3260)."
      },
      "chapAuthDiscovery": {
       "type": "boolean",
@@ -1909,11 +1909,11 @@
      },
      "secretRef": {
       "$ref": "v1.LocalObjectReference",
-      "description": "CHAP secret for iSCSI target and initiator authentication"
+      "description": "CHAP Secret for iSCSI target and initiator authentication"
      },
      "initiatorName": {
       "type": "string",
-      "description": "Custom iSCSI initiator name. If initiatorName is specified with iscsiInterface simultaneously, new iSCSI interface \u003ctarget portal\u003e:\u003cvolume name\u003e will be created for the connection."
+      "description": "Custom iSCSI Initiator Name. If initiatorName is specified with iscsiInterface simultaneously, new iSCSI interface \u003ctarget portal\u003e:\u003cvolume name\u003e will be created for the connection."
      }
     }
    },
@@ -2013,7 +2013,7 @@
    },
    "v1.FlexVolumeSource": {
     "id": "v1.FlexVolumeSource",
-    "description": "FlexVolume represents a generic volume resource that is provisioned/attached using an exec based plugin. This is an alpha feature and may change in future.",
+    "description": "FlexVolume represents a generic volume resource that is provisioned/attached using an exec based plugin.",
     "required": [
      "driver"
     ],
@@ -2568,7 +2568,7 @@
      },
      "mountPropagation": {
       "$ref": "v1.MountPropagationMode",
-      "description": "mountPropagation determines how mounts are propagated from the host to container and the other way around. When not set, MountPropagationHostToContainer is used. This field is alpha in 1.8 and can be reworked or removed in a future release."
+      "description": "mountPropagation determines how mounts are propagated from the host to container and the other way around. When not set, MountPropagationHostToContainer is used. This field is beta in 1.10."
      }
     }
    },

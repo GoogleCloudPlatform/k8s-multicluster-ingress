@@ -133,7 +133,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -281,7 +281,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -443,7 +443,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -552,7 +552,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -928,7 +928,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -1047,7 +1047,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -1150,7 +1150,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -1253,7 +1253,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -1415,7 +1415,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -1524,7 +1524,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -1900,7 +1900,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -2019,7 +2019,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -2122,7 +2122,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -2225,7 +2225,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -2387,7 +2387,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -2496,7 +2496,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -2872,7 +2872,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -2991,7 +2991,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -3094,7 +3094,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -3197,7 +3197,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -3359,7 +3359,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -3468,7 +3468,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -3844,7 +3844,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -3963,7 +3963,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -4066,7 +4066,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -4169,7 +4169,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -4321,7 +4321,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -4657,7 +4657,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -4972,7 +4972,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -5118,7 +5118,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -5219,7 +5219,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -5555,7 +5555,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -5597,382 +5597,6 @@
        "application/vnd.kubernetes.protobuf",
        "application/json;stream=watch",
        "application/vnd.kubernetes.protobuf;stream=watch"
-      ],
-      "consumes": [
-       "*/*"
-      ]
-     }
-    ]
-   },
-   {
-    "path": "/api/v1/proxy/nodes/{name}/{path}",
-    "description": "API at /api/v1",
-    "operations": [
-     {
-      "type": "string",
-      "method": "GET",
-      "summary": "proxy GET requests to Node",
-      "nickname": "proxyGETNodeWithPath",
-      "parameters": [
-       {
-        "type": "string",
-        "paramType": "path",
-        "name": "name",
-        "description": "name of the Node",
-        "required": true,
-        "allowMultiple": false
-       },
-       {
-        "type": "string",
-        "paramType": "path",
-        "name": "path",
-        "description": "path to the resource",
-        "required": true,
-        "allowMultiple": false
-       }
-      ],
-      "produces": [
-       "*/*"
-      ],
-      "consumes": [
-       "*/*"
-      ]
-     },
-     {
-      "type": "string",
-      "method": "PUT",
-      "summary": "proxy PUT requests to Node",
-      "nickname": "proxyPUTNodeWithPath",
-      "parameters": [
-       {
-        "type": "string",
-        "paramType": "path",
-        "name": "name",
-        "description": "name of the Node",
-        "required": true,
-        "allowMultiple": false
-       },
-       {
-        "type": "string",
-        "paramType": "path",
-        "name": "path",
-        "description": "path to the resource",
-        "required": true,
-        "allowMultiple": false
-       }
-      ],
-      "produces": [
-       "*/*"
-      ],
-      "consumes": [
-       "*/*"
-      ]
-     },
-     {
-      "type": "string",
-      "method": "POST",
-      "summary": "proxy POST requests to Node",
-      "nickname": "proxyPOSTNodeWithPath",
-      "parameters": [
-       {
-        "type": "string",
-        "paramType": "path",
-        "name": "name",
-        "description": "name of the Node",
-        "required": true,
-        "allowMultiple": false
-       },
-       {
-        "type": "string",
-        "paramType": "path",
-        "name": "path",
-        "description": "path to the resource",
-        "required": true,
-        "allowMultiple": false
-       }
-      ],
-      "produces": [
-       "*/*"
-      ],
-      "consumes": [
-       "*/*"
-      ]
-     },
-     {
-      "type": "string",
-      "method": "PATCH",
-      "summary": "proxy PATCH requests to Node",
-      "nickname": "proxyPATCHNodeWithPath",
-      "parameters": [
-       {
-        "type": "string",
-        "paramType": "path",
-        "name": "name",
-        "description": "name of the Node",
-        "required": true,
-        "allowMultiple": false
-       },
-       {
-        "type": "string",
-        "paramType": "path",
-        "name": "path",
-        "description": "path to the resource",
-        "required": true,
-        "allowMultiple": false
-       }
-      ],
-      "produces": [
-       "*/*"
-      ],
-      "consumes": [
-       "*/*"
-      ]
-     },
-     {
-      "type": "string",
-      "method": "DELETE",
-      "summary": "proxy DELETE requests to Node",
-      "nickname": "proxyDELETENodeWithPath",
-      "parameters": [
-       {
-        "type": "string",
-        "paramType": "path",
-        "name": "name",
-        "description": "name of the Node",
-        "required": true,
-        "allowMultiple": false
-       },
-       {
-        "type": "string",
-        "paramType": "path",
-        "name": "path",
-        "description": "path to the resource",
-        "required": true,
-        "allowMultiple": false
-       }
-      ],
-      "produces": [
-       "*/*"
-      ],
-      "consumes": [
-       "*/*"
-      ]
-     },
-     {
-      "type": "string",
-      "method": "HEAD",
-      "summary": "proxy HEAD requests to Node",
-      "nickname": "proxyHEADNodeWithPath",
-      "parameters": [
-       {
-        "type": "string",
-        "paramType": "path",
-        "name": "name",
-        "description": "name of the Node",
-        "required": true,
-        "allowMultiple": false
-       },
-       {
-        "type": "string",
-        "paramType": "path",
-        "name": "path",
-        "description": "path to the resource",
-        "required": true,
-        "allowMultiple": false
-       }
-      ],
-      "produces": [
-       "*/*"
-      ],
-      "consumes": [
-       "*/*"
-      ]
-     },
-     {
-      "type": "string",
-      "method": "OPTIONS",
-      "summary": "proxy OPTIONS requests to Node",
-      "nickname": "proxyOPTIONSNodeWithPath",
-      "parameters": [
-       {
-        "type": "string",
-        "paramType": "path",
-        "name": "name",
-        "description": "name of the Node",
-        "required": true,
-        "allowMultiple": false
-       },
-       {
-        "type": "string",
-        "paramType": "path",
-        "name": "path",
-        "description": "path to the resource",
-        "required": true,
-        "allowMultiple": false
-       }
-      ],
-      "produces": [
-       "*/*"
-      ],
-      "consumes": [
-       "*/*"
-      ]
-     }
-    ]
-   },
-   {
-    "path": "/api/v1/proxy/nodes/{name}",
-    "description": "API at /api/v1",
-    "operations": [
-     {
-      "type": "string",
-      "method": "GET",
-      "summary": "proxy GET requests to Node",
-      "nickname": "proxyGETNode",
-      "parameters": [
-       {
-        "type": "string",
-        "paramType": "path",
-        "name": "name",
-        "description": "name of the Node",
-        "required": true,
-        "allowMultiple": false
-       }
-      ],
-      "produces": [
-       "*/*"
-      ],
-      "consumes": [
-       "*/*"
-      ]
-     },
-     {
-      "type": "string",
-      "method": "PUT",
-      "summary": "proxy PUT requests to Node",
-      "nickname": "proxyPUTNode",
-      "parameters": [
-       {
-        "type": "string",
-        "paramType": "path",
-        "name": "name",
-        "description": "name of the Node",
-        "required": true,
-        "allowMultiple": false
-       }
-      ],
-      "produces": [
-       "*/*"
-      ],
-      "consumes": [
-       "*/*"
-      ]
-     },
-     {
-      "type": "string",
-      "method": "POST",
-      "summary": "proxy POST requests to Node",
-      "nickname": "proxyPOSTNode",
-      "parameters": [
-       {
-        "type": "string",
-        "paramType": "path",
-        "name": "name",
-        "description": "name of the Node",
-        "required": true,
-        "allowMultiple": false
-       }
-      ],
-      "produces": [
-       "*/*"
-      ],
-      "consumes": [
-       "*/*"
-      ]
-     },
-     {
-      "type": "string",
-      "method": "PATCH",
-      "summary": "proxy PATCH requests to Node",
-      "nickname": "proxyPATCHNode",
-      "parameters": [
-       {
-        "type": "string",
-        "paramType": "path",
-        "name": "name",
-        "description": "name of the Node",
-        "required": true,
-        "allowMultiple": false
-       }
-      ],
-      "produces": [
-       "*/*"
-      ],
-      "consumes": [
-       "*/*"
-      ]
-     },
-     {
-      "type": "string",
-      "method": "DELETE",
-      "summary": "proxy DELETE requests to Node",
-      "nickname": "proxyDELETENode",
-      "parameters": [
-       {
-        "type": "string",
-        "paramType": "path",
-        "name": "name",
-        "description": "name of the Node",
-        "required": true,
-        "allowMultiple": false
-       }
-      ],
-      "produces": [
-       "*/*"
-      ],
-      "consumes": [
-       "*/*"
-      ]
-     },
-     {
-      "type": "string",
-      "method": "HEAD",
-      "summary": "proxy HEAD requests to Node",
-      "nickname": "proxyHEADNode",
-      "parameters": [
-       {
-        "type": "string",
-        "paramType": "path",
-        "name": "name",
-        "description": "name of the Node",
-        "required": true,
-        "allowMultiple": false
-       }
-      ],
-      "produces": [
-       "*/*"
-      ],
-      "consumes": [
-       "*/*"
-      ]
-     },
-     {
-      "type": "string",
-      "method": "OPTIONS",
-      "summary": "proxy OPTIONS requests to Node",
-      "nickname": "proxyOPTIONSNode",
-      "parameters": [
-       {
-        "type": "string",
-        "paramType": "path",
-        "name": "name",
-        "description": "name of the Node",
-        "required": true,
-        "allowMultiple": false
-       }
-      ],
-      "produces": [
-       "*/*"
       ],
       "consumes": [
        "*/*"
@@ -6676,7 +6300,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -6838,7 +6462,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -6947,7 +6571,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -7323,7 +6947,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -7442,7 +7066,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -7545,7 +7169,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -7818,7 +7442,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -7964,7 +7588,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -8065,7 +7689,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -8401,7 +8025,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -8658,7 +8282,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -8820,7 +8444,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -8929,7 +8553,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -9305,7 +8929,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -9355,494 +8979,6 @@
        "application/vnd.kubernetes.protobuf",
        "application/json;stream=watch",
        "application/vnd.kubernetes.protobuf;stream=watch"
-      ],
-      "consumes": [
-       "*/*"
-      ]
-     }
-    ]
-   },
-   {
-    "path": "/api/v1/proxy/namespaces/{namespace}/pods/{name}/{path}",
-    "description": "API at /api/v1",
-    "operations": [
-     {
-      "type": "string",
-      "method": "GET",
-      "summary": "proxy GET requests to Pod",
-      "nickname": "proxyGETNamespacedPodWithPath",
-      "parameters": [
-       {
-        "type": "string",
-        "paramType": "path",
-        "name": "namespace",
-        "description": "object name and auth scope, such as for teams and projects",
-        "required": true,
-        "allowMultiple": false
-       },
-       {
-        "type": "string",
-        "paramType": "path",
-        "name": "name",
-        "description": "name of the Pod",
-        "required": true,
-        "allowMultiple": false
-       },
-       {
-        "type": "string",
-        "paramType": "path",
-        "name": "path",
-        "description": "path to the resource",
-        "required": true,
-        "allowMultiple": false
-       }
-      ],
-      "produces": [
-       "*/*"
-      ],
-      "consumes": [
-       "*/*"
-      ]
-     },
-     {
-      "type": "string",
-      "method": "PUT",
-      "summary": "proxy PUT requests to Pod",
-      "nickname": "proxyPUTNamespacedPodWithPath",
-      "parameters": [
-       {
-        "type": "string",
-        "paramType": "path",
-        "name": "namespace",
-        "description": "object name and auth scope, such as for teams and projects",
-        "required": true,
-        "allowMultiple": false
-       },
-       {
-        "type": "string",
-        "paramType": "path",
-        "name": "name",
-        "description": "name of the Pod",
-        "required": true,
-        "allowMultiple": false
-       },
-       {
-        "type": "string",
-        "paramType": "path",
-        "name": "path",
-        "description": "path to the resource",
-        "required": true,
-        "allowMultiple": false
-       }
-      ],
-      "produces": [
-       "*/*"
-      ],
-      "consumes": [
-       "*/*"
-      ]
-     },
-     {
-      "type": "string",
-      "method": "POST",
-      "summary": "proxy POST requests to Pod",
-      "nickname": "proxyPOSTNamespacedPodWithPath",
-      "parameters": [
-       {
-        "type": "string",
-        "paramType": "path",
-        "name": "namespace",
-        "description": "object name and auth scope, such as for teams and projects",
-        "required": true,
-        "allowMultiple": false
-       },
-       {
-        "type": "string",
-        "paramType": "path",
-        "name": "name",
-        "description": "name of the Pod",
-        "required": true,
-        "allowMultiple": false
-       },
-       {
-        "type": "string",
-        "paramType": "path",
-        "name": "path",
-        "description": "path to the resource",
-        "required": true,
-        "allowMultiple": false
-       }
-      ],
-      "produces": [
-       "*/*"
-      ],
-      "consumes": [
-       "*/*"
-      ]
-     },
-     {
-      "type": "string",
-      "method": "PATCH",
-      "summary": "proxy PATCH requests to Pod",
-      "nickname": "proxyPATCHNamespacedPodWithPath",
-      "parameters": [
-       {
-        "type": "string",
-        "paramType": "path",
-        "name": "namespace",
-        "description": "object name and auth scope, such as for teams and projects",
-        "required": true,
-        "allowMultiple": false
-       },
-       {
-        "type": "string",
-        "paramType": "path",
-        "name": "name",
-        "description": "name of the Pod",
-        "required": true,
-        "allowMultiple": false
-       },
-       {
-        "type": "string",
-        "paramType": "path",
-        "name": "path",
-        "description": "path to the resource",
-        "required": true,
-        "allowMultiple": false
-       }
-      ],
-      "produces": [
-       "*/*"
-      ],
-      "consumes": [
-       "*/*"
-      ]
-     },
-     {
-      "type": "string",
-      "method": "DELETE",
-      "summary": "proxy DELETE requests to Pod",
-      "nickname": "proxyDELETENamespacedPodWithPath",
-      "parameters": [
-       {
-        "type": "string",
-        "paramType": "path",
-        "name": "namespace",
-        "description": "object name and auth scope, such as for teams and projects",
-        "required": true,
-        "allowMultiple": false
-       },
-       {
-        "type": "string",
-        "paramType": "path",
-        "name": "name",
-        "description": "name of the Pod",
-        "required": true,
-        "allowMultiple": false
-       },
-       {
-        "type": "string",
-        "paramType": "path",
-        "name": "path",
-        "description": "path to the resource",
-        "required": true,
-        "allowMultiple": false
-       }
-      ],
-      "produces": [
-       "*/*"
-      ],
-      "consumes": [
-       "*/*"
-      ]
-     },
-     {
-      "type": "string",
-      "method": "HEAD",
-      "summary": "proxy HEAD requests to Pod",
-      "nickname": "proxyHEADNamespacedPodWithPath",
-      "parameters": [
-       {
-        "type": "string",
-        "paramType": "path",
-        "name": "namespace",
-        "description": "object name and auth scope, such as for teams and projects",
-        "required": true,
-        "allowMultiple": false
-       },
-       {
-        "type": "string",
-        "paramType": "path",
-        "name": "name",
-        "description": "name of the Pod",
-        "required": true,
-        "allowMultiple": false
-       },
-       {
-        "type": "string",
-        "paramType": "path",
-        "name": "path",
-        "description": "path to the resource",
-        "required": true,
-        "allowMultiple": false
-       }
-      ],
-      "produces": [
-       "*/*"
-      ],
-      "consumes": [
-       "*/*"
-      ]
-     },
-     {
-      "type": "string",
-      "method": "OPTIONS",
-      "summary": "proxy OPTIONS requests to Pod",
-      "nickname": "proxyOPTIONSNamespacedPodWithPath",
-      "parameters": [
-       {
-        "type": "string",
-        "paramType": "path",
-        "name": "namespace",
-        "description": "object name and auth scope, such as for teams and projects",
-        "required": true,
-        "allowMultiple": false
-       },
-       {
-        "type": "string",
-        "paramType": "path",
-        "name": "name",
-        "description": "name of the Pod",
-        "required": true,
-        "allowMultiple": false
-       },
-       {
-        "type": "string",
-        "paramType": "path",
-        "name": "path",
-        "description": "path to the resource",
-        "required": true,
-        "allowMultiple": false
-       }
-      ],
-      "produces": [
-       "*/*"
-      ],
-      "consumes": [
-       "*/*"
-      ]
-     }
-    ]
-   },
-   {
-    "path": "/api/v1/proxy/namespaces/{namespace}/pods/{name}",
-    "description": "API at /api/v1",
-    "operations": [
-     {
-      "type": "string",
-      "method": "GET",
-      "summary": "proxy GET requests to Pod",
-      "nickname": "proxyGETNamespacedPod",
-      "parameters": [
-       {
-        "type": "string",
-        "paramType": "path",
-        "name": "namespace",
-        "description": "object name and auth scope, such as for teams and projects",
-        "required": true,
-        "allowMultiple": false
-       },
-       {
-        "type": "string",
-        "paramType": "path",
-        "name": "name",
-        "description": "name of the Pod",
-        "required": true,
-        "allowMultiple": false
-       }
-      ],
-      "produces": [
-       "*/*"
-      ],
-      "consumes": [
-       "*/*"
-      ]
-     },
-     {
-      "type": "string",
-      "method": "PUT",
-      "summary": "proxy PUT requests to Pod",
-      "nickname": "proxyPUTNamespacedPod",
-      "parameters": [
-       {
-        "type": "string",
-        "paramType": "path",
-        "name": "namespace",
-        "description": "object name and auth scope, such as for teams and projects",
-        "required": true,
-        "allowMultiple": false
-       },
-       {
-        "type": "string",
-        "paramType": "path",
-        "name": "name",
-        "description": "name of the Pod",
-        "required": true,
-        "allowMultiple": false
-       }
-      ],
-      "produces": [
-       "*/*"
-      ],
-      "consumes": [
-       "*/*"
-      ]
-     },
-     {
-      "type": "string",
-      "method": "POST",
-      "summary": "proxy POST requests to Pod",
-      "nickname": "proxyPOSTNamespacedPod",
-      "parameters": [
-       {
-        "type": "string",
-        "paramType": "path",
-        "name": "namespace",
-        "description": "object name and auth scope, such as for teams and projects",
-        "required": true,
-        "allowMultiple": false
-       },
-       {
-        "type": "string",
-        "paramType": "path",
-        "name": "name",
-        "description": "name of the Pod",
-        "required": true,
-        "allowMultiple": false
-       }
-      ],
-      "produces": [
-       "*/*"
-      ],
-      "consumes": [
-       "*/*"
-      ]
-     },
-     {
-      "type": "string",
-      "method": "PATCH",
-      "summary": "proxy PATCH requests to Pod",
-      "nickname": "proxyPATCHNamespacedPod",
-      "parameters": [
-       {
-        "type": "string",
-        "paramType": "path",
-        "name": "namespace",
-        "description": "object name and auth scope, such as for teams and projects",
-        "required": true,
-        "allowMultiple": false
-       },
-       {
-        "type": "string",
-        "paramType": "path",
-        "name": "name",
-        "description": "name of the Pod",
-        "required": true,
-        "allowMultiple": false
-       }
-      ],
-      "produces": [
-       "*/*"
-      ],
-      "consumes": [
-       "*/*"
-      ]
-     },
-     {
-      "type": "string",
-      "method": "DELETE",
-      "summary": "proxy DELETE requests to Pod",
-      "nickname": "proxyDELETENamespacedPod",
-      "parameters": [
-       {
-        "type": "string",
-        "paramType": "path",
-        "name": "namespace",
-        "description": "object name and auth scope, such as for teams and projects",
-        "required": true,
-        "allowMultiple": false
-       },
-       {
-        "type": "string",
-        "paramType": "path",
-        "name": "name",
-        "description": "name of the Pod",
-        "required": true,
-        "allowMultiple": false
-       }
-      ],
-      "produces": [
-       "*/*"
-      ],
-      "consumes": [
-       "*/*"
-      ]
-     },
-     {
-      "type": "string",
-      "method": "HEAD",
-      "summary": "proxy HEAD requests to Pod",
-      "nickname": "proxyHEADNamespacedPod",
-      "parameters": [
-       {
-        "type": "string",
-        "paramType": "path",
-        "name": "namespace",
-        "description": "object name and auth scope, such as for teams and projects",
-        "required": true,
-        "allowMultiple": false
-       },
-       {
-        "type": "string",
-        "paramType": "path",
-        "name": "name",
-        "description": "name of the Pod",
-        "required": true,
-        "allowMultiple": false
-       }
-      ],
-      "produces": [
-       "*/*"
-      ],
-      "consumes": [
-       "*/*"
-      ]
-     },
-     {
-      "type": "string",
-      "method": "OPTIONS",
-      "summary": "proxy OPTIONS requests to Pod",
-      "nickname": "proxyOPTIONSNamespacedPod",
-      "parameters": [
-       {
-        "type": "string",
-        "paramType": "path",
-        "name": "namespace",
-        "description": "object name and auth scope, such as for teams and projects",
-        "required": true,
-        "allowMultiple": false
-       },
-       {
-        "type": "string",
-        "paramType": "path",
-        "name": "name",
-        "description": "name of the Pod",
-        "required": true,
-        "allowMultiple": false
-       }
-      ],
-      "produces": [
-       "*/*"
       ],
       "consumes": [
        "*/*"
@@ -9912,7 +9048,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -10015,7 +9151,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -11530,7 +10666,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -11692,7 +10828,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -11801,7 +10937,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -12177,7 +11313,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -12296,7 +11432,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -12399,7 +11535,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -12502,7 +11638,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -12664,7 +11800,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -12773,7 +11909,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -13149,7 +12285,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -13268,7 +12404,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -13371,7 +12507,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -13814,7 +12950,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -13976,7 +13112,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -14085,7 +13221,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -14461,7 +13597,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -14580,7 +13716,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -14683,7 +13819,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -14956,7 +14092,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -15118,7 +14254,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -15227,7 +14363,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -15603,7 +14739,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -15722,7 +14858,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -15825,7 +14961,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -15928,7 +15064,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -16090,7 +15226,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -16199,7 +15335,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -16575,7 +15711,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -16694,7 +15830,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -16797,7 +15933,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -16900,7 +16036,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -17068,7 +16204,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -17316,6 +16452,38 @@
         "allowMultiple": false
        },
        {
+        "type": "v1.DeleteOptions",
+        "paramType": "body",
+        "name": "body",
+        "description": "",
+        "required": true,
+        "allowMultiple": false
+       },
+       {
+        "type": "integer",
+        "paramType": "query",
+        "name": "gracePeriodSeconds",
+        "description": "The duration in seconds before the object should be deleted. Value must be non-negative integer. The value zero indicates delete immediately. If this value is nil, the default grace period for the specified type will be used. Defaults to a per object value if not specified. zero means delete immediately.",
+        "required": false,
+        "allowMultiple": false
+       },
+       {
+        "type": "boolean",
+        "paramType": "query",
+        "name": "orphanDependents",
+        "description": "Deprecated: please use the PropagationPolicy, this field will be deprecated in 1.7. Should the dependent objects be orphaned. If true/false, the \"orphan\" finalizer will be added to/removed from the object's finalizers list. Either this field or PropagationPolicy may be set, but not both.",
+        "required": false,
+        "allowMultiple": false
+       },
+       {
+        "type": "string",
+        "paramType": "query",
+        "name": "propagationPolicy",
+        "description": "Whether and how garbage collection will be performed. Either this field or OrphanDependents may be set, but not both. The default policy is decided by the existing finalizer set in the metadata.finalizers and the resource-specific default policy. Acceptable values are: 'Orphan' - orphan the dependents; 'Background' - allow the garbage collector to delete the dependents in the background; 'Foreground' - a cascading policy that deletes all dependents in the foreground.",
+        "required": false,
+        "allowMultiple": false
+       },
+       {
         "type": "string",
         "paramType": "path",
         "name": "namespace",
@@ -17412,7 +16580,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -17462,494 +16630,6 @@
        "application/vnd.kubernetes.protobuf",
        "application/json;stream=watch",
        "application/vnd.kubernetes.protobuf;stream=watch"
-      ],
-      "consumes": [
-       "*/*"
-      ]
-     }
-    ]
-   },
-   {
-    "path": "/api/v1/proxy/namespaces/{namespace}/services/{name}/{path}",
-    "description": "API at /api/v1",
-    "operations": [
-     {
-      "type": "string",
-      "method": "GET",
-      "summary": "proxy GET requests to Service",
-      "nickname": "proxyGETNamespacedServiceWithPath",
-      "parameters": [
-       {
-        "type": "string",
-        "paramType": "path",
-        "name": "namespace",
-        "description": "object name and auth scope, such as for teams and projects",
-        "required": true,
-        "allowMultiple": false
-       },
-       {
-        "type": "string",
-        "paramType": "path",
-        "name": "name",
-        "description": "name of the Service",
-        "required": true,
-        "allowMultiple": false
-       },
-       {
-        "type": "string",
-        "paramType": "path",
-        "name": "path",
-        "description": "path to the resource",
-        "required": true,
-        "allowMultiple": false
-       }
-      ],
-      "produces": [
-       "*/*"
-      ],
-      "consumes": [
-       "*/*"
-      ]
-     },
-     {
-      "type": "string",
-      "method": "PUT",
-      "summary": "proxy PUT requests to Service",
-      "nickname": "proxyPUTNamespacedServiceWithPath",
-      "parameters": [
-       {
-        "type": "string",
-        "paramType": "path",
-        "name": "namespace",
-        "description": "object name and auth scope, such as for teams and projects",
-        "required": true,
-        "allowMultiple": false
-       },
-       {
-        "type": "string",
-        "paramType": "path",
-        "name": "name",
-        "description": "name of the Service",
-        "required": true,
-        "allowMultiple": false
-       },
-       {
-        "type": "string",
-        "paramType": "path",
-        "name": "path",
-        "description": "path to the resource",
-        "required": true,
-        "allowMultiple": false
-       }
-      ],
-      "produces": [
-       "*/*"
-      ],
-      "consumes": [
-       "*/*"
-      ]
-     },
-     {
-      "type": "string",
-      "method": "POST",
-      "summary": "proxy POST requests to Service",
-      "nickname": "proxyPOSTNamespacedServiceWithPath",
-      "parameters": [
-       {
-        "type": "string",
-        "paramType": "path",
-        "name": "namespace",
-        "description": "object name and auth scope, such as for teams and projects",
-        "required": true,
-        "allowMultiple": false
-       },
-       {
-        "type": "string",
-        "paramType": "path",
-        "name": "name",
-        "description": "name of the Service",
-        "required": true,
-        "allowMultiple": false
-       },
-       {
-        "type": "string",
-        "paramType": "path",
-        "name": "path",
-        "description": "path to the resource",
-        "required": true,
-        "allowMultiple": false
-       }
-      ],
-      "produces": [
-       "*/*"
-      ],
-      "consumes": [
-       "*/*"
-      ]
-     },
-     {
-      "type": "string",
-      "method": "PATCH",
-      "summary": "proxy PATCH requests to Service",
-      "nickname": "proxyPATCHNamespacedServiceWithPath",
-      "parameters": [
-       {
-        "type": "string",
-        "paramType": "path",
-        "name": "namespace",
-        "description": "object name and auth scope, such as for teams and projects",
-        "required": true,
-        "allowMultiple": false
-       },
-       {
-        "type": "string",
-        "paramType": "path",
-        "name": "name",
-        "description": "name of the Service",
-        "required": true,
-        "allowMultiple": false
-       },
-       {
-        "type": "string",
-        "paramType": "path",
-        "name": "path",
-        "description": "path to the resource",
-        "required": true,
-        "allowMultiple": false
-       }
-      ],
-      "produces": [
-       "*/*"
-      ],
-      "consumes": [
-       "*/*"
-      ]
-     },
-     {
-      "type": "string",
-      "method": "DELETE",
-      "summary": "proxy DELETE requests to Service",
-      "nickname": "proxyDELETENamespacedServiceWithPath",
-      "parameters": [
-       {
-        "type": "string",
-        "paramType": "path",
-        "name": "namespace",
-        "description": "object name and auth scope, such as for teams and projects",
-        "required": true,
-        "allowMultiple": false
-       },
-       {
-        "type": "string",
-        "paramType": "path",
-        "name": "name",
-        "description": "name of the Service",
-        "required": true,
-        "allowMultiple": false
-       },
-       {
-        "type": "string",
-        "paramType": "path",
-        "name": "path",
-        "description": "path to the resource",
-        "required": true,
-        "allowMultiple": false
-       }
-      ],
-      "produces": [
-       "*/*"
-      ],
-      "consumes": [
-       "*/*"
-      ]
-     },
-     {
-      "type": "string",
-      "method": "HEAD",
-      "summary": "proxy HEAD requests to Service",
-      "nickname": "proxyHEADNamespacedServiceWithPath",
-      "parameters": [
-       {
-        "type": "string",
-        "paramType": "path",
-        "name": "namespace",
-        "description": "object name and auth scope, such as for teams and projects",
-        "required": true,
-        "allowMultiple": false
-       },
-       {
-        "type": "string",
-        "paramType": "path",
-        "name": "name",
-        "description": "name of the Service",
-        "required": true,
-        "allowMultiple": false
-       },
-       {
-        "type": "string",
-        "paramType": "path",
-        "name": "path",
-        "description": "path to the resource",
-        "required": true,
-        "allowMultiple": false
-       }
-      ],
-      "produces": [
-       "*/*"
-      ],
-      "consumes": [
-       "*/*"
-      ]
-     },
-     {
-      "type": "string",
-      "method": "OPTIONS",
-      "summary": "proxy OPTIONS requests to Service",
-      "nickname": "proxyOPTIONSNamespacedServiceWithPath",
-      "parameters": [
-       {
-        "type": "string",
-        "paramType": "path",
-        "name": "namespace",
-        "description": "object name and auth scope, such as for teams and projects",
-        "required": true,
-        "allowMultiple": false
-       },
-       {
-        "type": "string",
-        "paramType": "path",
-        "name": "name",
-        "description": "name of the Service",
-        "required": true,
-        "allowMultiple": false
-       },
-       {
-        "type": "string",
-        "paramType": "path",
-        "name": "path",
-        "description": "path to the resource",
-        "required": true,
-        "allowMultiple": false
-       }
-      ],
-      "produces": [
-       "*/*"
-      ],
-      "consumes": [
-       "*/*"
-      ]
-     }
-    ]
-   },
-   {
-    "path": "/api/v1/proxy/namespaces/{namespace}/services/{name}",
-    "description": "API at /api/v1",
-    "operations": [
-     {
-      "type": "string",
-      "method": "GET",
-      "summary": "proxy GET requests to Service",
-      "nickname": "proxyGETNamespacedService",
-      "parameters": [
-       {
-        "type": "string",
-        "paramType": "path",
-        "name": "namespace",
-        "description": "object name and auth scope, such as for teams and projects",
-        "required": true,
-        "allowMultiple": false
-       },
-       {
-        "type": "string",
-        "paramType": "path",
-        "name": "name",
-        "description": "name of the Service",
-        "required": true,
-        "allowMultiple": false
-       }
-      ],
-      "produces": [
-       "*/*"
-      ],
-      "consumes": [
-       "*/*"
-      ]
-     },
-     {
-      "type": "string",
-      "method": "PUT",
-      "summary": "proxy PUT requests to Service",
-      "nickname": "proxyPUTNamespacedService",
-      "parameters": [
-       {
-        "type": "string",
-        "paramType": "path",
-        "name": "namespace",
-        "description": "object name and auth scope, such as for teams and projects",
-        "required": true,
-        "allowMultiple": false
-       },
-       {
-        "type": "string",
-        "paramType": "path",
-        "name": "name",
-        "description": "name of the Service",
-        "required": true,
-        "allowMultiple": false
-       }
-      ],
-      "produces": [
-       "*/*"
-      ],
-      "consumes": [
-       "*/*"
-      ]
-     },
-     {
-      "type": "string",
-      "method": "POST",
-      "summary": "proxy POST requests to Service",
-      "nickname": "proxyPOSTNamespacedService",
-      "parameters": [
-       {
-        "type": "string",
-        "paramType": "path",
-        "name": "namespace",
-        "description": "object name and auth scope, such as for teams and projects",
-        "required": true,
-        "allowMultiple": false
-       },
-       {
-        "type": "string",
-        "paramType": "path",
-        "name": "name",
-        "description": "name of the Service",
-        "required": true,
-        "allowMultiple": false
-       }
-      ],
-      "produces": [
-       "*/*"
-      ],
-      "consumes": [
-       "*/*"
-      ]
-     },
-     {
-      "type": "string",
-      "method": "PATCH",
-      "summary": "proxy PATCH requests to Service",
-      "nickname": "proxyPATCHNamespacedService",
-      "parameters": [
-       {
-        "type": "string",
-        "paramType": "path",
-        "name": "namespace",
-        "description": "object name and auth scope, such as for teams and projects",
-        "required": true,
-        "allowMultiple": false
-       },
-       {
-        "type": "string",
-        "paramType": "path",
-        "name": "name",
-        "description": "name of the Service",
-        "required": true,
-        "allowMultiple": false
-       }
-      ],
-      "produces": [
-       "*/*"
-      ],
-      "consumes": [
-       "*/*"
-      ]
-     },
-     {
-      "type": "string",
-      "method": "DELETE",
-      "summary": "proxy DELETE requests to Service",
-      "nickname": "proxyDELETENamespacedService",
-      "parameters": [
-       {
-        "type": "string",
-        "paramType": "path",
-        "name": "namespace",
-        "description": "object name and auth scope, such as for teams and projects",
-        "required": true,
-        "allowMultiple": false
-       },
-       {
-        "type": "string",
-        "paramType": "path",
-        "name": "name",
-        "description": "name of the Service",
-        "required": true,
-        "allowMultiple": false
-       }
-      ],
-      "produces": [
-       "*/*"
-      ],
-      "consumes": [
-       "*/*"
-      ]
-     },
-     {
-      "type": "string",
-      "method": "HEAD",
-      "summary": "proxy HEAD requests to Service",
-      "nickname": "proxyHEADNamespacedService",
-      "parameters": [
-       {
-        "type": "string",
-        "paramType": "path",
-        "name": "namespace",
-        "description": "object name and auth scope, such as for teams and projects",
-        "required": true,
-        "allowMultiple": false
-       },
-       {
-        "type": "string",
-        "paramType": "path",
-        "name": "name",
-        "description": "name of the Service",
-        "required": true,
-        "allowMultiple": false
-       }
-      ],
-      "produces": [
-       "*/*"
-      ],
-      "consumes": [
-       "*/*"
-      ]
-     },
-     {
-      "type": "string",
-      "method": "OPTIONS",
-      "summary": "proxy OPTIONS requests to Service",
-      "nickname": "proxyOPTIONSNamespacedService",
-      "parameters": [
-       {
-        "type": "string",
-        "paramType": "path",
-        "name": "namespace",
-        "description": "object name and auth scope, such as for teams and projects",
-        "required": true,
-        "allowMultiple": false
-       },
-       {
-        "type": "string",
-        "paramType": "path",
-        "name": "name",
-        "description": "name of the Service",
-        "required": true,
-        "allowMultiple": false
-       }
-      ],
-      "produces": [
-       "*/*"
       ],
       "consumes": [
        "*/*"
@@ -18019,7 +16699,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -18122,7 +16802,7 @@
         "type": "integer",
         "paramType": "query",
         "name": "timeoutSeconds",
-        "description": "Timeout for the list/watch call.",
+        "description": "Timeout for the list/watch call. This limits the duration of the call, regardless of any activity or inactivity.",
         "required": false,
         "allowMultiple": false
        },
@@ -19398,7 +18078,11 @@
      },
      "data": {
       "type": "object",
-      "description": "Data contains the configuration data. Each key must consist of alphanumeric characters, '-', '_' or '.'."
+      "description": "Data contains the configuration data. Each key must consist of alphanumeric characters, '-', '_' or '.'. Values with non-UTF-8 byte sequences must use the BinaryData field. The keys stored in Data must not overlap with the keys in the BinaryData field, this is enforced during validation process."
+     },
+     "binaryData": {
+      "type": "object",
+      "description": "BinaryData contains the binary data. Each key must consist of alphanumeric characters, '-', '_' or '.'. BinaryData can contain byte sequences that are not in the UTF-8 range. The keys stored in BinaryData must not overlap with the ones in the Data field, this is enforced during validation process. Using this field will require 1.10+ apiserver and kubelet."
      }
     }
    },
@@ -19502,9 +18186,6 @@
    "v1.Endpoints": {
     "id": "v1.Endpoints",
     "description": "Endpoints is a collection of endpoints that implement the actual service. Example:\n  Name: \"mysvc\",\n  Subsets: [\n    {\n      Addresses: [{\"ip\": \"10.10.1.1\"}, {\"ip\": \"10.10.2.2\"}],\n      Ports: [{\"name\": \"a\", \"port\": 8675}, {\"name\": \"b\", \"port\": 309}]\n    },\n    {\n      Addresses: [{\"ip\": \"10.10.3.3\"}],\n      Ports: [{\"name\": \"a\", \"port\": 93}, {\"name\": \"b\", \"port\": 76}]\n    },\n ]",
-    "required": [
-     "subsets"
-    ],
     "properties": {
      "kind": {
       "type": "string",
@@ -19634,7 +18315,9 @@
     "description": "Event is a report of an event somewhere in the cluster.",
     "required": [
      "metadata",
-     "involvedObject"
+     "involvedObject",
+     "reportingComponent",
+     "reportingInstance"
     ],
     "properties": {
      "kind": {
@@ -19681,6 +18364,30 @@
      "type": {
       "type": "string",
       "description": "Type of this event (Normal, Warning), new types could be added in the future"
+     },
+     "eventTime": {
+      "type": "string",
+      "description": "Time when this Event was first observed."
+     },
+     "series": {
+      "$ref": "v1.EventSeries",
+      "description": "Data about the Event series this event represents or nil if it's a singleton Event."
+     },
+     "action": {
+      "type": "string",
+      "description": "What action was taken/failed regarding to the Regarding object."
+     },
+     "related": {
+      "$ref": "v1.ObjectReference",
+      "description": "Optional secondary object for more complex actions."
+     },
+     "reportingComponent": {
+      "type": "string",
+      "description": "Name of the controller that emitted this Event, e.g. `kubernetes.io/kubelet`."
+     },
+     "reportingInstance": {
+      "type": "string",
+      "description": "ID of the controller instance, e.g. `kubelet-xyzf`."
      }
     }
    },
@@ -19695,6 +18402,25 @@
      "host": {
       "type": "string",
       "description": "Node name on which the event is generated."
+     }
+    }
+   },
+   "v1.EventSeries": {
+    "id": "v1.EventSeries",
+    "description": "EventSeries contain information on series of events, i.e. thing that was/is happening continuously for some time.",
+    "properties": {
+     "count": {
+      "type": "integer",
+      "format": "int32",
+      "description": "Number of occurrences in this series up to the last heartbeat time"
+     },
+     "lastObservedTime": {
+      "type": "string",
+      "description": "Time of the last occurrence observed"
+     },
+     "state": {
+      "type": "string",
+      "description": "State of this Series: Ongoing or Finished"
      }
     }
    },
@@ -20212,7 +18938,7 @@
       "items": {
        "type": "string"
       },
-      "description": "Names by which this image is known. e.g. [\"gcr.io/google_containers/hyperkube:v1.0.7\", \"dockerhub.io/google_containers/hyperkube:v1.0.7\"]"
+      "description": "Names by which this image is known. e.g. [\"k8s.gcr.io/hyperkube:v1.0.7\", \"dockerhub.io/google_containers/hyperkube:v1.0.7\"]"
      },
      "sizeBytes": {
       "type": "integer",
@@ -20323,6 +19049,10 @@
      "storageClassName": {
       "type": "string",
       "description": "Name of the StorageClass required by the claim. More info: https://kubernetes.io/docs/concepts/storage/persistent-volumes#class-1"
+     },
+     "volumeMode": {
+      "$ref": "v1.PersistentVolumeMode",
+      "description": "volumeMode defines what type of volume is required by the claim. Value of Filesystem is implied when not included in claim spec. This is an alpha feature and may change in the future."
      }
     }
    },
@@ -20385,6 +19115,10 @@
       "description": "Requests describes the minimum amount of compute resources required. If Requests is omitted for a container, it defaults to Limits if that is explicitly specified, otherwise to an implementation-defined value. More info: https://kubernetes.io/docs/concepts/configuration/manage-compute-resources-container/"
      }
     }
+   },
+   "v1.PersistentVolumeMode": {
+    "id": "v1.PersistentVolumeMode",
+    "properties": {}
    },
    "v1.PersistentVolumeClaimStatus": {
     "id": "v1.PersistentVolumeClaimStatus",
@@ -20533,7 +19267,7 @@
       "description": "RBD represents a Rados Block Device mount on the host that shares a pod's lifetime. More info: https://releases.k8s.io/HEAD/examples/volumes/rbd/README.md"
      },
      "iscsi": {
-      "$ref": "v1.ISCSIVolumeSource",
+      "$ref": "v1.ISCSIPersistentVolumeSource",
       "description": "ISCSI represents an ISCSI Disk resource that is attached to a kubelet's host machine and then exposed to the pod. Provisioned by an admin."
      },
      "cinder": {
@@ -20553,8 +19287,8 @@
       "description": "Flocker represents a Flocker volume attached to a kubelet's host machine and exposed to the pod for its usage. This depends on the Flocker control service being running"
      },
      "flexVolume": {
-      "$ref": "v1.FlexVolumeSource",
-      "description": "FlexVolume represents a generic volume resource that is provisioned/attached using an exec based plugin. This is an alpha feature and may change in future."
+      "$ref": "v1.FlexPersistentVolumeSource",
+      "description": "FlexVolume represents a generic volume resource that is provisioned/attached using an exec based plugin."
      },
      "azureFile": {
       "$ref": "v1.AzureFilePersistentVolumeSource",
@@ -20592,6 +19326,10 @@
       "$ref": "v1.StorageOSPersistentVolumeSource",
       "description": "StorageOS represents a StorageOS volume that is attached to the kubelet's host machine and mounted into the pod More info: https://releases.k8s.io/HEAD/examples/volumes/storageos/README.md"
      },
+     "csi": {
+      "$ref": "v1.CSIPersistentVolumeSource",
+      "description": "CSI represents storage that handled by an external CSI driver (Beta feature)."
+     },
      "accessModes": {
       "type": "array",
       "items": {
@@ -20605,7 +19343,7 @@
      },
      "persistentVolumeReclaimPolicy": {
       "type": "string",
-      "description": "What happens to a persistent volume when released from its claim. Valid options are Retain (default) and Recycle. Recycling must be supported by the volume plugin underlying this persistent volume. More info: https://kubernetes.io/docs/concepts/storage/persistent-volumes#reclaiming"
+      "description": "What happens to a persistent volume when released from its claim. Valid options are Retain (default for manually created PersistentVolumes), Delete (default for dynamically provisioned PersistentVolumes), and Recycle (deprecated). Recycle must be supported by the volume plugin underlying this PersistentVolume. More info: https://kubernetes.io/docs/concepts/storage/persistent-volumes#reclaiming"
      },
      "storageClassName": {
       "type": "string",
@@ -20617,6 +19355,14 @@
        "type": "string"
       },
       "description": "A list of mount options, e.g. [\"ro\", \"soft\"]. Not validated - mount will simply fail if one is invalid. More info: https://kubernetes.io/docs/concepts/storage/persistent-volumes/#mount-options"
+     },
+     "volumeMode": {
+      "$ref": "v1.PersistentVolumeMode",
+      "description": "volumeMode defines if a volume is intended to be used with a formatted filesystem or to remain in raw block state. Value of Filesystem is implied when not included in spec. This is an alpha feature and may change in the future."
+     },
+     "nodeAffinity": {
+      "$ref": "v1.VolumeNodeAffinity",
+      "description": "NodeAffinity defines constraints that limit what nodes this volume can be accessed from. This field influences the scheduling of pods that use this volume."
      }
     }
    },
@@ -20796,9 +19542,9 @@
      }
     }
    },
-   "v1.ISCSIVolumeSource": {
-    "id": "v1.ISCSIVolumeSource",
-    "description": "Represents an ISCSI disk. ISCSI volumes can only be mounted as read/write once. ISCSI volumes support ownership management and SELinux relabeling.",
+   "v1.ISCSIPersistentVolumeSource": {
+    "id": "v1.ISCSIPersistentVolumeSource",
+    "description": "ISCSIPersistentVolumeSource represents an ISCSI disk. ISCSI volumes can only be mounted as read/write once. ISCSI volumes support ownership management and SELinux relabeling.",
     "required": [
      "targetPortal",
      "iqn",
@@ -20807,7 +19553,7 @@
     "properties": {
      "targetPortal": {
       "type": "string",
-      "description": "iSCSI target portal. The portal is either an IP or ip_addr:port if the port is other than default (typically TCP ports 860 and 3260)."
+      "description": "iSCSI Target Portal. The Portal is either an IP or ip_addr:port if the port is other than default (typically TCP ports 860 and 3260)."
      },
      "iqn": {
       "type": "string",
@@ -20816,11 +19562,11 @@
      "lun": {
       "type": "integer",
       "format": "int32",
-      "description": "iSCSI target lun number."
+      "description": "iSCSI Target Lun number."
      },
      "iscsiInterface": {
       "type": "string",
-      "description": "Optional: Defaults to 'default' (tcp). iSCSI interface name that uses an iSCSI transport."
+      "description": "iSCSI Interface Name that uses an iSCSI transport. Defaults to 'default' (tcp)."
      },
      "fsType": {
       "type": "string",
@@ -20835,7 +19581,7 @@
       "items": {
        "type": "string"
       },
-      "description": "iSCSI target portal List. The portal is either an IP or ip_addr:port if the port is other than default (typically TCP ports 860 and 3260)."
+      "description": "iSCSI Target Portal List. The Portal is either an IP or ip_addr:port if the port is other than default (typically TCP ports 860 and 3260)."
      },
      "chapAuthDiscovery": {
       "type": "boolean",
@@ -20846,22 +19592,12 @@
       "description": "whether support iSCSI Session CHAP authentication"
      },
      "secretRef": {
-      "$ref": "v1.LocalObjectReference",
-      "description": "CHAP secret for iSCSI target and initiator authentication"
+      "$ref": "v1.SecretReference",
+      "description": "CHAP Secret for iSCSI target and initiator authentication"
      },
      "initiatorName": {
       "type": "string",
-      "description": "Custom iSCSI initiator name. If initiatorName is specified with iscsiInterface simultaneously, new iSCSI interface \u003ctarget portal\u003e:\u003cvolume name\u003e will be created for the connection."
-     }
-    }
-   },
-   "v1.LocalObjectReference": {
-    "id": "v1.LocalObjectReference",
-    "description": "LocalObjectReference contains enough information to let you locate the referenced object inside the same namespace.",
-    "properties": {
-     "name": {
-      "type": "string",
-      "description": "Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names"
+      "description": "Custom iSCSI Initiator Name. If initiatorName is specified with iscsiInterface simultaneously, new iSCSI interface \u003ctarget portal\u003e:\u003cvolume name\u003e will be created for the connection."
      }
     }
    },
@@ -20969,9 +19705,9 @@
      }
     }
    },
-   "v1.FlexVolumeSource": {
-    "id": "v1.FlexVolumeSource",
-    "description": "FlexVolume represents a generic volume resource that is provisioned/attached using an exec based plugin. This is an alpha feature and may change in future.",
+   "v1.FlexPersistentVolumeSource": {
+    "id": "v1.FlexPersistentVolumeSource",
+    "description": "FlexPersistentVolumeSource represents a generic persistent volume resource that is provisioned/attached using an exec based plugin.",
     "required": [
      "driver"
     ],
@@ -20985,7 +19721,7 @@
       "description": "Filesystem type to mount. Must be a filesystem type supported by the host operating system. Ex. \"ext4\", \"xfs\", \"ntfs\". The default filesystem depends on FlexVolume script."
      },
      "secretRef": {
-      "$ref": "v1.LocalObjectReference",
+      "$ref": "v1.SecretReference",
       "description": "Optional: SecretRef is reference to the secret object containing sensitive information to pass to the plugin scripts. This may be empty if no secret object is specified. If the secret object contains more than one secret, all secrets are passed to the plugin scripts."
      },
      "readOnly": {
@@ -21250,6 +19986,115 @@
      }
     }
    },
+   "v1.CSIPersistentVolumeSource": {
+    "id": "v1.CSIPersistentVolumeSource",
+    "description": "Represents storage that is managed by an external CSI volume driver (Beta feature)",
+    "required": [
+     "driver",
+     "volumeHandle"
+    ],
+    "properties": {
+     "driver": {
+      "type": "string",
+      "description": "Driver is the name of the driver to use for this volume. Required."
+     },
+     "volumeHandle": {
+      "type": "string",
+      "description": "VolumeHandle is the unique volume name returned by the CSI volume plugin’s CreateVolume to refer to the volume on all subsequent calls. Required."
+     },
+     "readOnly": {
+      "type": "boolean",
+      "description": "Optional: The value to pass to ControllerPublishVolumeRequest. Defaults to false (read/write)."
+     },
+     "fsType": {
+      "type": "string",
+      "description": "Filesystem type to mount. Must be a filesystem type supported by the host operating system. Ex. \"ext4\", \"xfs\", \"ntfs\". Implicitly inferred to be \"ext4\" if unspecified."
+     },
+     "volumeAttributes": {
+      "type": "object",
+      "description": "Attributes of the volume to publish."
+     },
+     "controllerPublishSecretRef": {
+      "$ref": "v1.SecretReference",
+      "description": "ControllerPublishSecretRef is a reference to the secret object containing sensitive information to pass to the CSI driver to complete the CSI ControllerPublishVolume and ControllerUnpublishVolume calls. This field is optional, and  may be empty if no secret is required. If the secret object contains more than one secret, all secrets are passed."
+     },
+     "nodeStageSecretRef": {
+      "$ref": "v1.SecretReference",
+      "description": "NodeStageSecretRef is a reference to the secret object containing sensitive information to pass to the CSI driver to complete the CSI NodeStageVolume and NodeStageVolume and NodeUnstageVolume calls. This field is optional, and  may be empty if no secret is required. If the secret object contains more than one secret, all secrets are passed."
+     },
+     "nodePublishSecretRef": {
+      "$ref": "v1.SecretReference",
+      "description": "NodePublishSecretRef is a reference to the secret object containing sensitive information to pass to the CSI driver to complete the CSI NodePublishVolume and NodeUnpublishVolume calls. This field is optional, and  may be empty if no secret is required. If the secret object contains more than one secret, all secrets are passed."
+     }
+    }
+   },
+   "v1.VolumeNodeAffinity": {
+    "id": "v1.VolumeNodeAffinity",
+    "description": "VolumeNodeAffinity defines constraints that limit what nodes this volume can be accessed from.",
+    "properties": {
+     "required": {
+      "$ref": "v1.NodeSelector",
+      "description": "Required specifies hard node constraints that must be met."
+     }
+    }
+   },
+   "v1.NodeSelector": {
+    "id": "v1.NodeSelector",
+    "description": "A node selector represents the union of the results of one or more label queries over a set of nodes; that is, it represents the OR of the selectors represented by the node selector terms.",
+    "required": [
+     "nodeSelectorTerms"
+    ],
+    "properties": {
+     "nodeSelectorTerms": {
+      "type": "array",
+      "items": {
+       "$ref": "v1.NodeSelectorTerm"
+      },
+      "description": "Required. A list of node selector terms. The terms are ORed."
+     }
+    }
+   },
+   "v1.NodeSelectorTerm": {
+    "id": "v1.NodeSelectorTerm",
+    "description": "A null or empty node selector term matches no objects.",
+    "required": [
+     "matchExpressions"
+    ],
+    "properties": {
+     "matchExpressions": {
+      "type": "array",
+      "items": {
+       "$ref": "v1.NodeSelectorRequirement"
+      },
+      "description": "Required. A list of node selector requirements. The requirements are ANDed."
+     }
+    }
+   },
+   "v1.NodeSelectorRequirement": {
+    "id": "v1.NodeSelectorRequirement",
+    "description": "A node selector requirement is a selector that contains values, a key, and an operator that relates the key and values.",
+    "required": [
+     "key",
+     "operator"
+    ],
+    "properties": {
+     "key": {
+      "type": "string",
+      "description": "The label key that the selector applies to."
+     },
+     "operator": {
+      "type": "string",
+      "description": "Represents a key's relationship to a set of values. Valid operators are In, NotIn, Exists, DoesNotExist. Gt, and Lt."
+     },
+     "values": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "description": "An array of string values. If the operator is In or NotIn, the values array must be non-empty. If the operator is Exists or DoesNotExist, the values array must be empty. If the operator is Gt or Lt, the values array must have a single element, which will be interpreted as an integer. This array is replaced during a strategic merge patch."
+     }
+    }
+   },
    "v1.PersistentVolumeStatus": {
     "id": "v1.PersistentVolumeStatus",
     "description": "PersistentVolumeStatus is the current status of a persistent volume.",
@@ -21366,7 +20211,7 @@
      },
      "dnsPolicy": {
       "type": "string",
-      "description": "Set DNS policy for containers within the pod. One of 'ClusterFirstWithHostNet', 'ClusterFirst' or 'Default'. Defaults to \"ClusterFirst\". To have DNS options set along with hostNetwork, you have to specify DNS policy explicitly to 'ClusterFirstWithHostNet'."
+      "description": "Set DNS policy for the pod. Defaults to \"ClusterFirst\". Valid values are 'ClusterFirstWithHostNet', 'ClusterFirst', 'Default' or 'None'. DNS parameters given in DNSConfig will be merged with the policy selected with DNSPolicy. To have DNS options set along with hostNetwork, you have to specify DNS policy explicitly to 'ClusterFirstWithHostNet'."
      },
      "nodeSelector": {
       "type": "object",
@@ -21399,6 +20244,10 @@
      "hostIPC": {
       "type": "boolean",
       "description": "Use the host's ipc namespace. Optional: Default to false."
+     },
+     "shareProcessNamespace": {
+      "type": "boolean",
+      "description": "Share a single process namespace between all of the containers in a pod. When this is set containers will be able to view and signal processes from other containers in the same pod, and the first process in each container will not be assigned PID 1. HostPID and ShareProcessNamespace cannot both be set. Optional: Default to false. This field is alpha-level and is honored only by servers that enable the PodShareProcessNamespace feature."
      },
      "securityContext": {
       "$ref": "v1.PodSecurityContext",
@@ -21443,12 +20292,16 @@
      },
      "priorityClassName": {
       "type": "string",
-      "description": "If specified, indicates the pod's priority. \"SYSTEM\" is a special keyword which indicates the highest priority. Any other name must be defined by creating a PriorityClass object with that name. If not specified, the pod priority will be default or zero if there is no default."
+      "description": "If specified, indicates the pod's priority. \"system-node-critical\" and \"system-cluster-critical\" are two special keywords which indicate the highest priorities with the former being the highest priority. Any other name must be defined by creating a PriorityClass object with that name. If not specified, the pod priority will be default or zero if there is no default."
      },
      "priority": {
       "type": "integer",
       "format": "int32",
       "description": "The priority value. Various system components use this field to find the priority of the pod. When Priority Admission Controller is enabled, it prevents users from setting this field. The admission controller populates this field from PriorityClassName. The higher the value, the higher the priority."
+     },
+     "dnsConfig": {
+      "$ref": "v1.PodDNSConfig",
+      "description": "Specifies the DNS parameters of a pod. Parameters specified here will be merged to the generated DNS configuration based on DNSPolicy."
      }
     }
    },
@@ -21509,7 +20362,7 @@
      },
      "flexVolume": {
       "$ref": "v1.FlexVolumeSource",
-      "description": "FlexVolume represents a generic volume resource that is provisioned/attached using an exec based plugin. This is an alpha feature and may change in future."
+      "description": "FlexVolume represents a generic volume resource that is provisioned/attached using an exec based plugin."
      },
      "cinder": {
       "$ref": "v1.CinderVolumeSource",
@@ -21657,6 +20510,75 @@
      }
     }
    },
+   "v1.ISCSIVolumeSource": {
+    "id": "v1.ISCSIVolumeSource",
+    "description": "Represents an ISCSI disk. ISCSI volumes can only be mounted as read/write once. ISCSI volumes support ownership management and SELinux relabeling.",
+    "required": [
+     "targetPortal",
+     "iqn",
+     "lun"
+    ],
+    "properties": {
+     "targetPortal": {
+      "type": "string",
+      "description": "iSCSI Target Portal. The Portal is either an IP or ip_addr:port if the port is other than default (typically TCP ports 860 and 3260)."
+     },
+     "iqn": {
+      "type": "string",
+      "description": "Target iSCSI Qualified Name."
+     },
+     "lun": {
+      "type": "integer",
+      "format": "int32",
+      "description": "iSCSI Target Lun number."
+     },
+     "iscsiInterface": {
+      "type": "string",
+      "description": "iSCSI Interface Name that uses an iSCSI transport. Defaults to 'default' (tcp)."
+     },
+     "fsType": {
+      "type": "string",
+      "description": "Filesystem type of the volume that you want to mount. Tip: Ensure that the filesystem type is supported by the host operating system. Examples: \"ext4\", \"xfs\", \"ntfs\". Implicitly inferred to be \"ext4\" if unspecified. More info: https://kubernetes.io/docs/concepts/storage/volumes#iscsi"
+     },
+     "readOnly": {
+      "type": "boolean",
+      "description": "ReadOnly here will force the ReadOnly setting in VolumeMounts. Defaults to false."
+     },
+     "portals": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "description": "iSCSI Target Portal List. The portal is either an IP or ip_addr:port if the port is other than default (typically TCP ports 860 and 3260)."
+     },
+     "chapAuthDiscovery": {
+      "type": "boolean",
+      "description": "whether support iSCSI Discovery CHAP authentication"
+     },
+     "chapAuthSession": {
+      "type": "boolean",
+      "description": "whether support iSCSI Session CHAP authentication"
+     },
+     "secretRef": {
+      "$ref": "v1.LocalObjectReference",
+      "description": "CHAP Secret for iSCSI target and initiator authentication"
+     },
+     "initiatorName": {
+      "type": "string",
+      "description": "Custom iSCSI Initiator Name. If initiatorName is specified with iscsiInterface simultaneously, new iSCSI interface \u003ctarget portal\u003e:\u003cvolume name\u003e will be created for the connection."
+     }
+    }
+   },
+   "v1.LocalObjectReference": {
+    "id": "v1.LocalObjectReference",
+    "description": "LocalObjectReference contains enough information to let you locate the referenced object inside the same namespace.",
+    "properties": {
+     "name": {
+      "type": "string",
+      "description": "Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names"
+     }
+    }
+   },
    "v1.PersistentVolumeClaimVolumeSource": {
     "id": "v1.PersistentVolumeClaimVolumeSource",
     "description": "PersistentVolumeClaimVolumeSource references the user's PVC in the same namespace. This volume finds the bound PV and mounts that volume for the pod. A PersistentVolumeClaimVolumeSource is, essentially, a wrapper around another type of volume that is owned by someone else (the system).",
@@ -21716,6 +20638,35 @@
      "readOnly": {
       "type": "boolean",
       "description": "ReadOnly here will force the ReadOnly setting in VolumeMounts. Defaults to false. More info: https://releases.k8s.io/HEAD/examples/volumes/rbd/README.md#how-to-use-it"
+     }
+    }
+   },
+   "v1.FlexVolumeSource": {
+    "id": "v1.FlexVolumeSource",
+    "description": "FlexVolume represents a generic volume resource that is provisioned/attached using an exec based plugin.",
+    "required": [
+     "driver"
+    ],
+    "properties": {
+     "driver": {
+      "type": "string",
+      "description": "Driver is the name of the driver to use for this volume."
+     },
+     "fsType": {
+      "type": "string",
+      "description": "Filesystem type to mount. Must be a filesystem type supported by the host operating system. Ex. \"ext4\", \"xfs\", \"ntfs\". The default filesystem depends on FlexVolume script."
+     },
+     "secretRef": {
+      "$ref": "v1.LocalObjectReference",
+      "description": "Optional: SecretRef is reference to the secret object containing sensitive information to pass to the plugin scripts. This may be empty if no secret object is specified. If the secret object contains more than one secret, all secrets are passed to the plugin scripts."
+     },
+     "readOnly": {
+      "type": "boolean",
+      "description": "Optional: Defaults to false (read/write). ReadOnly here will force the ReadOnly setting in VolumeMounts."
+     },
+     "options": {
+      "type": "object",
+      "description": "Optional: Extra command options if any."
      }
     }
    },
@@ -22121,6 +21072,13 @@
       },
       "description": "Pod volumes to mount into the container's filesystem. Cannot be updated."
      },
+     "volumeDevices": {
+      "type": "array",
+      "items": {
+       "$ref": "v1.VolumeDevice"
+      },
+      "description": "volumeDevices is the list of block devices to be used by the container. This is an alpha feature and may change in the future."
+     },
      "livenessProbe": {
       "$ref": "v1.Probe",
       "description": "Periodic probe of container liveness. Container will be restarted if the probe fails. Cannot be updated. More info: https://kubernetes.io/docs/concepts/workloads/pods/pod-lifecycle#container-probes"
@@ -22200,7 +21158,7 @@
     "properties": {
      "prefix": {
       "type": "string",
-      "description": "An optional identifer to prepend to each key in the ConfigMap. Must be a C_IDENTIFIER."
+      "description": "An optional identifier to prepend to each key in the ConfigMap. Must be a C_IDENTIFIER."
      },
      "configMapRef": {
       "$ref": "v1.ConfigMapEnvSource",
@@ -22351,13 +21309,31 @@
      },
      "mountPropagation": {
       "$ref": "v1.MountPropagationMode",
-      "description": "mountPropagation determines how mounts are propagated from the host to container and the other way around. When not set, MountPropagationHostToContainer is used. This field is alpha in 1.8 and can be reworked or removed in a future release."
+      "description": "mountPropagation determines how mounts are propagated from the host to container and the other way around. When not set, MountPropagationHostToContainer is used. This field is beta in 1.10."
      }
     }
    },
    "v1.MountPropagationMode": {
     "id": "v1.MountPropagationMode",
     "properties": {}
+   },
+   "v1.VolumeDevice": {
+    "id": "v1.VolumeDevice",
+    "description": "volumeDevice describes a mapping of a raw block device within a container.",
+    "required": [
+     "name",
+     "devicePath"
+    ],
+    "properties": {
+     "name": {
+      "type": "string",
+      "description": "name must match the name of a persistentVolumeClaim in the pod"
+     },
+     "devicePath": {
+      "type": "string",
+      "description": "devicePath is the path inside of the container that the device will be mapped to."
+     }
+    }
    },
    "v1.Probe": {
     "id": "v1.Probe",
@@ -22535,6 +21511,11 @@
       "format": "int64",
       "description": "The UID to run the entrypoint of the container process. Defaults to user specified in image metadata if unspecified. May also be set in PodSecurityContext.  If set in both SecurityContext and PodSecurityContext, the value specified in SecurityContext takes precedence."
      },
+     "runAsGroup": {
+      "type": "integer",
+      "format": "int64",
+      "description": "The GID to run the entrypoint of the container process. Uses runtime default if unset. May also be set in PodSecurityContext.  If set in both SecurityContext and PodSecurityContext, the value specified in SecurityContext takes precedence."
+     },
      "runAsNonRoot": {
       "type": "boolean",
       "description": "Indicates that the container must run as a non-root user. If true, the Kubelet will validate the image at runtime to ensure that it does not run as UID 0 (root) and fail to start the container if it does. If unset or false, no such validation will be performed. May also be set in PodSecurityContext.  If set in both SecurityContext and PodSecurityContext, the value specified in SecurityContext takes precedence."
@@ -22608,6 +21589,11 @@
       "format": "int64",
       "description": "The UID to run the entrypoint of the container process. Defaults to user specified in image metadata if unspecified. May also be set in SecurityContext.  If set in both SecurityContext and PodSecurityContext, the value specified in SecurityContext takes precedence for that container."
      },
+     "runAsGroup": {
+      "type": "integer",
+      "format": "int64",
+      "description": "The GID to run the entrypoint of the container process. Uses runtime default if unset. May also be set in SecurityContext.  If set in both SecurityContext and PodSecurityContext, the value specified in SecurityContext takes precedence for that container."
+     },
      "runAsNonRoot": {
       "type": "boolean",
       "description": "Indicates that the container must run as a non-root user. If true, the Kubelet will validate the image at runtime to ensure that it does not run as UID 0 (root) and fail to start the container if it does. If unset or false, no such validation will be performed. May also be set in SecurityContext.  If set in both SecurityContext and PodSecurityContext, the value specified in SecurityContext takes precedence."
@@ -22658,63 +21644,6 @@
        "$ref": "v1.PreferredSchedulingTerm"
       },
       "description": "The scheduler will prefer to schedule pods to nodes that satisfy the affinity expressions specified by this field, but it may choose a node that violates one or more of the expressions. The node that is most preferred is the one with the greatest sum of weights, i.e. for each node that meets all of the scheduling requirements (resource request, requiredDuringScheduling affinity expressions, etc.), compute a sum by iterating through the elements of this field and adding \"weight\" to the sum if the node matches the corresponding matchExpressions; the node(s) with the highest sum are the most preferred."
-     }
-    }
-   },
-   "v1.NodeSelector": {
-    "id": "v1.NodeSelector",
-    "description": "A node selector represents the union of the results of one or more label queries over a set of nodes; that is, it represents the OR of the selectors represented by the node selector terms.",
-    "required": [
-     "nodeSelectorTerms"
-    ],
-    "properties": {
-     "nodeSelectorTerms": {
-      "type": "array",
-      "items": {
-       "$ref": "v1.NodeSelectorTerm"
-      },
-      "description": "Required. A list of node selector terms. The terms are ORed."
-     }
-    }
-   },
-   "v1.NodeSelectorTerm": {
-    "id": "v1.NodeSelectorTerm",
-    "description": "A null or empty node selector term matches no objects.",
-    "required": [
-     "matchExpressions"
-    ],
-    "properties": {
-     "matchExpressions": {
-      "type": "array",
-      "items": {
-       "$ref": "v1.NodeSelectorRequirement"
-      },
-      "description": "Required. A list of node selector requirements. The requirements are ANDed."
-     }
-    }
-   },
-   "v1.NodeSelectorRequirement": {
-    "id": "v1.NodeSelectorRequirement",
-    "description": "A node selector requirement is a selector that contains values, a key, and an operator that relates the key and values.",
-    "required": [
-     "key",
-     "operator"
-    ],
-    "properties": {
-     "key": {
-      "type": "string",
-      "description": "The label key that the selector applies to."
-     },
-     "operator": {
-      "type": "string",
-      "description": "Represents a key's relationship to a set of values. Valid operators are In, NotIn, Exists, DoesNotExist. Gt, and Lt."
-     },
-     "values": {
-      "type": "array",
-      "items": {
-       "type": "string"
-      },
-      "description": "An array of string values. If the operator is In or NotIn, the values array must be non-empty. If the operator is Exists or DoesNotExist, the values array must be empty. If the operator is Gt or Lt, the values array must have a single element, which will be interpreted as an integer. This array is replaced during a strategic merge patch."
      }
     }
    },
@@ -22864,6 +21793,46 @@
      }
     }
    },
+   "v1.PodDNSConfig": {
+    "id": "v1.PodDNSConfig",
+    "description": "PodDNSConfig defines the DNS parameters of a pod in addition to those generated from DNSPolicy.",
+    "properties": {
+     "nameservers": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "description": "A list of DNS name server IP addresses. This will be appended to the base nameservers generated from DNSPolicy. Duplicated nameservers will be removed."
+     },
+     "searches": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "description": "A list of DNS search domains for host-name lookup. This will be appended to the base search paths generated from DNSPolicy. Duplicated search paths will be removed."
+     },
+     "options": {
+      "type": "array",
+      "items": {
+       "$ref": "v1.PodDNSConfigOption"
+      },
+      "description": "A list of DNS resolver options. This will be merged with the base options generated from DNSPolicy. Duplicated entries will be removed. Resolution options given in Options will override those that appear in the base DNSPolicy."
+     }
+    }
+   },
+   "v1.PodDNSConfigOption": {
+    "id": "v1.PodDNSConfigOption",
+    "description": "PodDNSConfigOption defines DNS resolver options of a pod.",
+    "properties": {
+     "name": {
+      "type": "string",
+      "description": "Required."
+     },
+     "value": {
+      "type": "string"
+     }
+    }
+   },
    "v1.PodStatus": {
     "id": "v1.PodStatus",
     "description": "PodStatus represents information about the status of a pod. Status may trail the actual state of a system.",
@@ -22886,6 +21855,10 @@
      "reason": {
       "type": "string",
       "description": "A brief CamelCase message indicating details about why the pod is in this state. e.g. 'Evicted'"
+     },
+     "nominatedNodeName": {
+      "type": "string",
+      "description": "nominatedNodeName is set only when this pod preempts other pods on the node, but it cannot be scheduled right away as preemption victims receive their graceful termination periods. This field does not guarantee that the pod will be scheduled on this node. Scheduler may decide to place the pod elsewhere if other nodes become available sooner. Scheduler may also decide to give the resources on this node to a higher priority pod that is created after preemption. As a result, this field may be different than PodSpec.nodeName when the pod is scheduled."
      },
      "hostIP": {
       "type": "string",
@@ -22915,7 +21888,7 @@
      },
      "qosClass": {
       "type": "string",
-      "description": "The Quality of Service (QOS) classification assigned to the pod based on resource requirements See PodQOSClass type for available QOS classes More info: https://github.com/kubernetes/kubernetes/blob/master/docs/design/resource-qos.md"
+      "description": "The Quality of Service (QOS) classification assigned to the pod based on resource requirements See PodQOSClass type for available QOS classes More info: https://git.k8s.io/community/contributors/design-proposals/node/resource-qos.md"
      }
     }
    },
@@ -23682,7 +22655,7 @@
      },
      "externalName": {
       "type": "string",
-      "description": "externalName is the external reference that kubedns or equivalent will return as a CNAME record for this service. No proxying will be involved. Must be a valid DNS name and requires Type to be ExternalName."
+      "description": "externalName is the external reference that kubedns or equivalent will return as a CNAME record for this service. No proxying will be involved. Must be a valid RFC-1123 hostname (https://tools.ietf.org/html/rfc1123) and requires Type to be ExternalName."
      },
      "externalTrafficPolicy": {
       "type": "string",

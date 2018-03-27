@@ -120,7 +120,7 @@ func TestCreateLoadBalancer(t *testing.T) {
 		t.Fatalf("unexpected number of health checks. expected: %d, got: %d", 1, len(fhc.EnsuredHealthChecks))
 	}
 	hc := fhc.EnsuredHealthChecks[0]
-	if hc.LBName != lbName || hc.Port.Port != nodePort {
+	if hc.LBName != lbName || hc.Port.NodePort != nodePort {
 		t.Errorf("unexpected health check: %v\nexpected: lbname: %s, port: %d", hc, lbName, nodePort)
 	}
 	// Verify that the expected backend service was created.
@@ -132,8 +132,8 @@ func TestCreateLoadBalancer(t *testing.T) {
 	if bs.LBName != lbName {
 		t.Errorf("unexpected lb name in backend service. expected: %s, got: %s", lbName, bs.LBName)
 	}
-	if bs.Port.Port != nodePort {
-		t.Errorf("unexpected port in backend service. expected port %d, got: %d", nodePort, bs.Port.Port)
+	if bs.Port.NodePort != nodePort {
+		t.Errorf("unexpected port in backend service. expected port %d, got: %d", nodePort, bs.Port.NodePort)
 	}
 	if len(bs.HCMap) != 1 || bs.HCMap[nodePort] == nil {
 		t.Errorf("unexpected health check map in backend service. expected an entry for port %d, got: %v", nodePort, bs.HCMap)

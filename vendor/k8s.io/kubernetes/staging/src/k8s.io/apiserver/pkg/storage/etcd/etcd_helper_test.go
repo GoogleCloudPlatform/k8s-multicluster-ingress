@@ -17,6 +17,7 @@ limitations under the License.
 package etcd
 
 import (
+	"context"
 	"fmt"
 	"path"
 	"reflect"
@@ -26,7 +27,6 @@ import (
 	"time"
 
 	etcd "github.com/coreos/etcd/client"
-	"golang.org/x/net/context"
 	apitesting "k8s.io/apimachinery/pkg/api/testing"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/conversion"
@@ -348,7 +348,7 @@ func TestGetNotFoundErr(t *testing.T) {
 	var got example.Pod
 	err := helper.Get(context.TODO(), boguskey, "", &got, false)
 	if !storage.IsNotFound(err) {
-		t.Errorf("Unexpected reponse on key=%v, err=%v", boguskey, err)
+		t.Errorf("Unexpected response on key=%v, err=%v", boguskey, err)
 	}
 }
 

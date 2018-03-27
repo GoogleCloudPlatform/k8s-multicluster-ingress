@@ -26,6 +26,7 @@ import (
 
 	"k8s.io/ingress-gce/pkg/backends"
 	"k8s.io/ingress-gce/pkg/firewalls"
+	"k8s.io/ingress-gce/pkg/flags"
 	"k8s.io/ingress-gce/pkg/healthchecks"
 	"k8s.io/ingress-gce/pkg/instances"
 	"k8s.io/ingress-gce/pkg/loadbalancers"
@@ -35,15 +36,6 @@ import (
 const (
 	defaultPort            = 80
 	defaultHealthCheckPath = "/"
-
-	// Used in the test RunServer method to denote a delete request.
-	deleteType = "del"
-
-	// port 0 is used as a signal for port not found/no such port etc.
-	invalidPort = 0
-
-	// Names longer than this are truncated, because of GCE restrictions.
-	nameLenLimit = 62
 )
 
 // ClusterManager manages cluster resource pools.
@@ -65,9 +57,9 @@ type ClusterManager struct {
 }
 
 // Init initializes the cluster manager.
-func (c *ClusterManager) Init(tr *GCETranslator) {
-	c.instancePool.Init(tr)
-	c.backendPool.Init(tr)
+func (c *ClusterManager) Init(zl instances.ZoneLister, pp backends.ProbeProvider) {
+	c.instancePool.Init(zl)
+	c.backendPool.Init(pp)
 	// TODO: Initialize other members as needed.
 }
 
@@ -113,7 +105,9 @@ func (c *ClusterManager) shutdown() error {
 // Returns the list of all instance groups corresponding to the given loadbalancers.
 // If in performing the checkpoint the cluster manager runs out of quota, a
 // googleapi 403 is returned.
-func (c *ClusterManager) Checkpoint(lbs []*loadbalancers.L7RuntimeInfo, nodeNames []string, backendServicePorts []backends.ServicePort, namedPorts []backends.ServicePort, firewallPorts []int64) ([]*compute.InstanceGroup, error) {
+func (c *ClusterManager) Checkpoint(lbs []*loadbalancers.L7RuntimeInfo, nodeNames []string, backendServicePorts []backends.ServicePort, namedPorts []backends.ServicePort, endpointPorts []string) ([]*compute.InstanceGroup, error) {
+	glog.V(4).Infof("Checkpoint(%v lbs, %v nodeNames, %v backendServicePorts, %v namedPorts, %v endpointPorts)", len(lbs), len(nodeNames), len(backendServicePorts), len(namedPorts), len(endpointPorts))
+
 	if len(namedPorts) != 0 {
 		// Add the default backend node port to the list of named ports for instance groups.
 		namedPorts = append(namedPorts, c.defaultBackendNodePort)
@@ -138,7 +132,7 @@ func (c *ClusterManager) Checkpoint(lbs []*loadbalancers.L7RuntimeInfo, nodeName
 		return igs, err
 	}
 
-	if err := c.firewallPool.Sync(firewallPorts, nodeNames); err != nil {
+	if err := c.firewallPool.Sync(nodeNames, endpointPorts...); err != nil {
 		return igs, err
 	}
 
@@ -148,7 +142,7 @@ func (c *ClusterManager) Checkpoint(lbs []*loadbalancers.L7RuntimeInfo, nodeName
 func (c *ClusterManager) EnsureInstanceGroupsAndPorts(servicePorts []backends.ServicePort) ([]*compute.InstanceGroup, error) {
 	ports := []int64{}
 	for _, p := range servicePorts {
-		ports = append(ports, p.Port)
+		ports = append(ports, p.NodePort)
 	}
 	igs, err := instances.EnsureInstanceGroupsAndPorts(c.instancePool, c.ClusterNamer, ports)
 	return igs, err
@@ -161,7 +155,6 @@ func (c *ClusterManager) EnsureInstanceGroupsAndPorts(servicePorts []backends.Se
 //   for ports not in this list are deleted.
 // This method ignores googleapi 404 errors (StatusNotFound).
 func (c *ClusterManager) GC(lbNames []string, nodePorts []backends.ServicePort) error {
-
 	// On GC:
 	// * Loadbalancers need to get deleted before backends.
 	// * Backends are refcounted in a shared pool.
@@ -172,7 +165,6 @@ func (c *ClusterManager) GC(lbNames []string, nodePorts []backends.ServicePort) 
 	//   2. An update to the url map drops the refcount of a backend. This can
 	//      happen when an Ingress is updated, if we don't GC after the update
 	//      we'll leak the backend.
-
 	lbErr := c.l7Pool.GC(lbNames)
 	beErr := c.backendPool.GC(nodePorts)
 	if lbErr != nil {
@@ -183,16 +175,25 @@ func (c *ClusterManager) GC(lbNames []string, nodePorts []backends.ServicePort) 
 	}
 
 	// TODO(ingress#120): Move this to the backend pool so it mirrors creation
-	var igErr error
 	if len(lbNames) == 0 {
 		igName := c.ClusterNamer.InstanceGroup()
 		glog.Infof("Deleting instance group %v", igName)
-		igErr = c.instancePool.DeleteInstanceGroup(igName)
+		if err := c.instancePool.DeleteInstanceGroup(igName); err != err {
+			return err
+		}
+		glog.V(2).Infof("Shutting down firewall as there are no loadbalancers")
+		c.firewallPool.Shutdown()
 	}
-	if igErr != nil {
-		return igErr
-	}
+
 	return nil
+}
+
+func (c *ClusterManager) BackendServiceForPort(port int64) (*compute.BackendService, error) {
+	return c.backendPool.Get(port)
+}
+
+func (c *ClusterManager) DefaultBackendNodePort() *backends.ServicePort {
+	return &c.defaultBackendNodePort
 }
 
 // NewClusterManager creates a cluster manager for shared resources.
@@ -220,12 +221,12 @@ func NewClusterManager(
 	cluster.healthCheckers = []healthchecks.HealthChecker{healthChecker, defaultBackendHealthChecker}
 
 	// TODO: This needs to change to a consolidated management of the default backend.
-	cluster.backendPool = backends.NewBackendPool(cloud, cloud, healthChecker, cluster.instancePool, cluster.ClusterNamer, []int64{defaultBackendNodePort.Port}, true)
+	cluster.backendPool = backends.NewBackendPool(cloud, cloud, healthChecker, cluster.instancePool, cluster.ClusterNamer, []int64{defaultBackendNodePort.NodePort}, true)
 	defaultBackendPool := backends.NewBackendPool(cloud, cloud, defaultBackendHealthChecker, cluster.instancePool, cluster.ClusterNamer, []int64{}, false)
 	cluster.defaultBackendNodePort = defaultBackendNodePort
 
 	// L7 pool creates targetHTTPProxy, ForwardingRules, UrlMaps, StaticIPs.
 	cluster.l7Pool = loadbalancers.NewLoadBalancerPool(cloud, defaultBackendPool, defaultBackendNodePort, cluster.ClusterNamer)
-	cluster.firewallPool = firewalls.NewFirewallPool(cloud, cluster.ClusterNamer)
+	cluster.firewallPool = firewalls.NewFirewallPool(cloud, cluster.ClusterNamer, gce.LoadBalancerSrcRanges(), flags.F.NodePortRanges.Values())
 	return &cluster, nil
 }

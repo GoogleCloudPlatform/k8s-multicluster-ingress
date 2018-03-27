@@ -44,7 +44,7 @@ var (
 		Diff configurations specified by filename or stdin between their local,
 		last-applied, live and/or "merged" versions.
 
-		LOCAL and LIVE versions are diffed by default. Other availble keywords
+		LOCAL and LIVE versions are diffed by default. Other available keywords
 		are MERGED and LAST.
 
 		Output is always YAML.
@@ -109,7 +109,8 @@ func NewCmdDiff(f cmdutil.Factory, stdout, stderr io.Writer) *cobra.Command {
 		Stderr: stderr,
 	}
 	cmd := &cobra.Command{
-		Use:     "diff -f FILENAME",
+		Use: "diff -f FILENAME",
+		DisableFlagsInUseLine: true,
 		Short:   i18n.T("Diff different versions of configurations"),
 		Long:    diffLong,
 		Example: diffExample,
@@ -280,7 +281,7 @@ func (obj InfoObject) toMap(data []byte) (map[string]interface{}, error) {
 }
 
 func (obj InfoObject) Local() (map[string]interface{}, error) {
-	data, err := runtime.Encode(obj.Encoder, obj.Info.VersionedObject)
+	data, err := runtime.Encode(obj.Encoder, obj.Info.Object)
 	if err != nil {
 		return nil, err
 	}
@@ -315,7 +316,7 @@ func (obj InfoObject) Merged() (map[string]interface{}, error) {
 	}
 
 	if live == nil || last == nil {
-		return local, nil // We probably don't have a live verison, merged is local.
+		return local, nil // We probably don't have a live version, merged is local.
 	}
 
 	elmt, err := obj.Parser.CreateElement(last, local, live)
@@ -413,13 +414,13 @@ func RunDiff(f cmdutil.Factory, diff *DiffProgram, options *DiffOptions, from, t
 		return err
 	}
 
-	r := f.NewUnstructuredBuilder().
+	r := f.NewBuilder().
+		Unstructured().
 		NamespaceParam(cmdNamespace).DefaultNamespace().
 		FilenameParam(enforceNamespace, &options.FilenameOptions).
 		Flatten().
 		Do()
-	err = r.Err()
-	if err != nil {
+	if err := r.Err(); err != nil {
 		return err
 	}
 
@@ -438,7 +439,7 @@ func RunDiff(f cmdutil.Factory, diff *DiffProgram, options *DiffOptions, from, t
 		obj := InfoObject{
 			Info:    info,
 			Parser:  parser,
-			Encoder: f.JSONEncoder(),
+			Encoder: cmdutil.InternalVersionJSONEncoder(),
 		}
 
 		return differ.Diff(obj, printer)

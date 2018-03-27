@@ -46,7 +46,7 @@ func TestKnownFeatures(t *testing.T) {
 	if r[1] != f2 {
 		t.Errorf("KnownFeatures returned %s values, expected %s", r[1], f2)
 	}
-	// check the second value is feature3; prerelease should not shown fo GA features; default should be present
+	// check the second value is feature3; prerelease should not be shown for GA features; default should be present
 	f3 := "feature3=true|false (default=false)"
 	if r[2] != f3 {
 		t.Errorf("KnownFeatures returned %s values, expected %s", r[2], f3)
@@ -153,6 +153,39 @@ func TestValidateVersion(t *testing.T) {
 		} else if test.expectedError && err == nil {
 			t.Error("ValidateVersion didn't failed when expected")
 			continue
+		}
+	}
+}
+
+func TestResolveFeatureGateDependencies(t *testing.T) {
+
+	var tests = []struct {
+		inputFeatures    map[string]bool
+		expectedFeatures map[string]bool
+	}{
+		{ // no flags
+			inputFeatures:    map[string]bool{},
+			expectedFeatures: map[string]bool{},
+		},
+		{ // others flags
+			inputFeatures:    map[string]bool{CoreDNS: true},
+			expectedFeatures: map[string]bool{CoreDNS: true},
+		},
+		{ // just StoreCertsInSecrets flags
+			inputFeatures:    map[string]bool{StoreCertsInSecrets: true},
+			expectedFeatures: map[string]bool{StoreCertsInSecrets: true, SelfHosting: true},
+		},
+		{ // just HighAvailability flags
+			inputFeatures:    map[string]bool{HighAvailability: true},
+			expectedFeatures: map[string]bool{HighAvailability: true, StoreCertsInSecrets: true, SelfHosting: true},
+		},
+	}
+
+	for _, test := range tests {
+		ResolveFeatureGateDependencies(test.inputFeatures)
+		if !reflect.DeepEqual(test.inputFeatures, test.expectedFeatures) {
+			t.Errorf("ResolveFeatureGateDependencies failed, expected: %v, got: %v", test.inputFeatures, test.expectedFeatures)
+
 		}
 	}
 }

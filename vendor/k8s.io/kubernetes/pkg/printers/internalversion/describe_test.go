@@ -80,7 +80,8 @@ func TestDescribePodNode(t *testing.T) {
 			NodeName: "all-in-one",
 		},
 		Status: api.PodStatus{
-			HostIP: "127.0.0.1",
+			HostIP:            "127.0.0.1",
+			NominatedNodeName: "nodeA",
 		},
 	})
 	c := &describeClient{T: t, Namespace: "foo", Interface: fake}
@@ -90,6 +91,9 @@ func TestDescribePodNode(t *testing.T) {
 		t.Errorf("unexpected error: %v", err)
 	}
 	if !strings.Contains(out, "all-in-one/127.0.0.1") {
+		t.Errorf("unexpected out: %s", out)
+	}
+	if !strings.Contains(out, "nodeA") {
 		t.Errorf("unexpected out: %s", out)
 	}
 }
@@ -634,6 +638,50 @@ func TestDescribeContainers(t *testing.T) {
 			},
 			expectedElements: []string{"cpu", "1k", "memory", "4G", "storage", "20G"},
 		},
+		// volumeMounts read/write
+		{
+			container: api.Container{
+				Name:  "test",
+				Image: "image",
+				VolumeMounts: []api.VolumeMount{
+					{
+						Name:      "mounted-volume",
+						MountPath: "/opt/",
+					},
+				},
+			},
+			expectedElements: []string{"mounted-volume", "/opt/", "(rw)"},
+		},
+		// volumeMounts readonly
+		{
+			container: api.Container{
+				Name:  "test",
+				Image: "image",
+				VolumeMounts: []api.VolumeMount{
+					{
+						Name:      "mounted-volume",
+						MountPath: "/opt/",
+						ReadOnly:  true,
+					},
+				},
+			},
+			expectedElements: []string{"Mounts", "mounted-volume", "/opt/", "(ro)"},
+		},
+
+		// volumeDevices
+		{
+			container: api.Container{
+				Name:  "test",
+				Image: "image",
+				VolumeDevices: []api.VolumeDevice{
+					{
+						Name:       "volume-device",
+						DevicePath: "/dev/xvda",
+					},
+				},
+			},
+			expectedElements: []string{"Devices", "volume-device", "/dev/xvda"},
+		},
 	}
 
 	for i, testCase := range testCases {
@@ -739,8 +787,8 @@ func TestDefaultDescribers(t *testing.T) {
 
 func TestGetPodsTotalRequests(t *testing.T) {
 	testCases := []struct {
-		pods                         *api.PodList
-		expectedReqs, expectedLimits map[api.ResourceName]resource.Quantity
+		pods         *api.PodList
+		expectedReqs map[api.ResourceName]resource.Quantity
 	}{
 		{
 			pods: &api.PodList{
@@ -804,10 +852,7 @@ func TestGetPodsTotalRequests(t *testing.T) {
 	}
 
 	for _, testCase := range testCases {
-		reqs, _, err := getPodsTotalRequestsAndLimits(testCase.pods)
-		if err != nil {
-			t.Errorf("Unexpected error %v", err)
-		}
+		reqs, _ := getPodsTotalRequestsAndLimits(testCase.pods)
 		if !apiequality.Semantic.DeepEqual(reqs, testCase.expectedReqs) {
 			t.Errorf("Expected %v, got %v", testCase.expectedReqs, reqs)
 		}
@@ -815,99 +860,435 @@ func TestGetPodsTotalRequests(t *testing.T) {
 }
 
 func TestPersistentVolumeDescriber(t *testing.T) {
-	tests := map[string]*api.PersistentVolume{
-
-		"hostpath": {
-			ObjectMeta: metav1.ObjectMeta{Name: "bar"},
-			Spec: api.PersistentVolumeSpec{
-				PersistentVolumeSource: api.PersistentVolumeSource{
-					HostPath: &api.HostPathVolumeSource{Type: new(api.HostPathType)},
+	block := api.PersistentVolumeBlock
+	file := api.PersistentVolumeFilesystem
+	testCases := []struct {
+		plugin             string
+		pv                 *api.PersistentVolume
+		expectedElements   []string
+		unexpectedElements []string
+	}{
+		{
+			plugin: "hostpath",
+			pv: &api.PersistentVolume{
+				ObjectMeta: metav1.ObjectMeta{Name: "bar"},
+				Spec: api.PersistentVolumeSpec{
+					PersistentVolumeSource: api.PersistentVolumeSource{
+						HostPath: &api.HostPathVolumeSource{Type: new(api.HostPathType)},
+					},
 				},
 			},
+			unexpectedElements: []string{"VolumeMode", "Filesystem"},
 		},
-		"gce": {
-			ObjectMeta: metav1.ObjectMeta{Name: "bar"},
-			Spec: api.PersistentVolumeSpec{
-				PersistentVolumeSource: api.PersistentVolumeSource{
-					GCEPersistentDisk: &api.GCEPersistentDiskVolumeSource{},
+		{
+			plugin: "gce",
+			pv: &api.PersistentVolume{
+				ObjectMeta: metav1.ObjectMeta{Name: "bar"},
+				Spec: api.PersistentVolumeSpec{
+					PersistentVolumeSource: api.PersistentVolumeSource{
+						GCEPersistentDisk: &api.GCEPersistentDiskVolumeSource{},
+					},
+					VolumeMode: &file,
 				},
 			},
+			expectedElements: []string{"VolumeMode", "Filesystem"},
 		},
-		"ebs": {
-			ObjectMeta: metav1.ObjectMeta{Name: "bar"},
-			Spec: api.PersistentVolumeSpec{
-				PersistentVolumeSource: api.PersistentVolumeSource{
-					AWSElasticBlockStore: &api.AWSElasticBlockStoreVolumeSource{},
+		{
+			plugin: "ebs",
+			pv: &api.PersistentVolume{
+				ObjectMeta: metav1.ObjectMeta{Name: "bar"},
+				Spec: api.PersistentVolumeSpec{
+					PersistentVolumeSource: api.PersistentVolumeSource{
+						AWSElasticBlockStore: &api.AWSElasticBlockStoreVolumeSource{},
+					},
 				},
 			},
+			unexpectedElements: []string{"VolumeMode", "Filesystem"},
 		},
-		"nfs": {
-			ObjectMeta: metav1.ObjectMeta{Name: "bar"},
-			Spec: api.PersistentVolumeSpec{
-				PersistentVolumeSource: api.PersistentVolumeSource{
-					NFS: &api.NFSVolumeSource{},
+		{
+			plugin: "nfs",
+			pv: &api.PersistentVolume{
+				ObjectMeta: metav1.ObjectMeta{Name: "bar"},
+				Spec: api.PersistentVolumeSpec{
+					PersistentVolumeSource: api.PersistentVolumeSource{
+						NFS: &api.NFSVolumeSource{},
+					},
 				},
 			},
+			unexpectedElements: []string{"VolumeMode", "Filesystem"},
 		},
-		"iscsi": {
-			ObjectMeta: metav1.ObjectMeta{Name: "bar"},
-			Spec: api.PersistentVolumeSpec{
-				PersistentVolumeSource: api.PersistentVolumeSource{
-					ISCSI: &api.ISCSIVolumeSource{},
+		{
+			plugin: "iscsi",
+			pv: &api.PersistentVolume{
+				ObjectMeta: metav1.ObjectMeta{Name: "bar"},
+				Spec: api.PersistentVolumeSpec{
+					PersistentVolumeSource: api.PersistentVolumeSource{
+						ISCSI: &api.ISCSIPersistentVolumeSource{},
+					},
+					VolumeMode: &block,
 				},
 			},
+			expectedElements: []string{"VolumeMode", "Block"},
 		},
-		"gluster": {
-			ObjectMeta: metav1.ObjectMeta{Name: "bar"},
-			Spec: api.PersistentVolumeSpec{
-				PersistentVolumeSource: api.PersistentVolumeSource{
-					Glusterfs: &api.GlusterfsVolumeSource{},
+		{
+			plugin: "gluster",
+			pv: &api.PersistentVolume{
+				ObjectMeta: metav1.ObjectMeta{Name: "bar"},
+				Spec: api.PersistentVolumeSpec{
+					PersistentVolumeSource: api.PersistentVolumeSource{
+						Glusterfs: &api.GlusterfsVolumeSource{},
+					},
 				},
 			},
+			unexpectedElements: []string{"VolumeMode", "Filesystem"},
 		},
-		"rbd": {
-			ObjectMeta: metav1.ObjectMeta{Name: "bar"},
-			Spec: api.PersistentVolumeSpec{
-				PersistentVolumeSource: api.PersistentVolumeSource{
-					RBD: &api.RBDPersistentVolumeSource{},
+		{
+			plugin: "rbd",
+			pv: &api.PersistentVolume{
+				ObjectMeta: metav1.ObjectMeta{Name: "bar"},
+				Spec: api.PersistentVolumeSpec{
+					PersistentVolumeSource: api.PersistentVolumeSource{
+						RBD: &api.RBDPersistentVolumeSource{},
+					},
 				},
 			},
+			unexpectedElements: []string{"VolumeMode", "Filesystem"},
 		},
-		"quobyte": {
-			ObjectMeta: metav1.ObjectMeta{Name: "bar"},
-			Spec: api.PersistentVolumeSpec{
-				PersistentVolumeSource: api.PersistentVolumeSource{
-					Quobyte: &api.QuobyteVolumeSource{},
+		{
+			plugin: "quobyte",
+			pv: &api.PersistentVolume{
+				ObjectMeta: metav1.ObjectMeta{Name: "bar"},
+				Spec: api.PersistentVolumeSpec{
+					PersistentVolumeSource: api.PersistentVolumeSource{
+						Quobyte: &api.QuobyteVolumeSource{},
+					},
 				},
 			},
+			unexpectedElements: []string{"VolumeMode", "Filesystem"},
 		},
-		"cinder": {
-			ObjectMeta: metav1.ObjectMeta{Name: "bar"},
-			Spec: api.PersistentVolumeSpec{
-				PersistentVolumeSource: api.PersistentVolumeSource{
-					Cinder: &api.CinderVolumeSource{},
+		{
+			plugin: "cinder",
+			pv: &api.PersistentVolume{
+				ObjectMeta: metav1.ObjectMeta{Name: "bar"},
+				Spec: api.PersistentVolumeSpec{
+					PersistentVolumeSource: api.PersistentVolumeSource{
+						Cinder: &api.CinderVolumeSource{},
+					},
 				},
 			},
+			unexpectedElements: []string{"VolumeMode", "Filesystem"},
 		},
-		"fc": {
-			ObjectMeta: metav1.ObjectMeta{Name: "bar"},
-			Spec: api.PersistentVolumeSpec{
-				PersistentVolumeSource: api.PersistentVolumeSource{
-					FC: &api.FCVolumeSource{},
+		{
+			plugin: "fc",
+			pv: &api.PersistentVolume{
+				ObjectMeta: metav1.ObjectMeta{Name: "bar"},
+				Spec: api.PersistentVolumeSpec{
+					PersistentVolumeSource: api.PersistentVolumeSource{
+						FC: &api.FCVolumeSource{},
+					},
+					VolumeMode: &block,
 				},
 			},
+			expectedElements: []string{"VolumeMode", "Block"},
+		},
+		{
+			plugin: "local",
+			pv: &api.PersistentVolume{
+				ObjectMeta: metav1.ObjectMeta{Name: "bar"},
+				Spec: api.PersistentVolumeSpec{
+					PersistentVolumeSource: api.PersistentVolumeSource{
+						Local: &api.LocalVolumeSource{},
+					},
+				},
+			},
+			expectedElements:   []string{"Node Affinity:   <none>"},
+			unexpectedElements: []string{"Required Terms", "Term "},
+		},
+		{
+			plugin: "local",
+			pv: &api.PersistentVolume{
+				ObjectMeta: metav1.ObjectMeta{Name: "bar"},
+				Spec: api.PersistentVolumeSpec{
+					PersistentVolumeSource: api.PersistentVolumeSource{
+						Local: &api.LocalVolumeSource{},
+					},
+					NodeAffinity: &api.VolumeNodeAffinity{},
+				},
+			},
+			expectedElements:   []string{"Node Affinity:   <none>"},
+			unexpectedElements: []string{"Required Terms", "Term "},
+		},
+		{
+			plugin: "local",
+			pv: &api.PersistentVolume{
+				ObjectMeta: metav1.ObjectMeta{Name: "bar"},
+				Spec: api.PersistentVolumeSpec{
+					PersistentVolumeSource: api.PersistentVolumeSource{
+						Local: &api.LocalVolumeSource{},
+					},
+					NodeAffinity: &api.VolumeNodeAffinity{
+						Required: &api.NodeSelector{},
+					},
+				},
+			},
+			expectedElements:   []string{"Node Affinity", "Required Terms:  <none>"},
+			unexpectedElements: []string{"Term "},
+		},
+		{
+			plugin: "local",
+			pv: &api.PersistentVolume{
+				ObjectMeta: metav1.ObjectMeta{Name: "bar"},
+				Spec: api.PersistentVolumeSpec{
+					PersistentVolumeSource: api.PersistentVolumeSource{
+						Local: &api.LocalVolumeSource{},
+					},
+					NodeAffinity: &api.VolumeNodeAffinity{
+						Required: &api.NodeSelector{
+							NodeSelectorTerms: []api.NodeSelectorTerm{
+								{
+									MatchExpressions: []api.NodeSelectorRequirement{},
+								},
+								{
+									MatchExpressions: []api.NodeSelectorRequirement{},
+								},
+							},
+						},
+					},
+				},
+			},
+			expectedElements: []string{"Node Affinity", "Required Terms", "Term 0", "Term 1"},
+		},
+		{
+			plugin: "local",
+			pv: &api.PersistentVolume{
+				ObjectMeta: metav1.ObjectMeta{Name: "bar"},
+				Spec: api.PersistentVolumeSpec{
+					PersistentVolumeSource: api.PersistentVolumeSource{
+						Local: &api.LocalVolumeSource{},
+					},
+					NodeAffinity: &api.VolumeNodeAffinity{
+						Required: &api.NodeSelector{
+							NodeSelectorTerms: []api.NodeSelectorTerm{
+								{
+									MatchExpressions: []api.NodeSelectorRequirement{
+										{
+											Key:      "foo",
+											Operator: "In",
+											Values:   []string{"val1", "val2"},
+										},
+										{
+											Key:      "foo",
+											Operator: "Exists",
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			expectedElements: []string{"Node Affinity", "Required Terms", "Term 0",
+				"foo in [val1, val2]",
+				"foo exists"},
 		},
 	}
 
-	for name, pv := range tests {
-		fake := fake.NewSimpleClientset(pv)
+	for _, test := range testCases {
+		fake := fake.NewSimpleClientset(test.pv)
 		c := PersistentVolumeDescriber{fake}
 		str, err := c.Describe("foo", "bar", printers.DescriberSettings{ShowEvents: true})
 		if err != nil {
-			t.Errorf("Unexpected error for test %s: %v", name, err)
+			t.Errorf("Unexpected error for test %s: %v", test.plugin, err)
 		}
 		if str == "" {
-			t.Errorf("Unexpected empty string for test %s.  Expected PV Describer output", name)
+			t.Errorf("Unexpected empty string for test %s.  Expected PV Describer output", test.plugin)
+		}
+		for _, expected := range test.expectedElements {
+			if !strings.Contains(str, expected) {
+				t.Errorf("expected to find %q in output: %q", expected, str)
+			}
+		}
+		for _, unexpected := range test.unexpectedElements {
+			if strings.Contains(str, unexpected) {
+				t.Errorf("unexpected to find %q in output: %q", unexpected, str)
+			}
+		}
+	}
+}
+
+func TestPersistentVolumeClaimDescriber(t *testing.T) {
+	block := api.PersistentVolumeBlock
+	file := api.PersistentVolumeFilesystem
+	goldClassName := "gold"
+	now := time.Now()
+	testCases := []struct {
+		name               string
+		pvc                *api.PersistentVolumeClaim
+		expectedElements   []string
+		unexpectedElements []string
+	}{
+		{
+			name: "default",
+			pvc: &api.PersistentVolumeClaim{
+				ObjectMeta: metav1.ObjectMeta{Namespace: "foo", Name: "bar"},
+				Spec: api.PersistentVolumeClaimSpec{
+					VolumeName:       "volume1",
+					StorageClassName: &goldClassName,
+				},
+				Status: api.PersistentVolumeClaimStatus{
+					Phase: api.ClaimBound,
+				},
+			},
+			unexpectedElements: []string{"VolumeMode", "Filesystem"},
+		},
+		{
+			name: "filesystem",
+			pvc: &api.PersistentVolumeClaim{
+				ObjectMeta: metav1.ObjectMeta{Namespace: "foo", Name: "bar"},
+				Spec: api.PersistentVolumeClaimSpec{
+					VolumeName:       "volume2",
+					StorageClassName: &goldClassName,
+					VolumeMode:       &file,
+				},
+				Status: api.PersistentVolumeClaimStatus{
+					Phase: api.ClaimBound,
+				},
+			},
+			expectedElements: []string{"VolumeMode", "Filesystem"},
+		},
+		{
+			name: "block",
+			pvc: &api.PersistentVolumeClaim{
+				ObjectMeta: metav1.ObjectMeta{Namespace: "foo", Name: "bar"},
+				Spec: api.PersistentVolumeClaimSpec{
+					VolumeName:       "volume3",
+					StorageClassName: &goldClassName,
+					VolumeMode:       &block,
+				},
+				Status: api.PersistentVolumeClaimStatus{
+					Phase: api.ClaimBound,
+				},
+			},
+			expectedElements: []string{"VolumeMode", "Block"},
+		},
+		// Tests for Status.Condition.
+		{
+			name: "condition-type",
+			pvc: &api.PersistentVolumeClaim{
+				ObjectMeta: metav1.ObjectMeta{Namespace: "foo", Name: "bar"},
+				Spec: api.PersistentVolumeClaimSpec{
+					VolumeName:       "volume4",
+					StorageClassName: &goldClassName,
+				},
+				Status: api.PersistentVolumeClaimStatus{
+					Conditions: []api.PersistentVolumeClaimCondition{
+						{Type: api.PersistentVolumeClaimResizing},
+					},
+				},
+			},
+			expectedElements: []string{"Conditions", "Type", "Resizing"},
+		},
+		{
+			name: "condition-status",
+			pvc: &api.PersistentVolumeClaim{
+				ObjectMeta: metav1.ObjectMeta{Namespace: "foo", Name: "bar"},
+				Spec: api.PersistentVolumeClaimSpec{
+					VolumeName:       "volume5",
+					StorageClassName: &goldClassName,
+				},
+				Status: api.PersistentVolumeClaimStatus{
+					Conditions: []api.PersistentVolumeClaimCondition{
+						{Status: api.ConditionTrue},
+					},
+				},
+			},
+			expectedElements: []string{"Conditions", "Status", "True"},
+		},
+		{
+			name: "condition-last-probe-time",
+			pvc: &api.PersistentVolumeClaim{
+				ObjectMeta: metav1.ObjectMeta{Namespace: "foo", Name: "bar"},
+				Spec: api.PersistentVolumeClaimSpec{
+					VolumeName:       "volume6",
+					StorageClassName: &goldClassName,
+				},
+				Status: api.PersistentVolumeClaimStatus{
+					Conditions: []api.PersistentVolumeClaimCondition{
+						{LastProbeTime: metav1.Time{Time: now}},
+					},
+				},
+			},
+			expectedElements: []string{"Conditions", "LastProbeTime", now.Format(time.RFC1123Z)},
+		},
+		{
+			name: "condition-last-transition-time",
+			pvc: &api.PersistentVolumeClaim{
+				ObjectMeta: metav1.ObjectMeta{Namespace: "foo", Name: "bar"},
+				Spec: api.PersistentVolumeClaimSpec{
+					VolumeName:       "volume7",
+					StorageClassName: &goldClassName,
+				},
+				Status: api.PersistentVolumeClaimStatus{
+					Conditions: []api.PersistentVolumeClaimCondition{
+						{LastTransitionTime: metav1.Time{Time: now}},
+					},
+				},
+			},
+			expectedElements: []string{"Conditions", "LastTransitionTime", now.Format(time.RFC1123Z)},
+		},
+		{
+			name: "condition-reason",
+			pvc: &api.PersistentVolumeClaim{
+				ObjectMeta: metav1.ObjectMeta{Namespace: "foo", Name: "bar"},
+				Spec: api.PersistentVolumeClaimSpec{
+					VolumeName:       "volume8",
+					StorageClassName: &goldClassName,
+				},
+				Status: api.PersistentVolumeClaimStatus{
+					Conditions: []api.PersistentVolumeClaimCondition{
+						{Reason: "OfflineResize"},
+					},
+				},
+			},
+			expectedElements: []string{"Conditions", "Reason", "OfflineResize"},
+		},
+		{
+			name: "condition-message",
+			pvc: &api.PersistentVolumeClaim{
+				ObjectMeta: metav1.ObjectMeta{Namespace: "foo", Name: "bar"},
+				Spec: api.PersistentVolumeClaimSpec{
+					VolumeName:       "volume9",
+					StorageClassName: &goldClassName,
+				},
+				Status: api.PersistentVolumeClaimStatus{
+					Conditions: []api.PersistentVolumeClaimCondition{
+						{Message: "User request resize"},
+					},
+				},
+			},
+			expectedElements: []string{"Conditions", "Message", "User request resize"},
+		},
+	}
+
+	for _, test := range testCases {
+		fake := fake.NewSimpleClientset(test.pvc)
+		c := PersistentVolumeClaimDescriber{fake}
+		str, err := c.Describe("foo", "bar", printers.DescriberSettings{ShowEvents: true})
+		if err != nil {
+			t.Errorf("Unexpected error for test %s: %v", test.name, err)
+		}
+		if str == "" {
+			t.Errorf("Unexpected empty string for test %s.  Expected PVC Describer output", test.name)
+		}
+		for _, expected := range test.expectedElements {
+			if !strings.Contains(str, expected) {
+				t.Errorf("expected to find %q in output: %q", expected, str)
+			}
+		}
+		for _, unexpected := range test.unexpectedElements {
+			if strings.Contains(str, unexpected) {
+				t.Errorf("unexpected to find %q in output: %q", unexpected, str)
+			}
 		}
 	}
 }
@@ -1026,6 +1407,158 @@ func TestDescribeHorizontalPodAutoscaler(t *testing.T) {
 				Status: autoscaling.HorizontalPodAutoscalerStatus{
 					CurrentReplicas: 4,
 					DesiredReplicas: 5,
+				},
+			},
+		},
+		{
+			"external source type, target average value (no current)",
+			autoscaling.HorizontalPodAutoscaler{
+				Spec: autoscaling.HorizontalPodAutoscalerSpec{
+					ScaleTargetRef: autoscaling.CrossVersionObjectReference{
+						Name: "some-rc",
+						Kind: "ReplicationController",
+					},
+					MinReplicas: &minReplicasVal,
+					MaxReplicas: 10,
+					Metrics: []autoscaling.MetricSpec{
+						{
+							Type: autoscaling.ExternalMetricSourceType,
+							External: &autoscaling.ExternalMetricSource{
+								MetricSelector: &metav1.LabelSelector{
+									MatchLabels: map[string]string{
+										"label": "value",
+									},
+								},
+								MetricName:         "some-external-metric",
+								TargetAverageValue: resource.NewMilliQuantity(100, resource.DecimalSI),
+							},
+						},
+					},
+				},
+				Status: autoscaling.HorizontalPodAutoscalerStatus{
+					CurrentReplicas: 4,
+					DesiredReplicas: 5,
+				},
+			},
+		},
+		{
+			"external source type, target average value (with current)",
+			autoscaling.HorizontalPodAutoscaler{
+				Spec: autoscaling.HorizontalPodAutoscalerSpec{
+					ScaleTargetRef: autoscaling.CrossVersionObjectReference{
+						Name: "some-rc",
+						Kind: "ReplicationController",
+					},
+					MinReplicas: &minReplicasVal,
+					MaxReplicas: 10,
+					Metrics: []autoscaling.MetricSpec{
+						{
+							Type: autoscaling.ExternalMetricSourceType,
+							External: &autoscaling.ExternalMetricSource{
+								MetricSelector: &metav1.LabelSelector{
+									MatchLabels: map[string]string{
+										"label": "value",
+									},
+								},
+								MetricName:         "some-external-metric",
+								TargetAverageValue: resource.NewMilliQuantity(100, resource.DecimalSI),
+							},
+						},
+					},
+				},
+				Status: autoscaling.HorizontalPodAutoscalerStatus{
+					CurrentReplicas: 4,
+					DesiredReplicas: 5,
+					CurrentMetrics: []autoscaling.MetricStatus{
+						{
+							Type: autoscaling.ExternalMetricSourceType,
+							External: &autoscaling.ExternalMetricStatus{
+								MetricSelector: &metav1.LabelSelector{
+									MatchLabels: map[string]string{
+										"label": "value",
+									},
+								},
+								MetricName:          "some-external-metric",
+								CurrentAverageValue: resource.NewMilliQuantity(50, resource.DecimalSI),
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			"external source type, target value (no current)",
+			autoscaling.HorizontalPodAutoscaler{
+				Spec: autoscaling.HorizontalPodAutoscalerSpec{
+					ScaleTargetRef: autoscaling.CrossVersionObjectReference{
+						Name: "some-rc",
+						Kind: "ReplicationController",
+					},
+					MinReplicas: &minReplicasVal,
+					MaxReplicas: 10,
+					Metrics: []autoscaling.MetricSpec{
+						{
+							Type: autoscaling.ExternalMetricSourceType,
+							External: &autoscaling.ExternalMetricSource{
+								MetricSelector: &metav1.LabelSelector{
+									MatchLabels: map[string]string{
+										"label": "value",
+									},
+								},
+								MetricName:  "some-external-metric",
+								TargetValue: resource.NewMilliQuantity(100, resource.DecimalSI),
+							},
+						},
+					},
+				},
+				Status: autoscaling.HorizontalPodAutoscalerStatus{
+					CurrentReplicas: 4,
+					DesiredReplicas: 5,
+				},
+			},
+		},
+		{
+			"external source type, target value (with current)",
+			autoscaling.HorizontalPodAutoscaler{
+				Spec: autoscaling.HorizontalPodAutoscalerSpec{
+					ScaleTargetRef: autoscaling.CrossVersionObjectReference{
+						Name: "some-rc",
+						Kind: "ReplicationController",
+					},
+					MinReplicas: &minReplicasVal,
+					MaxReplicas: 10,
+					Metrics: []autoscaling.MetricSpec{
+						{
+							Type: autoscaling.ExternalMetricSourceType,
+							External: &autoscaling.ExternalMetricSource{
+								MetricSelector: &metav1.LabelSelector{
+									MatchLabels: map[string]string{
+										"label": "value",
+									},
+								},
+								MetricName:  "some-external-metric",
+								TargetValue: resource.NewMilliQuantity(100, resource.DecimalSI),
+							},
+						},
+					},
+				},
+				Status: autoscaling.HorizontalPodAutoscalerStatus{
+					CurrentReplicas: 4,
+					DesiredReplicas: 5,
+					CurrentMetrics: []autoscaling.MetricStatus{
+						{
+							Type: autoscaling.ExternalMetricSourceType,
+							External: &autoscaling.ExternalMetricStatus{
+								MetricSelector: &metav1.LabelSelector{
+									MatchLabels: map[string]string{
+										"label": "value",
+									},
+								},
+								MetricName:   "some-external-metric",
+								CurrentValue: *resource.NewMilliQuantity(50, resource.DecimalSI),
+							},
+						},
+					},
 				},
 			},
 		},
@@ -1921,6 +2454,32 @@ Tokens:              <none>
 Events:              <none>` + "\n"
 	if out != expectedOut {
 		t.Errorf("expected : %q\n but got output:\n %q", expectedOut, out)
+	}
+
+}
+
+func TestDescribeNode(t *testing.T) {
+	fake := fake.NewSimpleClientset(&api.Node{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "bar",
+			Namespace: "foo",
+		},
+		Spec: api.NodeSpec{
+			Unschedulable: true,
+		},
+	})
+	c := &describeClient{T: t, Namespace: "foo", Interface: fake}
+	d := NodeDescriber{c}
+	out, err := d.Describe("foo", "bar", printers.DescriberSettings{ShowEvents: true})
+	if err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+
+	expectedOut := []string{"Unschedulable", "true"}
+	for _, expected := range expectedOut {
+		if !strings.Contains(out, expected) {
+			t.Errorf("expected to find %q in output: %q", expected, out)
+		}
 	}
 
 }

@@ -30,12 +30,18 @@ REGIONAL_KUBE_ADDONS=${REGIONAL_KUBE_ADDONS:-true}
 NODE_SIZE=${NODE_SIZE:-n1-standard-2}
 NUM_NODES=${NUM_NODES:-3}
 MASTER_SIZE=${MASTER_SIZE:-n1-standard-$(get-master-size)}
+MASTER_MIN_CPU_ARCHITECTURE=${MASTER_MIN_CPU_ARCHITECTURE:-} # To allow choosing better architectures.
 MASTER_DISK_TYPE=pd-ssd
 MASTER_DISK_SIZE=${MASTER_DISK_SIZE:-$(get-master-disk-size)}
 MASTER_ROOT_DISK_SIZE=${MASTER_ROOT_DISK_SIZE:-$(get-master-root-disk-size)}
 NODE_DISK_TYPE=${NODE_DISK_TYPE:-pd-standard}
 NODE_DISK_SIZE=${NODE_DISK_SIZE:-100GB}
 NODE_LOCAL_SSDS=${NODE_LOCAL_SSDS:-0}
+# An extension to local SSDs allowing users to specify block/fs and SCSI/NVMe devices
+# Format of this variable will be "#,scsi/nvme,block/fs" you can specify multiple
+# configurations by separating them by a semi-colon ex. "2,scsi,fs;1,nvme,block"
+# is a request for 2 SCSI formatted and mounted SSDs and 1 NVMe block device SSD.
+NODE_LOCAL_SSDS_EXT=${NODE_LOCAL_SSDS_EXT:-}
 # Accelerators to be attached to each node. Format "type=<accelerator-type>,count=<accelerator-count>"
 # More information on available GPUs here - https://cloud.google.com/compute/docs/gpus/
 NODE_ACCELERATORS=${NODE_ACCELERATORS:-""}
@@ -48,12 +54,6 @@ CREATE_CUSTOM_NETWORK=${CREATE_CUSTOM_NETWORK:-false}
 
 MASTER_OS_DISTRIBUTION=${KUBE_MASTER_OS_DISTRIBUTION:-${KUBE_OS_DISTRIBUTION:-gci}}
 NODE_OS_DISTRIBUTION=${KUBE_NODE_OS_DISTRIBUTION:-${KUBE_OS_DISTRIBUTION:-gci}}
-if [[ "${MASTER_OS_DISTRIBUTION}" == "coreos" ]]; then
-    MASTER_OS_DISTRIBUTION="container-linux"
-fi
-if [[ "${NODE_OS_DISTRIBUTION}" == "coreos" ]]; then
-    NODE_OS_DISTRIBUTION="container-linux"
-fi
 
 if [[ "${MASTER_OS_DISTRIBUTION}" == "cos" ]]; then
     MASTER_OS_DISTRIBUTION="gci"
@@ -74,7 +74,7 @@ fi
 # Also please update corresponding image for node e2e at:
 # https://github.com/kubernetes/kubernetes/blob/master/test/e2e_node/jenkins/image-config.yaml
 CVM_VERSION=${CVM_VERSION:-container-vm-v20170627}
-GCI_VERSION=${KUBE_GCI_VERSION:-cos-stable-60-9592-90-0}
+GCI_VERSION=${KUBE_GCI_VERSION:-cos-stable-63-10032-71-0}
 MASTER_IMAGE=${KUBE_GCE_MASTER_IMAGE:-}
 MASTER_IMAGE_PROJECT=${KUBE_GCE_MASTER_PROJECT:-cos-cloud}
 NODE_IMAGE=${KUBE_GCE_NODE_IMAGE:-${GCI_VERSION}}
@@ -82,13 +82,16 @@ NODE_IMAGE_PROJECT=${KUBE_GCE_NODE_PROJECT:-cos-cloud}
 NODE_SERVICE_ACCOUNT=${KUBE_GCE_NODE_SERVICE_ACCOUNT:-default}
 CONTAINER_RUNTIME=${KUBE_CONTAINER_RUNTIME:-docker}
 CONTAINER_RUNTIME_ENDPOINT=${KUBE_CONTAINER_RUNTIME_ENDPOINT:-}
-LOAD_IMAGE_COMMAND=${KUBE_LOAD_IMAGE_COMMAND:-docker load -i}
+CONTAINER_RUNTIME_NAME=${KUBE_CONTAINER_RUNTIME_NAME:-}
+LOAD_IMAGE_COMMAND=${KUBE_LOAD_IMAGE_COMMAND:-}
 RKT_VERSION=${KUBE_RKT_VERSION:-1.23.0}
 RKT_STAGE1_IMAGE=${KUBE_RKT_STAGE1_IMAGE:-coreos.com/rkt/stage1-coreos}
 # MASTER_EXTRA_METADATA is the extra instance metadata on master instance separated by commas.
 MASTER_EXTRA_METADATA=${KUBE_MASTER_EXTRA_METADATA:-${KUBE_EXTRA_METADATA:-}}
 # MASTER_EXTRA_METADATA is the extra instance metadata on node instance separated by commas.
 NODE_EXTRA_METADATA=${KUBE_NODE_EXTRA_METADATA:-${KUBE_EXTRA_METADATA:-}}
+# KUBELET_TEST_ARGS are extra arguments passed to kubelet.
+KUBELET_TEST_ARGS=${KUBE_KUBELET_EXTRA_ARGS:-}
 
 NETWORK=${KUBE_GCE_NETWORK:-default}
 # Enable network deletion by default (for kube-down), unless we're using 'default' network.
@@ -115,10 +118,14 @@ MASTER_IP_RANGE="${MASTER_IP_RANGE:-10.246.0.0/24}"
 # It is the primary range in the subnet and is the range used for node instance IPs.
 NODE_IP_RANGE="$(get-node-ip-range)"
 
+# NOTE: Avoid giving nodes empty scopes, because kubelet needs a service account
+# in order to initialize properly.
 NODE_SCOPES="${NODE_SCOPES:-monitoring,logging-write,storage-ro}"
 
 # Extra docker options for nodes.
 EXTRA_DOCKER_OPTS="${EXTRA_DOCKER_OPTS:-}"
+
+VOLUME_PLUGIN_DIR="${VOLUME_PLUGIN_DIR:-/home/kubernetes/flexvolume}"
 
 SERVICE_CLUSTER_IP_RANGE="${SERVICE_CLUSTER_IP_RANGE:-10.0.0.0/16}"  # formerly PORTAL_NET
 ALLOCATE_NODE_CIDRS=true
@@ -144,6 +151,16 @@ ENABLE_CLUSTER_MONITORING="${KUBE_ENABLE_CLUSTER_MONITORING:-influxdb}"
 # this in case of stability issues.
 # TODO(piosz) remove this option once Metrics Server became a stable thing.
 ENABLE_METRICS_SERVER="${KUBE_ENABLE_METRICS_SERVER:-true}"
+
+# Optional: Metadata agent to setup as part of the cluster bring up:
+#   none        - No metadata agent
+#   stackdriver - Stackdriver metadata agent
+# Metadata agent is a daemon set that provides metadata of kubernetes objects
+# running on the same node for exporting metrics and logs.
+ENABLE_METADATA_AGENT="${KUBE_ENABLE_METADATA_AGENT:-none}"
+
+# Version tag of metadata agent
+METADATA_AGENT_VERSION="${KUBE_METADATA_AGENT_VERSION:-0.2-0.0.16-1}"
 
 # One special node out of NUM_NODES would be created of this type if specified.
 # Useful for scheduling heapster in large clusters with nodes of small size.
@@ -174,7 +191,7 @@ if [[ ${ENABLE_METADATA_CONCEALMENT:-} == "true" ]]; then
   # Put the necessary label on the node so the daemonset gets scheduled.
   NODE_LABELS="${NODE_LABELS},beta.kubernetes.io/metadata-proxy-ready=true"
   # Add to the provider custom variables.
-  PROVIDER_VARS="${PROVIDER_VARS:-} ENABLE_METADATA_CONCEALMENT"
+  PROVIDER_VARS="${PROVIDER_VARS:-} ENABLE_METADATA_CONCEALMENT METADATA_CONCEALMENT_NO_FIREWALL"
 fi
 
 # Optional: Enable node logging.
@@ -204,18 +221,14 @@ if [[ ! -z "${NODE_ACCELERATORS}" ]]; then
 fi
 
 # Optional: Install cluster DNS.
+# Set CLUSTER_DNS_CORE_DNS to 'true' to install CoreDNS instead of kube-dns.
+CLUSTER_DNS_CORE_DNS="${CLUSTER_DNS_CORE_DNS:-false}"
 ENABLE_CLUSTER_DNS="${KUBE_ENABLE_CLUSTER_DNS:-true}"
 DNS_SERVER_IP="${KUBE_DNS_SERVER_IP:-10.0.0.10}"
 DNS_DOMAIN="${KUBE_DNS_DOMAIN:-cluster.local}"
 
 # Optional: Enable DNS horizontal autoscaler
 ENABLE_DNS_HORIZONTAL_AUTOSCALER="${KUBE_ENABLE_DNS_HORIZONTAL_AUTOSCALER:-true}"
-
-# Optional: Install cluster docker registry.
-ENABLE_CLUSTER_REGISTRY="${KUBE_ENABLE_CLUSTER_REGISTRY:-false}"
-CLUSTER_REGISTRY_DISK="${CLUSTER_REGISTRY_PD:-${INSTANCE_PREFIX}-kube-system-kube-registry}"
-CLUSTER_REGISTRY_DISK_SIZE="${CLUSTER_REGISTRY_DISK_SIZE:-200GB}"
-CLUSTER_REGISTRY_DISK_TYPE_GCE="${CLUSTER_REGISTRY_DISK_TYPE_GCE:-pd-standard}"
 
 # Optional: Install Kubernetes UI
 ENABLE_CLUSTER_UI="${KUBE_ENABLE_CLUSTER_UI:-true}"
@@ -253,14 +266,19 @@ ENABLE_RESCHEDULER="${KUBE_ENABLE_RESCHEDULER:-true}"
 # IP_ALIAS_SUBNETWORK is the subnetwork to allocate from. If empty, a
 #   new subnetwork will be created for the cluster.
 ENABLE_IP_ALIASES=${KUBE_GCE_ENABLE_IP_ALIASES:-false}
+NODE_IPAM_MODE=${KUBE_GCE_NODE_IPAM_MODE:-RangeAllocator}
 if [ ${ENABLE_IP_ALIASES} = true ]; then
   # Size of ranges allocated to each node. Currently supports only /32 and /24.
   IP_ALIAS_SIZE=${KUBE_GCE_IP_ALIAS_SIZE:-/24}
   IP_ALIAS_SUBNETWORK=${KUBE_GCE_IP_ALIAS_SUBNETWORK:-${INSTANCE_PREFIX}-subnet-default}
   # Reserve the services IP space to avoid being allocated for other GCP resources.
   SERVICE_CLUSTER_IP_SUBNETWORK=${KUBE_GCE_SERVICE_CLUSTER_IP_SUBNETWORK:-${INSTANCE_PREFIX}-subnet-services}
+  NODE_IPAM_MODE=${KUBE_GCE_NODE_IPAM_MODE:-CloudAllocator}
+  SECONDARY_RANGE_NAME=${SECONDARY_RANGE_NAME:-}
   # Add to the provider custom variables.
   PROVIDER_VARS="${PROVIDER_VARS:-} ENABLE_IP_ALIASES"
+  PROVIDER_VARS="${PROVIDER_VARS:-} NODE_IPAM_MODE"
+  PROVIDER_VARS="${PROVIDER_VARS:-} SECONDARY_RANGE_NAME"
 fi
 
 # Enable GCE Alpha features.
@@ -279,11 +297,16 @@ if [[ -n "${GCE_GLBC_IMAGE:-}" ]]; then
 fi
 
 # Admission Controllers to invoke prior to persisting objects in cluster
-ADMISSION_CONTROL=Initializers,NamespaceLifecycle,LimitRanger,ServiceAccount,PersistentVolumeLabel,DefaultStorageClass,DefaultTolerationSeconds,NodeRestriction,Priority
+ADMISSION_CONTROL=Initializers,NamespaceLifecycle,LimitRanger,ServiceAccount,PersistentVolumeLabel,DefaultStorageClass,PersistentVolumeClaimResize,DefaultTolerationSeconds,NodeRestriction,Priority,StorageObjectInUseProtection
 
 if [[ "${ENABLE_POD_SECURITY_POLICY:-}" == "true" ]]; then
   ADMISSION_CONTROL="${ADMISSION_CONTROL},PodSecurityPolicy"
 fi
+
+# MutatingAdmissionWebhook should be the last controller that modifies the
+# request object, otherwise users will be confused if the mutating webhooks'
+# modification is overwritten.
+ADMISSION_CONTROL="${ADMISSION_CONTROL},MutatingAdmissionWebhook,ValidatingAdmissionWebhook"
 
 # ResourceQuota must come last, or a creation is recorded, but the pod was forbidden.
 ADMISSION_CONTROL="${ADMISSION_CONTROL},ResourceQuota"
@@ -295,10 +318,7 @@ KUBE_UP_AUTOMATIC_CLEANUP=${KUBE_UP_AUTOMATIC_CLEANUP:-false}
 STORAGE_BACKEND=${STORAGE_BACKEND:-}
 
 # Networking plugin specific settings.
-NETWORK_PROVIDER="${NETWORK_PROVIDER:-kubenet}" # none, opencontrail, kubenet
-OPENCONTRAIL_TAG="${OPENCONTRAIL_TAG:-R2.20}"
-OPENCONTRAIL_KUBERNETES_TAG="${OPENCONTRAIL_KUBERNETES_TAG:-master}"
-OPENCONTRAIL_PUBLIC_SUBNET="${OPENCONTRAIL_PUBLIC_SUBNET:-10.1.0.0/16}"
+NETWORK_PROVIDER="${NETWORK_PROVIDER:-kubenet}" # none, kubenet
 
 # Network Policy plugin specific settings.
 NETWORK_POLICY_PROVIDER="${NETWORK_POLICY_PROVIDER:-none}" # calico
@@ -322,10 +342,6 @@ ENABLE_DEFAULT_STORAGE_CLASS="${ENABLE_DEFAULT_STORAGE_CLASS:-true}"
 # Optional: Enable legacy ABAC policy that makes all service accounts superusers.
 ENABLE_LEGACY_ABAC="${ENABLE_LEGACY_ABAC:-false}" # true, false
 
-# TODO(dawn1107): Remove this once the flag is built into CVM image.
-# Kernel panic upon soft lockup issue
-SOFTLOCKUP_PANIC="${SOFTLOCKUP_PANIC:-false}" # true, false
-
 # Indicates if the values (i.e. KUBE_USER and KUBE_PASSWORD for basic
 # authentication) in metadata should be treated as canonical, and therefore disk
 # copies ought to be recreated/clobbered.
@@ -345,9 +361,10 @@ if [[ -n "${LOGROTATE_MAX_SIZE:-}" ]]; then
 fi
 
 # Fluentd requirements
-FLUENTD_GCP_MEMORY_LIMIT="${FLUENTD_GCP_MEMORY_LIMIT:-300Mi}"
-FLUENTD_GCP_CPU_REQUEST="${FLUENTD_GCP_CPU_REQUEST:-100m}"
-FLUENTD_GCP_MEMORY_REQUEST="${FLUENTD_GCP_MEMORY_REQUEST:-200Mi}"
+FLUENTD_GCP_VERSION="${FLUENTD_GCP_VERSION:-0.2-1.5.28-1}"
+FLUENTD_GCP_MEMORY_LIMIT="${FLUENTD_GCP_MEMORY_LIMIT:-}"
+FLUENTD_GCP_CPU_REQUEST="${FLUENTD_GCP_CPU_REQUEST:-}"
+FLUENTD_GCP_MEMORY_REQUEST="${FLUENTD_GCP_MEMORY_REQUEST:-}"
 
 # Heapster requirements
 HEAPSTER_GCP_BASE_MEMORY="${HEAPSTER_GCP_BASE_MEMORY:-140Mi}"
@@ -356,7 +373,10 @@ HEAPSTER_GCP_BASE_CPU="${HEAPSTER_GCP_BASE_CPU:-80m}"
 HEAPSTER_GCP_CPU_PER_NODE="${HEAPSTER_GCP_CPU_PER_NODE:-0.5}"
 
 # Adding to PROVIDER_VARS, since this is GCP-specific.
-PROVIDER_VARS="${PROVIDER_VARS:-} FLUENTD_GCP_MEMORY_LIMIT FLUENTD_GCP_CPU_REQUEST FLUENTD_GCP_MEMORY_REQUEST HEAPSTER_GCP_BASE_MEMORY HEAPSTER_GCP_MEMORY_PER_NODE HEAPSTER_GCP_BASE_CPU HEAPSTER_GCP_CPU_PER_NODE"
+PROVIDER_VARS="${PROVIDER_VARS:-} FLUENTD_GCP_VERSION FLUENTD_GCP_MEMORY_LIMIT FLUENTD_GCP_CPU_REQUEST FLUENTD_GCP_MEMORY_REQUEST HEAPSTER_GCP_BASE_MEMORY HEAPSTER_GCP_MEMORY_PER_NODE HEAPSTER_GCP_BASE_CPU HEAPSTER_GCP_CPU_PER_NODE CUSTOM_KUBE_DASHBOARD_BANNER"
+
+# Fluentd configuration for node-journal
+ENABLE_NODE_JOURNAL="${ENABLE_NODE_JOURNAL:-false}"
 
 # prometheus-to-sd configuration
 PROMETHEUS_TO_SD_ENDPOINT="${PROMETHEUS_TO_SD_ENDPOINT:-https://monitoring.googleapis.com/}"
@@ -382,3 +402,9 @@ ROTATE_CERTIFICATES="${ROTATE_CERTIFICATES:-}"
 # The number of services that are allowed to sync concurrently. Will be passed
 # into kube-controller-manager via `--concurrent-service-syncs`
 CONCURRENT_SERVICE_SYNCS="${CONCURRENT_SERVICE_SYNCS:-}"
+
+if [[ "${ENABLE_TOKENREQUEST:-}" == "true" ]]; then
+  FEATURE_GATES="${FEATURE_GATES},TokenRequest=true"
+  SERVICEACCOUNT_ISSUER="https://kubernetes.io/${CLUSTER_NAME}"
+  SERVICEACCOUNT_API_AUDIENCES="https://kubernetes.default.svc"
+fi

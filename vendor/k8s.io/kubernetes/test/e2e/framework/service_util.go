@@ -19,6 +19,7 @@ package framework
 import (
 	"bytes"
 	"fmt"
+	"net"
 	"sort"
 	"strconv"
 	"strings"
@@ -46,6 +47,7 @@ import (
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
+	scaleclient "k8s.io/client-go/scale"
 )
 
 const (
@@ -208,6 +210,20 @@ func (j *ServiceTestJig) CreateExternalNameServiceOrFail(namespace string, tweak
 		Failf("Failed to create ExternalName Service %q: %v", svc.Name, err)
 	}
 	return result
+}
+
+// CreateServiceWithServicePort creates a new Service with ServicePort.
+func (j *ServiceTestJig) CreateServiceWithServicePort(labels map[string]string, namespace string, ports []v1.ServicePort) (*v1.Service, error) {
+	service := &v1.Service{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: j.Name,
+		},
+		Spec: v1.ServiceSpec{
+			Selector: labels,
+			Ports:    ports,
+		},
+	}
+	return j.Client.CoreV1().Services(namespace).Create(service)
 }
 
 func (j *ServiceTestJig) ChangeServiceType(namespace, name string, newType v1.ServiceType, timeout time.Duration) {
@@ -801,7 +817,7 @@ func newEchoServerPodSpec(podName string) *v1.Pod {
 			Containers: []v1.Container{
 				{
 					Name:  "echoserver",
-					Image: "gcr.io/google_containers/echoserver:1.6",
+					Image: imageutils.GetE2EImage(imageutils.EchoServer),
 					Ports: []v1.ContainerPort{{ContainerPort: int32(port)}},
 				},
 			},
@@ -878,7 +894,8 @@ func (j *ServiceTestJig) GetHTTPContent(host string, port int, timeout time.Dura
 }
 
 func testHTTPHealthCheckNodePort(ip string, port int, request string) (bool, error) {
-	url := fmt.Sprintf("http://%s:%d%s", ip, port, request)
+	ipPort := net.JoinHostPort(ip, strconv.Itoa(port))
+	url := fmt.Sprintf("http://%s%s", ipPort, request)
 	if ip == "" || port == 0 {
 		Failf("Got empty IP for reachability check (%s)", url)
 		return false, fmt.Errorf("Invalid input ip or port")
@@ -1103,22 +1120,6 @@ func GetContainerPortsByPodUID(endpoints *v1.Endpoints) PortsByPodUID {
 		for _, port := range ss.Ports {
 			for _, addr := range ss.Addresses {
 				containerPort := port.Port
-				hostPort := port.Port
-
-				// use endpoint annotations to recover the container port in a Mesos setup
-				// compare contrib/mesos/pkg/service/endpoints_controller.syncService
-				key := fmt.Sprintf("k8s.mesosphere.io/containerPort_%s_%s_%d", port.Protocol, addr.IP, hostPort)
-				mesosContainerPortString := endpoints.Annotations[key]
-				if mesosContainerPortString != "" {
-					mesosContainerPort, err := strconv.Atoi(mesosContainerPortString)
-					if err != nil {
-						continue
-					}
-					containerPort = int32(mesosContainerPort)
-					Logf("Mapped mesos host port %d to container port %d via annotation %s=%s", hostPort, containerPort, key, mesosContainerPortString)
-				}
-
-				// Logf("Found pod %v, host port %d and container port %d", addr.TargetRef.UID, hostPort, containerPort)
 				if _, ok := m[addr.TargetRef.UID]; !ok {
 					m[addr.TargetRef.UID] = make([]int, 0)
 				}
@@ -1269,8 +1270,8 @@ func StartServeHostnameService(c clientset.Interface, internalClient internalcli
 	return podNames, serviceIP, nil
 }
 
-func StopServeHostnameService(clientset clientset.Interface, internalClientset internalclientset.Interface, ns, name string) error {
-	if err := DeleteRCAndPods(clientset, internalClientset, ns, name); err != nil {
+func StopServeHostnameService(clientset clientset.Interface, internalClientset internalclientset.Interface, scaleClient scaleclient.ScalesGetter, ns, name string) error {
+	if err := DeleteRCAndPods(clientset, internalClientset, scaleClient, ns, name); err != nil {
 		return err
 	}
 	if err := clientset.CoreV1().Services(ns).Delete(name, nil); err != nil {
@@ -1292,8 +1293,9 @@ func VerifyServeHostnameServiceUp(c clientset.Interface, ns, host string, expect
 	// Loop a bunch of times - the proxy is randomized, so we want a good
 	// chance of hitting each backend at least once.
 	buildCommand := func(wget string) string {
-		return fmt.Sprintf("for i in $(seq 1 %d); do %s http://%s:%d 2>&1 || true; echo; done",
-			50*len(expectedPods), wget, serviceIP, servicePort)
+		serviceIPPort := net.JoinHostPort(serviceIP, strconv.Itoa(servicePort))
+		return fmt.Sprintf("for i in $(seq 1 %d); do %s http://%s 2>&1 || true; echo; done",
+			50*len(expectedPods), wget, serviceIPPort)
 	}
 	commands := []func() string{
 		// verify service from node
@@ -1360,8 +1362,12 @@ func VerifyServeHostnameServiceUp(c clientset.Interface, ns, host string, expect
 }
 
 func VerifyServeHostnameServiceDown(c clientset.Interface, host string, serviceIP string, servicePort int) error {
+	ipPort := net.JoinHostPort(serviceIP, strconv.Itoa(servicePort))
+	// The current versions of curl included in CentOS and RHEL distros
+	// misinterpret square brackets around IPv6 as globbing, so use the -g
+	// argument to disable globbing to handle the IPv6 case.
 	command := fmt.Sprintf(
-		"curl -s --connect-timeout 2 http://%s:%d && exit 99", serviceIP, servicePort)
+		"curl -g -s --connect-timeout 2 http://%s && exit 99", ipPort)
 
 	for start := time.Now(); time.Since(start) < time.Minute; time.Sleep(5 * time.Second) {
 		result, err := SSH(command, host, TestContext.Provider)
@@ -1377,17 +1383,17 @@ func VerifyServeHostnameServiceDown(c clientset.Interface, host string, serviceI
 	return fmt.Errorf("waiting for service to be down timed out")
 }
 
-func CleanupServiceResources(c clientset.Interface, loadBalancerName, zone string) {
+func CleanupServiceResources(c clientset.Interface, loadBalancerName, region, zone string) {
 	if TestContext.Provider == "gce" || TestContext.Provider == "gke" {
-		CleanupServiceGCEResources(c, loadBalancerName, zone)
+		CleanupServiceGCEResources(c, loadBalancerName, region, zone)
 	}
 
 	// TODO: we need to add this function with other cloud providers, if there is a need.
 }
 
-func CleanupServiceGCEResources(c clientset.Interface, loadBalancerName, zone string) {
+func CleanupServiceGCEResources(c clientset.Interface, loadBalancerName, region, zone string) {
 	if pollErr := wait.Poll(5*time.Second, LoadBalancerCleanupTimeout, func() (bool, error) {
-		if err := CleanupGCEResources(c, loadBalancerName, zone); err != nil {
+		if err := CleanupGCEResources(c, loadBalancerName, region, zone); err != nil {
 			Logf("Still waiting for glbc to cleanup: %v", err)
 			return false, nil
 		}

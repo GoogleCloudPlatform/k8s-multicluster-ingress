@@ -26,6 +26,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	clientfake "k8s.io/client-go/kubernetes/fake"
 	clienttesting "k8s.io/client-go/testing"
+	"k8s.io/ingress-gce/pkg/annotations"
 	ingressbe "k8s.io/ingress-gce/pkg/backends"
 	ingresshc "k8s.io/ingress-gce/pkg/healthchecks"
 	"k8s.io/ingress-gce/pkg/utils"
@@ -50,7 +51,7 @@ func TestEnsureHealthCheck(t *testing.T) {
 		// Human-readable description of test.
 		desc string
 		// Inputs
-		protocol    utils.AppProtocol
+		protocol    annotations.AppProtocol
 		forceUpdate bool
 		clients     map[string]kubernetes.Interface
 		// Outputs
@@ -59,7 +60,7 @@ func TestEnsureHealthCheck(t *testing.T) {
 	}{
 		{
 			desc:           "expected no error in ensuring health check",
-			protocol:       utils.ProtocolHTTP,
+			protocol:       annotations.ProtocolHTTP,
 			forceUpdate:    false,
 			clients:        map[string]kubernetes.Interface{"client1": defaultClient, "client2": defaultClient},
 			expectedHCPath: "/",
@@ -67,7 +68,7 @@ func TestEnsureHealthCheck(t *testing.T) {
 		},
 		{
 			desc:           "writing same health check should not error (forceUpdate=false)",
-			protocol:       utils.ProtocolHTTP,
+			protocol:       annotations.ProtocolHTTP,
 			forceUpdate:    false,
 			clients:        map[string]kubernetes.Interface{"client1": defaultClient, "client2": defaultClient},
 			expectedHCPath: "/",
@@ -75,7 +76,7 @@ func TestEnsureHealthCheck(t *testing.T) {
 		},
 		{
 			desc:           "writing same health check should not error (forceUpdate=true)",
-			protocol:       utils.ProtocolHTTP,
+			protocol:       annotations.ProtocolHTTP,
 			forceUpdate:    true,
 			clients:        map[string]kubernetes.Interface{"client1": defaultClient, "client2": defaultClient},
 			expectedHCPath: "/",
@@ -83,7 +84,7 @@ func TestEnsureHealthCheck(t *testing.T) {
 		},
 		{
 			desc:           "a different healthcheck should cause an error when forceUpdate=false",
-			protocol:       utils.ProtocolHTTPS, /* Not the original HTTP */
+			protocol:       annotations.ProtocolHTTPS, /* Not the original HTTP */
 			forceUpdate:    false,
 			clients:        map[string]kubernetes.Interface{"client1": defaultClient, "client2": defaultClient},
 			expectedHCPath: "/",
@@ -91,7 +92,7 @@ func TestEnsureHealthCheck(t *testing.T) {
 		},
 		{
 			desc:           "a different healthcheck should not error when forceUpdate=true",
-			protocol:       utils.ProtocolHTTPS, /* Not the original HTTP */
+			protocol:       annotations.ProtocolHTTPS, /* Not the original HTTP */
 			forceUpdate:    true,
 			clients:        map[string]kubernetes.Interface{"client1": defaultClient, "client2": defaultClient},
 			expectedHCPath: "/",
@@ -99,22 +100,22 @@ func TestEnsureHealthCheck(t *testing.T) {
 		},
 		{
 			desc:        "a healthcheck should adopt request path of readiness probe if present",
-			protocol:    utils.ProtocolHTTP,
+			protocol:    annotations.ProtocolHTTP,
 			forceUpdate: true,
 			clients: map[string]kubernetes.Interface{
-				"client1": addProbe(getClient(), utils.ProtocolHTTP, svcPort, probePath),
-				"client2": addProbe(getClient(), utils.ProtocolHTTP, svcPort, probePath),
+				"client1": addProbe(getClient(), annotations.ProtocolHTTP, svcPort, probePath),
+				"client2": addProbe(getClient(), annotations.ProtocolHTTP, svcPort, probePath),
 			},
 			expectedHCPath: probePath,
 			ensureErr:      false,
 		},
 		{
 			desc:        "different readiness probe paths should cause failure",
-			protocol:    utils.ProtocolHTTP,
+			protocol:    annotations.ProtocolHTTP,
 			forceUpdate: true,
 			clients: map[string]kubernetes.Interface{
-				"client1": addProbe(getClient(), utils.ProtocolHTTP, svcPort, probePath),
-				"client2": addProbe(getClient(), utils.ProtocolHTTP, svcPort, probePath+"-a"),
+				"client1": addProbe(getClient(), annotations.ProtocolHTTP, svcPort, probePath),
+				"client2": addProbe(getClient(), annotations.ProtocolHTTP, svcPort, probePath+"-a"),
 			},
 			expectedHCPath: probePath,
 			ensureErr:      true,
@@ -129,7 +130,7 @@ func TestEnsureHealthCheck(t *testing.T) {
 	for _, c := range testCases {
 		hcMap, err := hcs.EnsureHealthCheck(lbName, []ingressbe.ServicePort{
 			{
-				Port:     port,
+				NodePort: port,
 				Protocol: c.protocol,
 				SvcPort:  intstr.FromInt(int(svcPort)),
 				SvcName: types.NamespacedName{
@@ -148,8 +149,8 @@ func TestEnsureHealthCheck(t *testing.T) {
 			}
 
 			hc := hcMap[port]
-			if (c.protocol == utils.ProtocolHTTP && hc.HttpHealthCheck.RequestPath != c.expectedHCPath) ||
-				(c.protocol == utils.ProtocolHTTPS && hc.HttpsHealthCheck.RequestPath != c.expectedHCPath) {
+			if (c.protocol == annotations.ProtocolHTTP && hc.HttpHealthCheck.RequestPath != c.expectedHCPath) ||
+				(c.protocol == annotations.ProtocolHTTPS && hc.HttpsHealthCheck.RequestPath != c.expectedHCPath) {
 				t.Fatalf("error when %s: resulting health check did not contain the expected request path %s", c.desc, c.expectedHCPath)
 			}
 		}
@@ -173,12 +174,12 @@ func getClient() *clientfake.Clientset {
 	return &client
 }
 
-func addProbe(client *clientfake.Clientset, protocol utils.AppProtocol, svcPort int32, probePath string) *clientfake.Clientset {
+func addProbe(client *clientfake.Clientset, protocol annotations.AppProtocol, svcPort int32, probePath string) *clientfake.Clientset {
 	var scheme api_v1.URIScheme
 	switch protocol {
-	case utils.ProtocolHTTP:
+	case annotations.ProtocolHTTP:
 		scheme = api_v1.URISchemeHTTP
-	case utils.ProtocolHTTPS:
+	case annotations.ProtocolHTTPS:
 		scheme = api_v1.URISchemeHTTPS
 	}
 	client.AddReactor("list", "pods", func(action clienttesting.Action) (handled bool, ret runtime.Object, err error) {
@@ -244,8 +245,8 @@ func TestDeleteHealthCheck(t *testing.T) {
 	hcs := NewHealthCheckSyncer(namer, hcp)
 	ports := []ingressbe.ServicePort{
 		{
-			Port:     port,
-			Protocol: utils.ProtocolHTTP,
+			NodePort: port,
+			Protocol: annotations.ProtocolHTTP,
 		},
 	}
 	if _, err := hcs.EnsureHealthCheck(lbName, ports, map[string]kubernetes.Interface{"client1": &clientfake.Clientset{}}, false); err != nil {

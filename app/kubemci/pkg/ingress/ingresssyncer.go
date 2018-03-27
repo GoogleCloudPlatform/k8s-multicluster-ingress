@@ -114,7 +114,7 @@ func UnmarshallAndApplyDefaults(filename, namespace string, ing *v1beta1.Ingress
 	} else if namespace != "" && ing.Namespace != namespace {
 		return fmt.Errorf("the namespace from the provided ingress %q does not match the namespace %q. You must pass '--namespace=%v' to perform this operation.", ing.Namespace, namespace, ing.Namespace)
 	}
-	ingAnnotations := annotations.IngAnnotations(ing.Annotations)
+	ingAnnotations := annotations.FromIngress(ing)
 	class := ingAnnotations.IngressClass()
 	if class == "" {
 		addAnnotation(ing, annotations.IngressClassKey, annotations.GceMultiIngressClass)
@@ -127,7 +127,7 @@ func UnmarshallAndApplyDefaults(filename, namespace string, ing *v1beta1.Ingress
 }
 
 func ApplyStaticIP(staticIPName string, ing *v1beta1.Ingress) error {
-	ingAnnotations := annotations.IngAnnotations(ing.Annotations)
+	ingAnnotations := annotations.FromIngress(ing)
 
 	if ingAnnotations == nil || ingAnnotations.StaticIPName() == "" {
 		if staticIPName == "" {
@@ -144,7 +144,7 @@ func ApplyStaticIP(staticIPName string, ing *v1beta1.Ingress) error {
 // TODO Move to ingress-gce/pkg/annotations
 func addAnnotation(ing *v1beta1.Ingress, key, val string) {
 	if ing.Annotations == nil {
-		ing.Annotations = annotations.IngAnnotations{}
+		ing.Annotations = map[string]string{}
 	}
 	ing.Annotations[key] = val
 }

@@ -43,13 +43,16 @@ import (
 	_ "k8s.io/kubernetes/pkg/apis/imagepolicy/install"
 )
 
+// PluginName indicates name of admission plugin.
+const PluginName = "ImagePolicyWebhook"
+
 var (
 	groupVersions = []schema.GroupVersion{v1alpha1.SchemeGroupVersion}
 )
 
 // Register registers a plugin
 func Register(plugins *admission.Plugins) {
-	plugins.Register("ImagePolicyWebhook", func(config io.Reader) (admission.Interface, error) {
+	plugins.Register(PluginName, func(config io.Reader) (admission.Interface, error) {
 		newImagePolicyWebhook, err := NewImagePolicyWebhook(config)
 		if err != nil {
 			return nil, err
@@ -219,6 +222,10 @@ func (a *Plugin) admitPod(pod *api.Pod, attributes admission.Attributes, review 
 // For additional HTTP configuration, refer to the kubeconfig documentation
 // http://kubernetes.io/v1.1/docs/user-guide/kubeconfig-file.html.
 func NewImagePolicyWebhook(configFile io.Reader) (*Plugin, error) {
+	if configFile == nil {
+		return nil, fmt.Errorf("no config specified")
+	}
+
 	// TODO: move this to a versioned configuration file format
 	var config AdmissionConfig
 	d := yaml.NewYAMLOrJSONDecoder(configFile, 4096)

@@ -21,18 +21,21 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/sets"
 
+	"k8s.io/ingress-gce/pkg/annotations"
 	"k8s.io/ingress-gce/pkg/backends"
 	"k8s.io/ingress-gce/pkg/firewalls"
 	"k8s.io/ingress-gce/pkg/healthchecks"
 	"k8s.io/ingress-gce/pkg/instances"
 	"k8s.io/ingress-gce/pkg/loadbalancers"
-	"k8s.io/ingress-gce/pkg/networkendpointgroup"
+	"k8s.io/ingress-gce/pkg/neg"
 	"k8s.io/ingress-gce/pkg/utils"
 )
 
 var (
-	testDefaultBeNodePort = backends.ServicePort{Port: 3000, Protocol: utils.ProtocolHTTP}
+	testDefaultBeNodePort = backends.ServicePort{NodePort: 3000, Protocol: annotations.ProtocolHTTP}
 	testBackendPort       = intstr.IntOrString{Type: intstr.Int, IntVal: 80}
+	testSrcRanges         = []string{"1.1.1.1/20"}
+	testNodePortRanges    = []string{"30000-32767"}
 )
 
 // ClusterManager fake
@@ -51,7 +54,7 @@ func NewFakeClusterManager(clusterName, firewallName string) *fakeClusterManager
 	fakeBackends := backends.NewFakeBackendServices(func(op int, be *compute.BackendService) error { return nil })
 	fakeIGs := instances.NewFakeInstanceGroups(sets.NewString(), namer)
 	fakeHCP := healthchecks.NewFakeHealthCheckProvider()
-	fakeNEG := networkendpointgroup.NewFakeNetworkEndpointGroupCloud("test-subnet", "test-network")
+	fakeNEG := neg.NewFakeNetworkEndpointGroupCloud("test-subnet", "test-network")
 
 	nodePool := instances.NewNodePool(fakeIGs, namer)
 	nodePool.Init(&instances.FakeZoneLister{Zones: []string{"zone-a"}})
@@ -69,7 +72,7 @@ func NewFakeClusterManager(clusterName, firewallName string) *fakeClusterManager
 		testDefaultBeNodePort,
 		namer,
 	)
-	frPool := firewalls.NewFirewallPool(firewalls.NewFakeFirewallsProvider(false, false), namer)
+	frPool := firewalls.NewFirewallPool(firewalls.NewFakeFirewallsProvider(false, false), namer, testSrcRanges, testNodePortRanges)
 	cm := &ClusterManager{
 		ClusterNamer: namer,
 		instancePool: nodePool,

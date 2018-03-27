@@ -59,7 +59,7 @@ func (b *BackendServiceSyncer) EnsureBackendService(lbName string, ports []ingre
 	var err error
 	ensuredBackendServices := BackendServicesMap{}
 	for _, p := range ports {
-		be, beErr := b.ensureBackendService(lbName, p, hcMap[p.Port], npMap[p.Port], igLinks, forceUpdate)
+		be, beErr := b.ensureBackendService(lbName, p, hcMap[p.NodePort], npMap[p.NodePort], igLinks, forceUpdate)
 		if beErr != nil {
 			beErr = fmt.Errorf("Error %s in ensuring backend service for port %v", beErr, p)
 			fmt.Printf("Error ensuring backend service for port %v: %v. Continuing.\n", p, beErr)
@@ -106,7 +106,7 @@ func (b *BackendServiceSyncer) RemoveFromClusters(ports []ingressbe.ServicePort,
 }
 
 func (b *BackendServiceSyncer) removeFromClusters(port ingressbe.ServicePort, removeIGLinks []string) error {
-	name := b.namer.BeServiceName(port.Port)
+	name := b.namer.BeServiceName(port.NodePort)
 
 	existingBE, err := b.bsp.GetGlobalBackendService(name)
 	if err != nil {
@@ -122,7 +122,7 @@ func (b *BackendServiceSyncer) removeFromClusters(port ingressbe.ServicePort, re
 }
 
 func (b *BackendServiceSyncer) deleteBackendService(port ingressbe.ServicePort) error {
-	name := b.namer.BeServiceName(port.Port)
+	name := b.namer.BeServiceName(port.NodePort)
 	glog.V(2).Infof("Deleting backend service %s", name)
 	err := b.bsp.DeleteGlobalBackendService(name)
 	if err != nil {
@@ -253,11 +253,11 @@ func backendServiceMatches(desiredBE, existingBE *compute.BackendService) bool {
 func (b *BackendServiceSyncer) desiredBackendService(lbName string, port ingressbe.ServicePort, hcLink, portName string, igLinks []string) *compute.BackendService {
 	// Compute the desired backend service.
 	return &compute.BackendService{
-		Name:         b.namer.BeServiceName(port.Port),
+		Name:         b.namer.BeServiceName(port.NodePort),
 		Description:  fmt.Sprintf("Backend service for service %s as part of kubernetes multicluster loadbalancer %s", port.Description(), lbName),
 		Protocol:     string(port.Protocol),
 		HealthChecks: []string{hcLink},
-		Port:         port.Port,
+		Port:         port.NodePort,
 		PortName:     portName,
 		Backends:     desiredBackends(igLinks),
 		// We have to fill in these fields so we can properly compare to what's returned to us.

@@ -9,10 +9,11 @@ go_library(
     importpath = "k8s.io/apiserver/pkg/admission/plugin/webhook/request",
     visibility = ["//visibility:public"],
     deps = [
-        "//vendor/k8s.io/api/admission/v1alpha1:go_default_library",
+        "//vendor/k8s.io/api/admission/v1beta1:go_default_library",
         "//vendor/k8s.io/api/authentication/v1:go_default_library",
         "//vendor/k8s.io/apimachinery/pkg/apis/meta/v1:go_default_library",
         "//vendor/k8s.io/apimachinery/pkg/runtime:go_default_library",
+        "//vendor/k8s.io/apimachinery/pkg/util/uuid:go_default_library",
         "//vendor/k8s.io/apiserver/pkg/admission:go_default_library",
     ],
 )

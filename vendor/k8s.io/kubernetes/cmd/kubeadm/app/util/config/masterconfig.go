@@ -34,7 +34,7 @@ import (
 	"k8s.io/kubernetes/pkg/util/version"
 )
 
-// SetInitDynamicDefaults checks and sets conifugration values for Master node
+// SetInitDynamicDefaults checks and sets configuration values for Master node
 func SetInitDynamicDefaults(cfg *kubeadmapi.MasterConfiguration) error {
 
 	// Choose the right address for the API Server to advertise. If the advertise address is localhost or 0.0.0.0, the default interface's IP address is used
@@ -44,7 +44,12 @@ func SetInitDynamicDefaults(cfg *kubeadmapi.MasterConfiguration) error {
 		return err
 	}
 	cfg.API.AdvertiseAddress = ip.String()
-
+	ip = net.ParseIP(cfg.API.AdvertiseAddress)
+	if ip.To4() != nil {
+		cfg.KubeProxy.Config.BindAddress = kubeadmapiext.DefaultProxyBindAddressv4
+	} else {
+		cfg.KubeProxy.Config.BindAddress = kubeadmapiext.DefaultProxyBindAddressv6
+	}
 	// Resolve possible version labels and validate version string
 	err = NormalizeKubernetesVersion(cfg)
 	if err != nil {

@@ -42,8 +42,12 @@ const (
 	testCheckpointContent = `{"version":"v1","name":"fluentd-gcp-v2.0-vmnqx","namespace":"kube-system","data":{},"checksum":1799154314}`
 )
 
-var _ = framework.KubeDescribe("Dockershim [Serial] [Disruptive] [Feature:Docker]", func() {
+var _ = SIGDescribe("Dockershim [Serial] [Disruptive] [Feature:Docker]", func() {
 	f := framework.NewDefaultFramework("dockerhism-checkpoint-test")
+
+	BeforeEach(func() {
+		framework.RunIfContainerRuntimeIs("docker")
+	})
 
 	It("should clean up pod sandbox checkpoint after pod deletion", func() {
 		podName := "pod-checkpoint-no-disrupt"
@@ -86,7 +90,7 @@ var _ = framework.KubeDescribe("Dockershim [Serial] [Disruptive] [Feature:Docker
 					if len(filename) == 0 {
 						continue
 					}
-					framework.Logf("Removing checkpiont %q", filename)
+					framework.Logf("Removing checkpoint %q", filename)
 					_, err := exec.Command("sudo", "rm", filename).CombinedOutput()
 					framework.ExpectNoError(err, "Failed to remove checkpoint file %q: %v", string(filename), err)
 				}

@@ -217,7 +217,7 @@ func (s *FirewallRuleSyncer) desiredFirewallRule(lbName string, ports []ingressb
 	}
 	fwPorts := make([]string, len(ports))
 	for i := range ports {
-		fwPorts[i] = strconv.Itoa(int(ports[i].Port))
+		fwPorts[i] = strconv.Itoa(int(ports[i].NodePort))
 	}
 	// Sort the ports and tags to have a deterministic order.
 	sort.Strings(fwPorts)

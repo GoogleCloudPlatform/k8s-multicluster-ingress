@@ -20,11 +20,13 @@ import (
 	"testing"
 
 	storageapiv1alpha1 "k8s.io/api/storage/v1alpha1"
+	storageapiv1beta1 "k8s.io/api/storage/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apiserver/pkg/registry/generic"
+	genericregistrytest "k8s.io/apiserver/pkg/registry/generic/testing"
 	etcdtesting "k8s.io/apiserver/pkg/storage/etcd/testing"
 	"k8s.io/kubernetes/pkg/api/testapi"
 	storageapi "k8s.io/kubernetes/pkg/apis/storage"
@@ -59,20 +61,17 @@ func validNewVolumeAttachment(name string) *storageapi.VolumeAttachment {
 	}
 }
 
-func validChangedVolumeAttachment() *storageapi.VolumeAttachment {
-	return validNewVolumeAttachment("foo")
-}
-
 func TestCreate(t *testing.T) {
-	if *testapi.Storage.GroupVersion() != storageapiv1alpha1.SchemeGroupVersion {
-		// skip the test for all versions exception v1alpha1
+	if *testapi.Storage.GroupVersion() != storageapiv1alpha1.SchemeGroupVersion &&
+		*testapi.Storage.GroupVersion() != storageapiv1beta1.SchemeGroupVersion {
+		// skip the test for all versions exception v1alpha1 and v1beta1
 		return
 	}
 
 	storage, server := newStorage(t)
 	defer server.Terminate(t)
 	defer storage.Store.DestroyFunc()
-	test := registrytest.New(t, storage.Store).ClusterScope()
+	test := genericregistrytest.New(t, storage.Store).ClusterScope()
 	volumeAttachment := validNewVolumeAttachment("foo")
 	volumeAttachment.ObjectMeta = metav1.ObjectMeta{GenerateName: "foo"}
 	pvName := "foo"
@@ -94,15 +93,16 @@ func TestCreate(t *testing.T) {
 }
 
 func TestUpdate(t *testing.T) {
-	if *testapi.Storage.GroupVersion() != storageapiv1alpha1.SchemeGroupVersion {
-		// skip the test for all versions except v1alpha1
+	if *testapi.Storage.GroupVersion() != storageapiv1alpha1.SchemeGroupVersion &&
+		*testapi.Storage.GroupVersion() != storageapiv1beta1.SchemeGroupVersion {
+		// skip the test for all versions exception v1alpha1 and v1beta1
 		return
 	}
 
 	storage, server := newStorage(t)
 	defer server.Terminate(t)
 	defer storage.Store.DestroyFunc()
-	test := registrytest.New(t, storage.Store).ClusterScope()
+	test := genericregistrytest.New(t, storage.Store).ClusterScope()
 	test.TestUpdate(
 		// valid
 		validNewVolumeAttachment("foo"),
@@ -122,54 +122,58 @@ func TestUpdate(t *testing.T) {
 }
 
 func TestDelete(t *testing.T) {
-	if *testapi.Storage.GroupVersion() != storageapiv1alpha1.SchemeGroupVersion {
-		// skip the test for all versions except v1alpha1
+	if *testapi.Storage.GroupVersion() != storageapiv1alpha1.SchemeGroupVersion &&
+		*testapi.Storage.GroupVersion() != storageapiv1beta1.SchemeGroupVersion {
+		// skip the test for all versions exception v1alpha1 and v1beta1
 		return
 	}
 
 	storage, server := newStorage(t)
 	defer server.Terminate(t)
 	defer storage.Store.DestroyFunc()
-	test := registrytest.New(t, storage.Store).ClusterScope().ReturnDeletedObject()
+	test := genericregistrytest.New(t, storage.Store).ClusterScope().ReturnDeletedObject()
 	test.TestDelete(validNewVolumeAttachment("foo"))
 }
 
 func TestGet(t *testing.T) {
-	if *testapi.Storage.GroupVersion() != storageapiv1alpha1.SchemeGroupVersion {
-		// skip the test for all versions except v1alpha1
+	if *testapi.Storage.GroupVersion() != storageapiv1alpha1.SchemeGroupVersion &&
+		*testapi.Storage.GroupVersion() != storageapiv1beta1.SchemeGroupVersion {
+		// skip the test for all versions exception v1alpha1 and v1beta1
 		return
 	}
 
 	storage, server := newStorage(t)
 	defer server.Terminate(t)
 	defer storage.Store.DestroyFunc()
-	test := registrytest.New(t, storage.Store).ClusterScope()
+	test := genericregistrytest.New(t, storage.Store).ClusterScope()
 	test.TestGet(validNewVolumeAttachment("foo"))
 }
 
 func TestList(t *testing.T) {
-	if *testapi.Storage.GroupVersion() != storageapiv1alpha1.SchemeGroupVersion {
-		// skip the test for all versions except v1alpha1
+	if *testapi.Storage.GroupVersion() != storageapiv1alpha1.SchemeGroupVersion &&
+		*testapi.Storage.GroupVersion() != storageapiv1beta1.SchemeGroupVersion {
+		// skip the test for all versions exception v1alpha1 and v1beta1
 		return
 	}
 
 	storage, server := newStorage(t)
 	defer server.Terminate(t)
 	defer storage.Store.DestroyFunc()
-	test := registrytest.New(t, storage.Store).ClusterScope()
+	test := genericregistrytest.New(t, storage.Store).ClusterScope()
 	test.TestList(validNewVolumeAttachment("foo"))
 }
 
 func TestWatch(t *testing.T) {
-	if *testapi.Storage.GroupVersion() != storageapiv1alpha1.SchemeGroupVersion {
-		// skip the test for all versions except v1alpha1
+	if *testapi.Storage.GroupVersion() != storageapiv1alpha1.SchemeGroupVersion &&
+		*testapi.Storage.GroupVersion() != storageapiv1beta1.SchemeGroupVersion {
+		// skip the test for all versions exception v1alpha1 and v1beta1
 		return
 	}
 
 	storage, server := newStorage(t)
 	defer server.Terminate(t)
 	defer storage.Store.DestroyFunc()
-	test := registrytest.New(t, storage.Store).ClusterScope()
+	test := genericregistrytest.New(t, storage.Store).ClusterScope()
 	test.TestWatch(
 		validNewVolumeAttachment("foo"),
 		// matching labels

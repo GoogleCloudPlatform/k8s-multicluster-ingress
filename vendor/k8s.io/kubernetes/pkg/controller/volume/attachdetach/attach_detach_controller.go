@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package volume implements a controller to manage volume attach and detach
+// Package attachdetach implements a controller to manage volume attach and detach
 // operations.
 package attachdetach
 
@@ -45,8 +45,9 @@ import (
 	"k8s.io/kubernetes/pkg/util/io"
 	"k8s.io/kubernetes/pkg/util/mount"
 	"k8s.io/kubernetes/pkg/volume"
+	volumeutil "k8s.io/kubernetes/pkg/volume/util"
 	"k8s.io/kubernetes/pkg/volume/util/operationexecutor"
-	"k8s.io/kubernetes/pkg/volume/util/volumehelper"
+	"k8s.io/kubernetes/pkg/volume/util/volumepathhandler"
 )
 
 // TimerConfig contains configuration of internal attach/detach timers and
@@ -136,6 +137,7 @@ func NewAttachDetachController(
 	eventBroadcaster.StartLogging(glog.Infof)
 	eventBroadcaster.StartRecordingToSink(&v1core.EventSinkImpl{Interface: v1core.New(kubeClient.CoreV1().RESTClient()).Events("")})
 	recorder := eventBroadcaster.NewRecorder(scheme.Scheme, v1.EventSource{Component: "attachdetach-controller"})
+	blkutil := volumepathhandler.NewBlockVolumePathHandler()
 
 	adc.desiredStateOfWorld = cache.NewDesiredStateOfWorld(&adc.volumePluginMgr)
 	adc.actualStateOfWorld = cache.NewActualStateOfWorld(&adc.volumePluginMgr)
@@ -144,7 +146,8 @@ func NewAttachDetachController(
 			kubeClient,
 			&adc.volumePluginMgr,
 			recorder,
-			false)) // flag for experimental binary check for volume mount
+			false, // flag for experimental binary check for volume mount
+			blkutil))
 	adc.nodeStatusUpdater = statusupdater.NewNodeStatusUpdater(
 		kubeClient, nodeInformer.Lister(), adc.actualStateOfWorld)
 
@@ -332,7 +335,7 @@ func (adc *attachDetachController) populateDesiredStateOfWorld() error {
 	}
 	for _, pod := range pods {
 		podToAdd := pod
-		adc.podAdd(&podToAdd)
+		adc.podAdd(podToAdd)
 		for _, podVolume := range podToAdd.Spec.Volumes {
 			// The volume specs present in the ActualStateOfWorld are nil, let's replace those
 			// with the correct ones found on pods. The present in the ASW with no corresponding
@@ -358,7 +361,7 @@ func (adc *attachDetachController) populateDesiredStateOfWorld() error {
 					err)
 				continue
 			}
-			volumeName, err := volumehelper.GetUniqueVolumeNameFromSpec(plugin, volumeSpec)
+			volumeName, err := volumeutil.GetUniqueVolumeNameFromSpec(plugin, volumeSpec)
 			if err != nil {
 				glog.Errorf(
 					"Failed to find unique name for volume %q, pod %q/%q: %v",
@@ -515,11 +518,19 @@ func (adc *attachDetachController) GetPluginDir(podUID string) string {
 	return ""
 }
 
+func (adc *attachDetachController) GetVolumeDevicePluginDir(podUID string) string {
+	return ""
+}
+
 func (adc *attachDetachController) GetPodVolumeDir(podUID types.UID, pluginName, volumeName string) string {
 	return ""
 }
 
 func (adc *attachDetachController) GetPodPluginDir(podUID types.UID, pluginName string) string {
+	return ""
+}
+
+func (adc *attachDetachController) GetPodVolumeDeviceDir(podUID types.UID, pluginName string) string {
 	return ""
 }
 
@@ -576,10 +587,10 @@ func (adc *attachDetachController) GetExec(pluginName string) mount.Exec {
 }
 
 func (adc *attachDetachController) addNodeToDswp(node *v1.Node, nodeName types.NodeName) {
-	if _, exists := node.Annotations[volumehelper.ControllerManagedAttachAnnotation]; exists {
+	if _, exists := node.Annotations[volumeutil.ControllerManagedAttachAnnotation]; exists {
 		keepTerminatedPodVolumes := false
 
-		if t, ok := node.Annotations[volumehelper.KeepTerminatedPodVolumesAnnotation]; ok {
+		if t, ok := node.Annotations[volumeutil.KeepTerminatedPodVolumesAnnotation]; ok {
 			keepTerminatedPodVolumes = (t == "true")
 		}
 
@@ -591,4 +602,8 @@ func (adc *attachDetachController) addNodeToDswp(node *v1.Node, nodeName types.N
 
 func (adc *attachDetachController) GetNodeLabels() (map[string]string, error) {
 	return nil, fmt.Errorf("GetNodeLabels() unsupported in Attach/Detach controller")
+}
+
+func (adc *attachDetachController) GetNodeName() types.NodeName {
+	return ""
 }

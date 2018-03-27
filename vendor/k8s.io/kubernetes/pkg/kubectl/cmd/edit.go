@@ -28,7 +28,6 @@ import (
 	cmdutil "k8s.io/kubernetes/pkg/kubectl/cmd/util"
 	"k8s.io/kubernetes/pkg/kubectl/cmd/util/editor"
 	"k8s.io/kubernetes/pkg/kubectl/util/i18n"
-	"k8s.io/kubernetes/pkg/printers"
 )
 
 var (
@@ -72,22 +71,17 @@ var (
 
 func NewCmdEdit(f cmdutil.Factory, out, errOut io.Writer) *cobra.Command {
 	options := &editor.EditOptions{
-		EditMode: editor.NormalEditMode,
+		EditMode:           editor.NormalEditMode,
+		Output:             "yaml",
+		WindowsLineEndings: runtime.GOOS == "windows",
+		ValidateOptions:    cmdutil.ValidateOptions{EnableValidation: true},
+		Include3rdParty:    true,
 	}
-
-	// retrieve a list of handled resources from printer as valid args
-	validArgs, argAliases := []string{}, []string{}
-	p, err := f.Printer(nil, printers.PrintOptions{
-		ColumnLabels: []string{},
-	})
-	cmdutil.CheckErr(err)
-	if p != nil {
-		validArgs = p.HandledResources()
-		argAliases = kubectl.ResourceAliases(validArgs)
-	}
+	validArgs := cmdutil.ValidArgList(f)
 
 	cmd := &cobra.Command{
-		Use:     "edit (RESOURCE/NAME | -f FILENAME)",
+		Use: "edit (RESOURCE/NAME | -f FILENAME)",
+		DisableFlagsInUseLine: true,
 		Short:   i18n.T("Edit a resource on the server"),
 		Long:    editLong,
 		Example: fmt.Sprintf(editExample),
@@ -101,15 +95,14 @@ func NewCmdEdit(f cmdutil.Factory, out, errOut io.Writer) *cobra.Command {
 			}
 		},
 		ValidArgs:  validArgs,
-		ArgAliases: argAliases,
+		ArgAliases: kubectl.ResourceAliases(validArgs),
 	}
 	usage := "to use to edit the resource"
 	cmdutil.AddFilenameOptionFlags(cmd, &options.FilenameOptions, usage)
 	cmdutil.AddValidateOptionFlags(cmd, &options.ValidateOptions)
-	cmd.Flags().StringVarP(&options.Output, "output", "o", "yaml", "Output format. One of: yaml|json.")
-	cmd.Flags().BoolVarP(&options.OutputPatch, "output-patch", "", false, "Output the patch if the resource is edited.")
-
-	cmd.Flags().BoolVar(&options.WindowsLineEndings, "windows-line-endings", runtime.GOOS == "windows",
+	cmd.Flags().StringVarP(&options.Output, "output", "o", options.Output, "Output format. One of: yaml|json.")
+	cmd.Flags().BoolVarP(&options.OutputPatch, "output-patch", "", options.OutputPatch, "Output the patch if the resource is edited.")
+	cmd.Flags().BoolVar(&options.WindowsLineEndings, "windows-line-endings", options.WindowsLineEndings,
 		"Defaults to the line ending native to your platform.")
 
 	cmdutil.AddApplyAnnotationVarFlags(cmd, &options.ApplyAnnotation)

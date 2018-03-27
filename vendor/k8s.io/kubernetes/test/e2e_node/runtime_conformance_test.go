@@ -46,7 +46,7 @@ var _ = framework.KubeDescribe("Container Runtime Conformance Test", func() {
 
 	Describe("container runtime conformance blackbox test", func() {
 		Context("when starting a container that exits", func() {
-			It("it should run with the expected status [Conformance]", func() {
+			framework.ConformanceIt("it should run with the expected status", func() {
 				restartCountVolumeName := "restart-count"
 				restartCountVolumePath := "/restart-count"
 				testContainer := v1.Container{
@@ -275,13 +275,13 @@ while true; do sleep 1; done
 				},
 				{
 					description: "should not be able to pull non-existing image from gcr.io",
-					image:       "gcr.io/google_containers/invalid-image:invalid-tag",
+					image:       "k8s.gcr.io/invalid-image:invalid-tag",
 					phase:       v1.PodPending,
 					waiting:     true,
 				},
 				{
 					description: "should be able to pull image from gcr.io",
-					image:       "gcr.io/google_containers/alpine-with-bash:1.0",
+					image:       "k8s.gcr.io/alpine-with-bash:1.0",
 					phase:       v1.PodRunning,
 					waiting:     false,
 				},

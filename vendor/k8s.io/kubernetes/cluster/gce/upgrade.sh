@@ -40,7 +40,7 @@ function usage() {
   echo "  -N:  Upgrade nodes only"
   echo "  -P:  Node upgrade prerequisites only (create a new instance template)"
   echo "  -c:  Upgrade NODE_UPGRADE_PARALLELISM nodes in parallel (default=1) within a single instance group. The MIGs themselves are dealt serially."
-  echo "  -o:  Use os distro sepcified in KUBE_NODE_OS_DISTRIBUTION for new nodes. Options include 'debian' or 'gci'"
+  echo "  -o:  Use os distro specified in KUBE_NODE_OS_DISTRIBUTION for new nodes. Options include 'debian' or 'gci'"
   echo "  -l:  Use local(dev) binaries. This is only supported for master upgrades."
   echo ""
   echo '  Version number or publication is either a proper version number'
@@ -151,6 +151,7 @@ function prepare-upgrade() {
   detect-project
   detect-subnetworks
   detect-node-names # sets INSTANCE_GROUPS
+  write-cluster-location
   write-cluster-name
   tars_from_version
 }
@@ -190,7 +191,6 @@ function get-node-os() {
 #   ZONE
 #
 # Vars set:
-#   KUBELET_TOKEN
 #   KUBE_PROXY_TOKEN
 #   NODE_PROBLEM_DETECTOR_TOKEN
 #   CA_CERT_BASE64
@@ -230,7 +230,6 @@ function setup-base-image() {
 # Vars set:
 #   SANITIZED_VERSION
 #   INSTANCE_GROUPS
-#   KUBELET_TOKEN
 #   KUBE_PROXY_TOKEN
 #   NODE_PROBLEM_DETECTOR_TOKEN
 #   CA_CERT_BASE64
@@ -253,7 +252,6 @@ function prepare-node-upgrade() {
 
   # Get required node env vars from exiting template.
   local node_env=$(get-node-env)
-  KUBELET_TOKEN=$(get-env-val "${node_env}" "KUBELET_TOKEN")
   KUBE_PROXY_TOKEN=$(get-env-val "${node_env}" "KUBE_PROXY_TOKEN")
   NODE_PROBLEM_DETECTOR_TOKEN=$(get-env-val "${node_env}" "NODE_PROBLEM_DETECTOR_TOKEN")
   CA_CERT_BASE64=$(get-env-val "${node_env}" "CA_CERT")
@@ -534,6 +532,39 @@ if [[ -z "${STORAGE_MEDIA_TYPE:-}" ]] && [[ "${STORAGE_BACKEND:-}" != "etcd2" ]]
     echo ""
     echo "STORAGE_MEDIA_TYPE must be specified when run non-interactively." >&2
     exit 1
+  fi
+fi
+
+# Prompt if etcd image/version is unspecified when doing master upgrade.
+# In e2e tests, we use TEST_ALLOW_IMPLICIT_ETCD_UPGRADE=true to skip this
+# prompt, simulating the behavior when the user confirms interactively.
+# All other automated use of this script should explicitly specify a version.
+if [[ "${master_upgrade}" == "true" ]]; then
+  if [[ -z "${ETCD_IMAGE:-}" && -z "${TEST_ETCD_IMAGE:-}" ]] || [[ -z "${ETCD_VERSION:-}" && -z "${TEST_ETCD_VERSION:-}" ]]; then
+    echo
+    echo "***WARNING***"
+    echo "Upgrading Kubernetes with this script might result in an upgrade to a new etcd version."
+    echo "Some etcd version upgrades, such as 3.0.x to 3.1.x, DO NOT offer a downgrade path."
+    echo "To pin the etcd version to your current one (e.g. v3.0.17), set the following variables"
+    echo "before running this script:"
+    echo
+    echo "# example: pin to etcd v3.0.17"
+    echo "export ETCD_IMAGE=3.0.17"
+    echo "export ETCD_VERSION=3.0.17"
+    echo
+    echo "Alternatively, if you choose to allow an etcd upgrade that doesn't support downgrade,"
+    echo "you might still be able to downgrade Kubernetes by pinning to the newer etcd version."
+    echo "In all cases, it is strongly recommended to have an etcd backup before upgrading."
+    echo
+    if [ -t 0 ] && [ -t 1 ]; then
+      read -p "Continue with default etcd version, which might upgrade etcd? [y/N] " confirm
+      if [[ "${confirm}" != "y" ]]; then
+        exit 1
+      fi
+    elif [[ "${TEST_ALLOW_IMPLICIT_ETCD_UPGRADE:-}" != "true" ]]; then
+      echo "ETCD_IMAGE and ETCD_VERSION must be specified when run non-interactively." >&2
+      exit 1
+    fi
   fi
 fi
 

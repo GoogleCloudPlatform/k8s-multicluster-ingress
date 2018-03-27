@@ -2,5 +2,3 @@ package: github.com/GoogleCloudPlatform/k8s-multicluster-ingress
 import:
 - package: github.com/spf13/cobra
 - package: github.com/spf13/pflag
-- package: k8s.io/kubernetes
-  version: 5f43fc8c8d82e059ed764b1b3faee580e555358f

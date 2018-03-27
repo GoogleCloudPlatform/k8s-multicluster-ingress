@@ -22,6 +22,7 @@ go_library(
     importpath = "k8s.io/kubernetes/pkg/kubelet/rkt",
     deps = [
         "//pkg/credentialprovider:go_default_library",
+        "//pkg/credentialprovider/secrets:go_default_library",
         "//pkg/kubelet/container:go_default_library",
         "//pkg/kubelet/events:go_default_library",
         "//pkg/kubelet/images:go_default_library",
@@ -45,7 +46,6 @@ go_library(
         "//vendor/github.com/coreos/rkt/api/v1alpha:go_default_library",
         "//vendor/github.com/docker/docker/api/types:go_default_library",
         "//vendor/github.com/golang/glog:go_default_library",
-        "//vendor/golang.org/x/net/context:go_default_library",
         "//vendor/google.golang.org/grpc:go_default_library",
         "//vendor/k8s.io/api/core/v1:go_default_library",
         "//vendor/k8s.io/apimachinery/pkg/apis/meta/v1:go_default_library",
@@ -66,8 +66,7 @@ go_test(
         "fake_rkt_interface_test.go",
         "rkt_test.go",
     ],
-    importpath = "k8s.io/kubernetes/pkg/kubelet/rkt",
-    library = ":go_default_library",
+    embed = [":go_default_library"],
     deps = [
         "//pkg/kubelet/container:go_default_library",
         "//pkg/kubelet/container/testing:go_default_library",
@@ -83,7 +82,6 @@ go_test(
         "//vendor/github.com/coreos/rkt/api/v1alpha:go_default_library",
         "//vendor/github.com/golang/mock/gomock:go_default_library",
         "//vendor/github.com/stretchr/testify/assert:go_default_library",
-        "//vendor/golang.org/x/net/context:go_default_library",
         "//vendor/google.golang.org/grpc:go_default_library",
         "//vendor/k8s.io/api/core/v1:go_default_library",
         "//vendor/k8s.io/apimachinery/pkg/api/resource:go_default_library",
