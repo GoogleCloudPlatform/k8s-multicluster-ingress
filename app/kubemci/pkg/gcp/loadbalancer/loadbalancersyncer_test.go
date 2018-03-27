@@ -462,8 +462,8 @@ func TestRemoveFromClusters(t *testing.T) {
 	}
 	fw := ffw.EnsuredFirewallRules[0]
 	expectedFWIGLinks := map[string][]string{
-		"cluster1": []string{igLink},
-		"cluster2": []string{igLink},
+		"cluster1": {igLink},
+		"cluster2": {igLink},
 	}
 	if !reflect.DeepEqual(fw.IGLinks, expectedFWIGLinks) {
 		t.Errorf("unexpected IG links on firewall rule, expected: %v, got: %v", expectedFWIGLinks, fw.IGLinks)
@@ -497,7 +497,7 @@ func TestRemoveFromClusters(t *testing.T) {
 	}
 	fw = ffw.EnsuredFirewallRules[0]
 	expectedFWIGLinks = map[string][]string{
-		"cluster2": []string{igLink},
+		"cluster2": {igLink},
 	}
 	if !reflect.DeepEqual(fw.IGLinks, expectedFWIGLinks) {
 		t.Errorf("unexpected IG links on firewall rule, expected: %v, got: %v", expectedFWIGLinks, fw.IGLinks)
