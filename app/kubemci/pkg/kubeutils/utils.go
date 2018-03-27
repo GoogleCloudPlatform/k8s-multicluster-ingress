@@ -267,7 +267,6 @@ PortLoop:
 	}
 	glog.Infof("Found ServicePort: %+v", p)
 	return p, nil
-
 }
 
 func getSvc(svcName, nsName string, client kubeclient.Interface) (*v1.Service, error) {
