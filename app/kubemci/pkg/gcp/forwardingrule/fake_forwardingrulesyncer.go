@@ -114,3 +114,11 @@ func (f *FakeForwardingRuleSyncer) AddStatus(lbName string, status *status.LoadB
 		}
 	}
 }
+
+func (f *FakeForwardingRuleSyncer) RemoveStatus(lbName string) {
+	for i, fr := range f.EnsuredForwardingRules {
+		if fr.LBName == lbName {
+			f.EnsuredForwardingRules[i].Status = nil
+		}
+	}
+}

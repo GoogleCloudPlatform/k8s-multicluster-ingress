@@ -33,6 +33,7 @@ type FakeURLMap struct {
 	Clusters  []string
 	Ingress   *v1beta1.Ingress
 	BeMap     backendservice.BackendServicesMap
+	HasStatus bool
 }
 
 type FakeURLMapSyncer struct {
@@ -55,6 +56,7 @@ func (f *FakeURLMapSyncer) EnsureURLMap(lbName, ipAddress string, clusters []str
 		Clusters:  clusters,
 		Ingress:   ing,
 		BeMap:     beMap,
+		HasStatus: false,
 	})
 	return FakeUrlSelfLink, nil
 }
@@ -88,4 +90,25 @@ func (f *FakeURLMapSyncer) ListLoadBalancerStatuses() ([]status.LoadBalancerStat
 		ret = append(ret, status)
 	}
 	return ret, nil
+}
+
+func (f *FakeURLMapSyncer) RemoveClustersFromStatus(clusters []string) error {
+	// TODO(nikhiljindal): Update this once https://github.com/GoogleCloudPlatform/k8s-multicluster-ingress/pull/149 is merged.
+	return nil
+}
+
+func (f *FakeURLMapSyncer) AddStatus(lbName string) {
+	for i, um := range f.EnsuredURLMaps {
+		if um.LBName == lbName {
+			f.EnsuredURLMaps[i].HasStatus = true
+		}
+	}
+}
+
+func (f *FakeURLMapSyncer) RemoveStatus(lbName string) {
+	for i, um := range f.EnsuredURLMaps {
+		if um.LBName == lbName {
+			f.EnsuredURLMaps[i].HasStatus = false
+		}
+	}
 }

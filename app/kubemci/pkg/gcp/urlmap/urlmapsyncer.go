@@ -169,6 +169,32 @@ func (s *URLMapSyncer) ListLoadBalancerStatuses() ([]status.LoadBalancerStatus, 
 	return result, nil
 }
 
+// See interface for comment.
+func (s *URLMapSyncer) RemoveClustersFromStatus(clusters []string) error {
+	fmt.Println("Removing clusters", clusters, "from url map")
+	name := s.namer.URLMapName()
+	existingUM, err := s.ump.GetUrlMap(name)
+	if err != nil {
+		if utils.IsHTTPErrorCode(err, http.StatusNotFound) {
+			// Load balancer does not exist.
+			// Return that error as is.
+			return err
+		}
+		err := fmt.Errorf("error in fetching existing url map %s: %s", name, err)
+		fmt.Println(err)
+		return err
+	}
+	// Remove clusters from the urlmap.
+	desiredUM, err := s.desiredUrlMapWithoutClusters(existingUM, clusters)
+	if err != nil {
+		fmt.Println("Error getting desired url map:", err)
+		return err
+	}
+	glog.V(5).Infof("Existing url map: %v\n, desired url map: %v\n", *existingUM, *desiredUM)
+	_, err = s.updateURLMap(desiredUM)
+	return err
+}
+
 func (s *URLMapSyncer) updateURLMap(desiredUM *compute.UrlMap) (string, error) {
 	name := desiredUM.Name
 	fmt.Println("Updating existing url map", name, "to match the desired state")
@@ -284,6 +310,19 @@ func desiredStatusString(lbName, resourceName, ipAddress string, clusters []stri
 		return "", fmt.Errorf("unexpected error in converting status to string: %s", err)
 	}
 	return desc, nil
+}
+
+// desiredUrlMapWithoutClusters returns a desired url map based on the given existing map such that the given list of clusters is removed from the status.
+func (s *URLMapSyncer) desiredUrlMapWithoutClusters(existingUM *compute.UrlMap, clustersToRemove []string) (*compute.UrlMap, error) {
+	existingStatusStr := existingUM.Description
+	newStatusStr, err := status.RemoveClusters(existingStatusStr, clustersToRemove)
+	if err != nil {
+		return nil, fmt.Errorf("unexpected error in updating status to remove clusters on url map %s: %s", existingUM.Name, err)
+	}
+	// Shallow copy is fine since we are only changing description.
+	desiredUM := existingUM
+	desiredUM.Description = newStatusStr
+	return desiredUM, nil
 }
 
 // ingToURLMap converts an ingress to GCEURLMap (nested map of subdomain: url-regex: gce backend).

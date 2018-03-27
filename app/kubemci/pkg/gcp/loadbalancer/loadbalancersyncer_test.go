@@ -417,9 +417,91 @@ func TestRemoveFromClusters(t *testing.T) {
 	}
 }
 
+func TestRemoveClustersFromStatus(t *testing.T) {
+	lbName := "lb-name"
+	nodePort := int64(32211)
+	igName := "my-fake-ig"
+	igZone := "my-fake-zone"
+	zoneLink := fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/fake-project/zones/%s", igZone)
+	clusters := []string{"cluster1", "cluster2"}
+	lbc := newLoadBalancerSyncer(lbName)
+	ipAddress := &compute.Address{
+		Name:    "ipAddressName",
+		Address: "1.2.3.4",
+	}
+	// Reserve a global address. User is supposed to do this before calling CreateLoadBalancer.
+	lbc.ipp.ReserveGlobalAddress(ipAddress)
+	ing, err := setupLBCForCreateIng(lbc, nodePort, igName, igZone, zoneLink, ipAddress)
+	if err != nil {
+		t.Fatalf("unexpected error in test setup: %s", err)
+	}
+	testCases := []struct {
+		frHasStatus      bool
+		umHasStatus      bool
+		errorInGetStatus bool
+	}{
+		{
+			// Default case.
+			true,
+			false,
+			false,
+		},
+		{
+			false,
+			true,
+			true, // TODO: Update this to false when GetLoadBalancerStatus can read from url map.
+		},
+		{
+			true,
+			true,
+			false,
+		},
+		{
+			false,
+			false,
+			true,
+		},
+	}
+	for _, c := range testCases {
+		if err := lbc.CreateLoadBalancer(ing, false /*forceUpdate*/, clusters); err != nil {
+			t.Fatalf("unexpected error %s", err)
+		}
+		if c.frHasStatus {
+			lbc.frs.(*forwardingrule.FakeForwardingRuleSyncer).AddStatus(lbName, &status.LoadBalancerStatus{Clusters: clusters})
+		}
+		if !c.umHasStatus {
+			lbc.ums.(*urlmap.FakeURLMapSyncer).RemoveStatus(lbName)
+		}
+		// Verify that the load balancer is spread to both clusters.
+		// TODO: Remove this if once we update GetLoadBalancerStatus to read from urlmap as well.
+		if c.frHasStatus {
+
+			if err := verifyClusters(lbName, lbc.frs, clusters); c.errorInGetStatus != (err != nil) {
+				t.Errorf("expected error in verifying status: %v, got err: %s", c.errorInGetStatus, err)
+			}
+		}
+
+		// Remove the load balancer from the first cluster and verify that the load balancer status is updated appropriately.
+		clustersToRemove := []string{"cluster1"}
+		if err := lbc.removeClustersFromStatus(lbName, clustersToRemove); err != nil {
+			t.Errorf("unexpected error in removing existing load balancer from clusters: %s", err)
+		}
+		// TODO: Remove this if once we update GetLoadBalancerStatus to read from urlmap as well.
+		if c.frHasStatus {
+			if err := verifyClusters(lbName, lbc.frs, []string{"cluster2"}); c.errorInGetStatus != (err != nil) {
+
+				t.Errorf("expected error in verifying status: %v, got err: %s", c.errorInGetStatus, err)
+			}
+		}
+		if err := lbc.DeleteLoadBalancer(ing); err != nil {
+			t.Fatalf("unexpected error %s", err)
+		}
+	}
+}
+
 func verifyClusters(lbName string, frs forwardingrule.ForwardingRuleSyncerInterface, expectedClusters []string) error {
 	status, err := frs.GetLoadBalancerStatus(lbName)
-	if err != nil {
+	if status == nil || err != nil {
 		return fmt.Errorf("unexpected error in getting load balancer status: %s", err)
 	}
 	if !reflect.DeepEqual(status.Clusters, expectedClusters) {

@@ -3,6 +3,8 @@ package status
 import (
 	"encoding/json"
 	"fmt"
+
+	"github.com/golang/glog"
 )
 
 // Struct to describe a multi cluster load balancer.
@@ -34,4 +36,30 @@ func FromString(str string) (*LoadBalancerStatus, error) {
 		return nil, fmt.Errorf("error %s in unmarshalling string %s", err, str)
 	}
 	return &s, nil
+}
+
+// RemoveClusters removes the given list of clusters from the given status string.
+// Returns NotFoundError if the given statusStr is not a valid LoadBalancerStatus.
+func RemoveClusters(statusStr string, clustersToRemove []string) (string, error) {
+	status, err := FromString(statusStr)
+	if err != nil {
+		glog.V(2).Infof("error in parsing description %s: %s. Ignoring the error by assuming that this is because status is on some other resource and continuing", statusStr, err)
+		return statusStr, nil
+	}
+	removeMap := map[string]bool{}
+	for _, v := range clustersToRemove {
+		removeMap[v] = true
+	}
+	var newClusters []string
+	for _, v := range status.Clusters {
+		if !removeMap[v] {
+			newClusters = append(newClusters, v)
+		}
+	}
+	status.Clusters = newClusters
+	newDesc, err := status.ToString()
+	if err != nil {
+		return statusStr, fmt.Errorf("unexpected error in converting status to string. status: %s, err: %s", status, err)
+	}
+	return newDesc, nil
 }

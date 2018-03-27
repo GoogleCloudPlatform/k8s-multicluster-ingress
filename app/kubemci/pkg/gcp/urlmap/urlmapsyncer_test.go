@@ -21,8 +21,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/golang/glog"
 	compute "google.golang.org/api/compute/v1"
-
 	"k8s.io/api/extensions/v1beta1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	ingresslb "k8s.io/ingress-gce/pkg/loadbalancers"
@@ -32,7 +32,6 @@ import (
 	utilsnamer "github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/namer"
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/status"
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/goutils"
-	"github.com/golang/glog"
 )
 
 func TestEnsureURLMap(t *testing.T) {
@@ -356,6 +355,93 @@ func TestGetLoadBalancerStatus(t *testing.T) {
 	if err := ums.DeleteURLMap(); err != nil {
 		t.Fatalf("unexpected error in deleting url map: %s", err)
 	}
+}
+
+// Tests that the Load Balancer status contains the expected data (mci metadata).
+func TestRemoveClustersFromStatus(t *testing.T) {
+	lbName := "lb-name"
+	ipAddr := "1.2.3.4"
+	svcName := "svcName"
+	svcPort := "svcPort"
+	ing := &v1beta1.Ingress{
+		Spec: v1beta1.IngressSpec{
+			Backend: &v1beta1.IngressBackend{
+				ServiceName: svcName,
+				ServicePort: intstr.FromString(svcPort),
+			},
+		},
+	}
+	beMap := backendservice.BackendServicesMap{
+		svcName: &compute.BackendService{},
+	}
+	clusters := []string{"cluster1", "cluster2"}
+	clustersToRemove := []string{"cluster1"}
+	ump := ingresslb.NewFakeLoadBalancers("" /*name*/, nil /*namer*/)
+	namer := utilsnamer.NewNamer("mci1", lbName)
+	ums := NewURLMapSyncer(namer, ump)
+
+	// Should return an error when url map does not exist.
+	if err := ums.RemoveClustersFromStatus(clustersToRemove); err == nil {
+		t.Errorf("expected NotFound error when url map does not exist, got nil err")
+	}
+
+	if _, err := ums.EnsureURLMap(lbName, ipAddr, clusters, ing, beMap, false /*force*/); err != nil {
+		t.Errorf("expected no error in ensuring url map, actual: %v", err)
+	}
+
+	// Should run silently when url map does not have a status (old url map)
+	if err := ums.RemoveClustersFromStatus(clustersToRemove); err != nil {
+		t.Errorf("expected no error when url map does not have load balancer status, got: %s", err)
+	}
+
+	typedUMS := ums.(*URLMapSyncer)
+	if err := addStatus(typedUMS, lbName, clusters); err != nil {
+		t.Errorf("unexpected error in adding status to url map: %s", err)
+	}
+	if err := ums.RemoveClustersFromStatus(clustersToRemove); err != nil {
+		t.Errorf("expected no error in updating load balancer status, got: %s", err)
+	}
+
+	// Verify that the status is updated.
+	// TODO(nikhiljindal): Uncomment when https://github.com/GoogleCloudPlatform/k8s-multicluster-ingress/pull/149 is merged.
+	/*
+		status, err := ums.GetLoadBalancerStatus(lbName)
+		if err != nil {
+			t.Errorf("unexpected error in getting status description for load balancer %s, err: %s", lbName, err)
+		}
+		if err == nil {
+			// Verify that status description has both the clusters
+			expectedClusters := []string{"cluster2"}
+			if !reflect.DeepEqual(status.Clusters, expectedClusters) {
+				return fmt.Errorf("unexpected list of clusters, expected: %v, got: %v", expectedClusters, status.Clusters)
+			}
+		}
+	*/
+}
+
+// addStatus updates the existing url map of the given name to have a status as per the given parameters.
+func addStatus(ums *URLMapSyncer, lbName string, clusters []string) error {
+	// Update the url map to have a status to simulate new url maps that have the right status.
+	name := ums.namer.URLMapName()
+	um, err := ums.ump.GetUrlMap(name)
+	if err != nil {
+		return fmt.Errorf("unexpected error in fetching existing url map: %s", err)
+	}
+	lbStatus := status.LoadBalancerStatus{
+		LoadBalancerName: lbName,
+		Clusters:         clusters,
+	}
+	descStr, err := lbStatus.ToString()
+	if err != nil {
+		return fmt.Errorf("unexpected error in converting status to string: %s", err)
+	}
+	// Shallow copy is fine since we only change the description.
+	newUM := *um
+	newUM.Description = descStr
+	if _, err := ums.updateURLMap(&newUM); err != nil {
+		return fmt.Errorf("unexpected error in updating url map: %s", err)
+	}
+	return nil
 }
 
 // removeStatus updates the existing url map of the given name to remove load balancer status.

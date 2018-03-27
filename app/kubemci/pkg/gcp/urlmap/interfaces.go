@@ -37,4 +37,6 @@ type URLMapSyncerInterface interface {
 	GetLoadBalancerStatus(lbName string) (*status.LoadBalancerStatus, error)
 	// ListLoadBalancerStatuses returns status of all MCI ingresses (load balancers) that have statuses stored on url maps.
 	ListLoadBalancerStatuses() ([]status.LoadBalancerStatus, error)
+	// RemoveClustersFromStatus removes the given clusters from the LoadBalancerStatus.
+	RemoveClustersFromStatus(clusters []string) error
 }
