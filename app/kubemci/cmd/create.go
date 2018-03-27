@@ -28,6 +28,7 @@ import (
 	gcputils "github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/utils"
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/ingress"
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/kubeutils"
+	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/validations"
 )
 
 var (
@@ -68,7 +69,6 @@ type CreateOptions struct {
 
 func NewCmdCreate(out, err io.Writer) *cobra.Command {
 	var options CreateOptions
-	// Enable validation by default.
 	options.Validate = true
 
 	cmd := &cobra.Command{
@@ -147,6 +147,14 @@ func runCreate(options *CreateOptions, args []string) error {
 	clients, err := kubeutils.GetClients(options.KubeconfigFilename, options.KubeContexts)
 	if err != nil {
 		return err
+	}
+
+	if options.Validate {
+		if newEnough, err := validations.ServerVersionsNewEnough(clients); err != nil {
+			return fmt.Errorf("cluster version could not be validated: %s", err)
+		} else if !newEnough {
+			return fmt.Errorf("not all cluster versions new enough for kubemci")
+		}
 	}
 
 	// Ensure that the ingress resource is deployed to the clusters
