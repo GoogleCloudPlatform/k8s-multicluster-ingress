@@ -145,6 +145,10 @@ func TestDeleteURLMap(t *testing.T) {
 	ump := ingresslb.NewFakeLoadBalancers("" /*name*/, ingressNamer)
 	umName := namer.URLMapName()
 	ums := NewURLMapSyncer(namer, ump)
+	// Verify that trying to delete when no map exists does not return any error.
+	if err := ums.DeleteURLMap(); err != nil {
+		t.Fatalf("unexpected err while deleting URL map when none exist: %s", err)
+	}
 	if _, err := ums.EnsureURLMap(lbName, ipAddr, clusters, ing, beMap, false /*forceUpdate*/); err != nil {
 		t.Fatalf("expected no error in ensuring url map, actual: %v", err)
 	}

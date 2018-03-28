@@ -143,6 +143,10 @@ func TestDeleteBackendService(t *testing.T) {
 			SvcName:  types.NamespacedName{Name: kubeSvcName},
 		},
 	}
+	// Verify that trying to delete when no backend service exists does not return any error.
+	if err := bss.DeleteBackendServices(ports); err != nil {
+		t.Fatalf("unexpected error in deleting backend services when none exist: %s", err)
+	}
 	if _, err := bss.EnsureBackendService(lbName, ports, healthcheck.HealthChecksMap{
 		port: &compute.HealthCheck{
 			SelfLink: hcLink,

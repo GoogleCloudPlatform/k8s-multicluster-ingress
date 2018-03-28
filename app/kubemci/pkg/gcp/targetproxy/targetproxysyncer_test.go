@@ -173,12 +173,16 @@ func TestDeleteTargetProxies(t *testing.T) {
 	lbName := "lb-name"
 	umLink := "selfLink"
 	certLink := "certSelfLink"
-	// Create both http and https and verify that it deletes both.
 	tpp := ingresslb.NewFakeLoadBalancers("" /*name*/, nil /*namer*/)
 	namer := utilsnamer.NewNamer("mci1", lbName)
 	httpTpName := namer.TargetHttpProxyName()
 	httpsTpName := namer.TargetHttpsProxyName()
 	tps := NewTargetProxySyncer(namer, tpp)
+	// Verify that trying to delete when no proxy exists does not return any error.
+	if err := tps.DeleteTargetProxies(); err != nil {
+		t.Errorf("unexpected error in deleting target proxies when none exist: %s", err)
+	}
+	// Create both http and https and verify that it deletes both.
 	if _, err := tps.EnsureHttpTargetProxy(lbName, umLink, false /*forceUpdate*/); err != nil {
 		t.Fatalf("expected no error in ensuring http target proxy, actual: %v", err)
 	}

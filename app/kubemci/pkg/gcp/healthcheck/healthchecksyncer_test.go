@@ -249,6 +249,10 @@ func TestDeleteHealthCheck(t *testing.T) {
 			Protocol: annotations.ProtocolHTTP,
 		},
 	}
+	// Verify that trying to delete when no check exists does not return any error.
+	if err := hcs.DeleteHealthChecks(ports); err != nil {
+		t.Fatalf("unexpected error in deleting health checks when none exist: %s", err)
+	}
 	if _, err := hcs.EnsureHealthCheck(lbName, ports, map[string]kubernetes.Interface{"client1": &clientfake.Clientset{}}, false); err != nil {
 		t.Fatalf("unexpected error in ensuring health checks: %s", err)
 	}

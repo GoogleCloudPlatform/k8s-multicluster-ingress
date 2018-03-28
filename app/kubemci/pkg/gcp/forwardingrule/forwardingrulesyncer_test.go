@@ -461,6 +461,10 @@ func TestDeleteForwardingRule(t *testing.T) {
 	httpFrName := namer.HttpForwardingRuleName()
 	httpsFrName := namer.HttpsForwardingRuleName()
 	frs := NewForwardingRuleSyncer(namer, frp)
+	// Verify that trying to delete when no rule exists does not return any error.
+	if err := frs.DeleteForwardingRules(); err != nil {
+		t.Fatalf("unexpeted error in deleting forwarding rules when none exist: %s", err)
+	}
 	// Create both the http and https forwarding rules and verify that it deletes both.
 	if err := frs.EnsureHttpForwardingRule(lbName, ipAddr, tpLink, false /*force*/); err != nil {
 		t.Fatalf("expected no error in ensuring http forwarding rule, actual: %v", err)
