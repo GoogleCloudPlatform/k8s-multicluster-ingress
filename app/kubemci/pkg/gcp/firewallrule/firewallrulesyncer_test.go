@@ -130,6 +130,10 @@ func TestDeleteFirewallRule(t *testing.T) {
 	if _, err := fwp.GetFirewall(fwName); err == nil {
 		t.Fatalf("expected NotFound error, actual: nil")
 	}
+	// Verify that trying to delete when no firewall rule exists does not return any error.
+	if err := fws.DeleteFirewallRules(); err != nil {
+		t.Fatalf("unexpected error in deleting firewall rules when none exist: %s", err)
+	}
 	err := fws.EnsureFirewallRule(lbName, []ingressbe.ServicePort{
 		{
 			NodePort: port,

@@ -93,7 +93,7 @@ func (s *TargetProxySyncer) DeleteTargetProxies() error {
 	fmt.Println("Deleting target HTTPS proxy", httpsName)
 	httpsErr := s.tpp.DeleteTargetHttpsProxy(httpsName)
 	if httpsErr != nil {
-		if utils.IsHTTPErrorCode(err, http.StatusNotFound) {
+		if utils.IsHTTPErrorCode(httpsErr, http.StatusNotFound) {
 			fmt.Println("Target HTTPS proxy", httpsName, "does not exist. Nothing to delete")
 		} else {
 			httpsErr = fmt.Errorf("error in deleting target HTTPS proxy %s: %s", httpsName, httpsErr)
