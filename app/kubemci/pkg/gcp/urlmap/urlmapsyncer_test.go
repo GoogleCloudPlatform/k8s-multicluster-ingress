@@ -15,6 +15,9 @@
 package urlmap
 
 import (
+	"fmt"
+	"net/http"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -27,11 +30,15 @@ import (
 
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/backendservice"
 	utilsnamer "github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/namer"
+	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/status"
+	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/goutils"
 	"github.com/golang/glog"
 )
 
 func TestEnsureURLMap(t *testing.T) {
 	lbName := "lb-name"
+	ipAddr := "1.2.3.4"
+	clusters := []string{"cluster1", "cluster2"}
 	svcName := "svcName"
 	svcPort := "svcPort"
 	ing := &v1beta1.Ingress{
@@ -91,7 +98,7 @@ func TestEnsureURLMap(t *testing.T) {
 
 	for _, c := range testCases {
 		glog.Infof("\nTest case: %s", c.desc)
-		umLink, err := ums.EnsureURLMap(c.lBName, ing, beMap, c.forceUpdate)
+		umLink, err := ums.EnsureURLMap(c.lBName, ipAddr, clusters, ing, beMap, c.forceUpdate)
 		if (err != nil) != c.ensureErr {
 			t.Errorf("Ensuring URL map... expected err? %v. actual: %v", c.ensureErr, err)
 		}
@@ -115,6 +122,8 @@ func TestEnsureURLMap(t *testing.T) {
 
 func TestDeleteURLMap(t *testing.T) {
 	lbName := "lb-name"
+	ipAddr := "1.2.3.4"
+	clusters := []string{"cluster1", "cluster2"}
 	svcName := "svcName"
 	svcPort := "svcPort"
 	ing := &v1beta1.Ingress{
@@ -136,7 +145,7 @@ func TestDeleteURLMap(t *testing.T) {
 	ump := ingresslb.NewFakeLoadBalancers("" /*name*/, ingressNamer)
 	umName := namer.URLMapName()
 	ums := NewURLMapSyncer(namer, ump)
-	if _, err := ums.EnsureURLMap(lbName, ing, beMap, false /*forceUpdate*/); err != nil {
+	if _, err := ums.EnsureURLMap(lbName, ipAddr, clusters, ing, beMap, false /*forceUpdate*/); err != nil {
 		t.Fatalf("expected no error in ensuring url map, actual: %v", err)
 	}
 	if _, err := ump.GetUrlMap(umName); err != nil {
@@ -149,4 +158,215 @@ func TestDeleteURLMap(t *testing.T) {
 	if _, err := ump.GetUrlMap(umName); err == nil {
 		t.Errorf("unexpected nil error, expected NotFound")
 	}
+}
+
+func TestListLoadBalancerStatuses(t *testing.T) {
+	lbName := "lb-name"
+	ipAddr := "1.2.3.4"
+	clusters := []string{"cluster1", "cluster2"}
+	svcName := "svcName"
+	svcPort := "svcPort"
+	ing := &v1beta1.Ingress{
+		Spec: v1beta1.IngressSpec{
+			Backend: &v1beta1.IngressBackend{
+				ServiceName: svcName,
+				ServicePort: intstr.FromString(svcPort),
+			},
+		},
+	}
+	beMap := backendservice.BackendServicesMap{
+		svcName: &compute.BackendService{},
+	}
+	type ensureUM struct {
+		lbName   string
+		ipAddr   string
+		clusters []string
+		// True if the ensured forwarding rule should also have the right load balancer status.
+		// False by default.
+		hasStatus bool
+	}
+	testCases := []struct {
+		description  string
+		urlMaps      []ensureUM
+		expectedList map[string]status.LoadBalancerStatus
+	}{
+		{
+			"Should get an empty list when there are no url maps",
+			[]ensureUM{},
+			map[string]status.LoadBalancerStatus{},
+		},
+		{
+			"Load balancer should be listed as expected when url map exists",
+			[]ensureUM{
+				{
+					lbName,
+					ipAddr,
+					clusters,
+					true,
+				},
+			},
+			map[string]status.LoadBalancerStatus{
+				lbName: {
+					"",
+					lbName,
+					clusters,
+					ipAddr,
+				},
+			},
+		},
+		{
+			"Should ignore the load balancer without status",
+			[]ensureUM{
+				{
+					lbName + "1",
+					ipAddr,
+					clusters,
+					true,
+				},
+				{
+					lbName + "2",
+					ipAddr,
+					clusters,
+					false,
+				},
+			},
+			map[string]status.LoadBalancerStatus{
+				lbName + "1": {
+					"",
+					lbName + "1",
+					clusters,
+					ipAddr,
+				},
+			},
+		},
+	}
+	for i, c := range testCases {
+		glog.Infof("Test case: %d: %s", i, c.description)
+		frp := ingresslb.NewFakeLoadBalancers("" /*name*/, nil /*namer*/)
+		// Create all url maps.
+		for _, um := range c.urlMaps {
+			namer := utilsnamer.NewNamer("mci1", um.lbName)
+			ums := NewURLMapSyncer(namer, frp)
+			typedUMS := ums.(*URLMapSyncer)
+			if _, err := ums.EnsureURLMap(um.lbName, um.ipAddr, um.clusters, ing, beMap, false /*force*/); err != nil {
+				t.Errorf("expected no error in ensuring url map, actual: %v", err)
+			}
+			if !um.hasStatus {
+				if err := removeStatus(typedUMS); err != nil {
+					t.Errorf("unpexpected error in removing status from url map: %s. Moving to next test case", err)
+					continue
+				}
+			}
+		}
+		namer := utilsnamer.NewNamer("mci1", lbName)
+		ums := NewURLMapSyncer(namer, frp)
+		// List them to verify that they are as expected.
+		list, err := ums.ListLoadBalancerStatuses()
+		if err != nil {
+			t.Errorf("unexpected error listing load balancer statuses: %v. Moving to next test case", err)
+			continue
+		}
+		if len(list) != len(c.expectedList) {
+			t.Errorf("unexpected list of load balancers, expected: %v, actual: %v. Moving to next test case", c.expectedList, list)
+			continue
+		}
+		for _, rule := range list {
+			expectedRule, ok := c.expectedList[rule.LoadBalancerName]
+			if !ok {
+				t.Errorf("unexpected rule %v. expected rules: %v, actual: %v", rule, c.expectedList, list)
+				continue
+			}
+			if rule.LoadBalancerName != expectedRule.LoadBalancerName {
+				t.Errorf("Unexpected name. expected: %s, actual: %s", expectedRule.LoadBalancerName, rule.LoadBalancerName)
+			}
+			if rule.IPAddress != expectedRule.IPAddress {
+				t.Errorf("Unexpected IP addr. expected %s, actual: %s", expectedRule.IPAddress, rule.IPAddress)
+			}
+			actualClusters := goutils.MapFromSlice(rule.Clusters)
+			for _, expected := range expectedRule.Clusters {
+				if _, ok := actualClusters[expected]; !ok {
+					t.Errorf("expected cluster %s is missing from resultant cluster list %v", expected, rule.Clusters)
+				}
+			}
+		}
+	}
+}
+
+func TestGetLoadBalancerStatus(t *testing.T) {
+	lbName := "lb-name"
+	ipAddr := "1.2.3.4"
+	clusters := []string{"cluster1", "cluster2"}
+	svcName := "svcName"
+	svcPort := "svcPort"
+	ing := &v1beta1.Ingress{
+		Spec: v1beta1.IngressSpec{
+			Backend: &v1beta1.IngressBackend{
+				ServiceName: svcName,
+				ServicePort: intstr.FromString(svcPort),
+			},
+		},
+	}
+	beMap := backendservice.BackendServicesMap{
+		svcName: &compute.BackendService{},
+	}
+
+	frp := ingresslb.NewFakeLoadBalancers("" /*name*/, nil /*namer*/)
+	namer := utilsnamer.NewNamer("mci1", lbName)
+	ums := NewURLMapSyncer(namer, frp)
+	typedUMS := ums.(*URLMapSyncer)
+
+	// Should return http.StatusNotFound when the url map does not exist.
+	status, err := ums.GetLoadBalancerStatus(lbName)
+	if !utils.IsHTTPErrorCode(err, http.StatusNotFound) {
+		t.Fatalf("expected error with status code http.StatusNotFound, found: %v", err)
+	}
+
+	// Should return the status as expected when the url map exists with status.
+	if _, err := ums.EnsureURLMap(lbName, ipAddr, clusters, ing, beMap, false /*force*/); err != nil {
+		t.Errorf("expected no error in ensuring url map, actual: %v", err)
+	}
+	status, err = ums.GetLoadBalancerStatus(lbName)
+	if err != nil {
+		t.Errorf("unexpected error in getting status description for load balancer %s, expected err = nil, actual err: %s", lbName, err)
+	}
+
+	// Verify that status description has the expected values set.
+	if status.LoadBalancerName != lbName {
+		t.Errorf("unexpected load balancer name, expected: %s, got: %s", lbName, status.LoadBalancerName)
+	}
+	if !reflect.DeepEqual(status.Clusters, clusters) {
+		t.Errorf("unexpected list of clusters, expected: %v, got: %v", clusters, status.Clusters)
+	}
+	if status.IPAddress != ipAddr {
+		t.Errorf("unpexpected ip address, expected: %s, got: %s", status.IPAddress, ipAddr)
+	}
+
+	// Remove the status from url map's description to simulate old url maps that have status on forwarding rule.
+	// It should return a non-nil error in this case.
+	removeStatus(typedUMS)
+	status, err = ums.GetLoadBalancerStatus(lbName)
+	if err == nil {
+		t.Fatalf("unexpected nil error for getting load balancer status from a url map with non status description")
+	}
+	// Cleanup
+	if err := ums.DeleteURLMap(); err != nil {
+		t.Fatalf("unexpected error in deleting url map: %s", err)
+	}
+}
+
+// removeStatus updates the existing url map of the given name to remove load balancer status.
+func removeStatus(ums *URLMapSyncer) error {
+	// Update the forwarding rule to not have a status to simulate old url maps that do not have the a status.
+	name := ums.namer.URLMapName()
+	um, err := ums.ump.GetUrlMap(name)
+	if err != nil {
+		return fmt.Errorf("unexpected error in fetching existing url map: %s", err)
+	}
+	// Shallow copy is fine since we only change the description.
+	newUM := *um
+	newUM.Description = "Basic description"
+	if _, err := ums.updateURLMap(&newUM); err != nil {
+		return fmt.Errorf("unexpected error in updating url map: %s", err)
+	}
+	return nil
 }

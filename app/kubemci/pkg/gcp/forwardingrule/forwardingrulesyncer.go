@@ -18,7 +18,6 @@ import (
 	"fmt"
 	"net/http"
 	"reflect"
-	"sort"
 	"strings"
 
 	compute "google.golang.org/api/compute/v1"
@@ -59,23 +58,21 @@ var _ ForwardingRuleSyncerInterface = &ForwardingRuleSyncer{}
 
 // EnsureHttpForwardingRule ensures that the required http forwarding rule exists.
 // Does nothing if it exists already, else creates a new one.
-// Stores the given list of clusters in the description field of forwarding rule to use it to generate status later.
-func (s *ForwardingRuleSyncer) EnsureHttpForwardingRule(lbName, ipAddress, targetProxyLink string, clusters []string, forceUpdate bool) error {
+func (s *ForwardingRuleSyncer) EnsureHttpForwardingRule(lbName, ipAddress, targetProxyLink string, forceUpdate bool) error {
 	s.namer.HttpForwardingRuleName()
-	return s.ensureForwardingRule(lbName, ipAddress, targetProxyLink, httpDefaultPortRange, "http", s.namer.HttpForwardingRuleName(), clusters, forceUpdate)
+	return s.ensureForwardingRule(lbName, ipAddress, targetProxyLink, httpDefaultPortRange, "http", s.namer.HttpForwardingRuleName(), forceUpdate)
 }
 
 // EnsureHttpsForwardingRule ensures that the required https forwarding rule exists.
 // Does nothing if it exists already, else creates a new one.
-// Stores the given list of clusters in the description field of forwarding rule to use it to generate status later.
-func (s *ForwardingRuleSyncer) EnsureHttpsForwardingRule(lbName, ipAddress, targetProxyLink string, clusters []string, forceUpdate bool) error {
-	return s.ensureForwardingRule(lbName, ipAddress, targetProxyLink, httpsDefaultPortRange, "https", s.namer.HttpsForwardingRuleName(), clusters, forceUpdate)
+func (s *ForwardingRuleSyncer) EnsureHttpsForwardingRule(lbName, ipAddress, targetProxyLink string, forceUpdate bool) error {
+	return s.ensureForwardingRule(lbName, ipAddress, targetProxyLink, httpsDefaultPortRange, "https", s.namer.HttpsForwardingRuleName(), forceUpdate)
 }
 
 // ensureForwardingRule ensures a forwarding rule exists as per the given input parameters.
-func (s *ForwardingRuleSyncer) ensureForwardingRule(lbName, ipAddress, targetProxyLink, portRange, httpProtocol, name string, clusters []string, forceUpdate bool) error {
+func (s *ForwardingRuleSyncer) ensureForwardingRule(lbName, ipAddress, targetProxyLink, portRange, httpProtocol, name string, forceUpdate bool) error {
 	fmt.Println("Ensuring", httpProtocol, "forwarding rule")
-	desiredFR, err := s.desiredForwardingRule(lbName, ipAddress, targetProxyLink, portRange, httpProtocol, name, clusters)
+	desiredFR, err := s.desiredForwardingRule(lbName, ipAddress, targetProxyLink, portRange, httpProtocol, name)
 	if err != nil {
 		fmt.Println("Error getting desired forwarding rule:", err)
 		return err
@@ -152,8 +149,8 @@ func (s *ForwardingRuleSyncer) GetLoadBalancerStatus(lbName string) (*status.Loa
 		return getStatus(httpsFr)
 	}
 	if utils.IsHTTPErrorCode(httpErr, http.StatusNotFound) && utils.IsHTTPErrorCode(httpsErr, http.StatusNotFound) {
-		// We assume the load balancer does not exist until the forwarding rule exists.
-		return nil, fmt.Errorf("Load balancer %s does not exist", lbName)
+		// Preserve StatusNotFound and return the error as is.
+		return nil, httpErr
 	}
 	return nil, fmt.Errorf("error in fetching http forwarding rule: %s, error in fetching https forwarding rule: %s. Cannot determine status without forwarding rule", httpErr, httpsErr)
 }
@@ -166,6 +163,9 @@ func getStatus(fr *compute.ForwardingRule) (*status.LoadBalancerStatus, error) {
 	return status, nil
 }
 
+// ListLoadBalancerStatuses returns a list of load balancer status from load balancers that have the status stored on their forwarding rules.
+// It ignores the load balancers that dont have status on their forwarding rule.
+// Returns an error if listing forwarding rules fails.
 func (s *ForwardingRuleSyncer) ListLoadBalancerStatuses() ([]status.LoadBalancerStatus, error) {
 	var rules []*compute.ForwardingRule
 	var err error
@@ -186,9 +186,9 @@ func (s *ForwardingRuleSyncer) ListLoadBalancerStatuses() ([]status.LoadBalancer
 	for _, item := range rules {
 		if strings.HasPrefix(item.Name, "mci1") {
 			if lbStatus, decodeErr := status.FromString(item.Description); decodeErr != nil {
-				decodeErr = fmt.Errorf("Error decoding load balancer status: %s", decodeErr)
-				fmt.Println(decodeErr)
-				err = multierror.Append(err, decodeErr)
+				// Assume that url map has the right status for this MCI.
+				glog.V(3).Infof("Error decoding load balancer status on forwarding rule %s: %s\nAssuming status is stored on urlmap. Ignoring the error and continuing.", item.Name, decodeErr)
+				continue
 			} else {
 				if lbsSeen[lbStatus.LoadBalancerName] {
 					// Single load balancer can have multiple forwarding rules
@@ -294,23 +294,11 @@ func forwardingRuleMatches(desiredFR, existingFR *compute.ForwardingRule) bool {
 	return equal
 }
 
-func (s *ForwardingRuleSyncer) desiredForwardingRule(lbName, ipAddress, targetProxyLink, portRange, httpProtocol, name string, clusters []string) (*compute.ForwardingRule, error) {
-	// Sort the clusters so we get a deterministic order.
-	sort.Strings(clusters)
-	status := status.LoadBalancerStatus{
-		Description:      fmt.Sprintf("%s forwarding rule for kubernetes multicluster loadbalancer %s", httpProtocol, lbName),
-		LoadBalancerName: lbName,
-		Clusters:         clusters,
-		IPAddress:        ipAddress,
-	}
-	desc, err := status.ToString()
-	if err != nil {
-		return nil, fmt.Errorf("unexpected error in generating the description for forwarding rule: %s", err)
-	}
+func (s *ForwardingRuleSyncer) desiredForwardingRule(lbName, ipAddress, targetProxyLink, portRange, httpProtocol, name string) (*compute.ForwardingRule, error) {
 	// Compute the desired forwarding rule.
 	return &compute.ForwardingRule{
 		Name:                name,
-		Description:         desc,
+		Description:         fmt.Sprintf("%s forwarding rule for kubernetes multicluster loadbalancer %s", httpProtocol, lbName),
 		IPAddress:           ipAddress,
 		Target:              targetProxyLink,
 		PortRange:           portRange,

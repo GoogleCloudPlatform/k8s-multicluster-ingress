@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
@@ -33,6 +34,7 @@ import (
 	ingressbe "k8s.io/ingress-gce/pkg/backends"
 	ingressig "k8s.io/ingress-gce/pkg/instances"
 	ingresslb "k8s.io/ingress-gce/pkg/loadbalancers"
+	ingressutils "k8s.io/ingress-gce/pkg/utils"
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce"
 	"k8s.io/kubernetes/pkg/printers"
 
@@ -155,7 +157,7 @@ func (l *LoadBalancerSyncer) CreateLoadBalancer(ing *v1beta1.Ingress, forceUpdat
 		fmt.Println(beErr)
 		err = multierror.Append(err, beErr)
 	}
-	umLink, umErr := l.ums.EnsureURLMap(l.lbName, ing, backendServices, forceUpdate)
+	umLink, umErr := l.ums.EnsureURLMap(l.lbName, ipAddr, clusters, ing, backendServices, forceUpdate)
 	if umErr != nil {
 		// Aggregate errors and return all at the end.
 		umErr = fmt.Errorf("Error ensuring urlmap for %s: %s", l.lbName, umErr)
@@ -172,7 +174,7 @@ func (l *LoadBalancerSyncer) CreateLoadBalancer(ing *v1beta1.Ingress, forceUpdat
 			fmt.Println(tpErr)
 			err = multierror.Append(err, tpErr)
 		}
-		frErr := l.frs.EnsureHttpForwardingRule(l.lbName, ipAddr, tpLink, clusters, forceUpdate)
+		frErr := l.frs.EnsureHttpForwardingRule(l.lbName, ipAddr, tpLink, forceUpdate)
 		if frErr != nil {
 			// Aggregate errors and return all at the end.
 			frErr = fmt.Errorf("Error ensuring http forwarding rule: %s", frErr)
@@ -199,7 +201,7 @@ func (l *LoadBalancerSyncer) CreateLoadBalancer(ing *v1beta1.Ingress, forceUpdat
 			fmt.Println(tpErr)
 			err = multierror.Append(err, tpErr)
 		}
-		frErr := l.frs.EnsureHttpsForwardingRule(l.lbName, ipAddr, tpLink, clusters, forceUpdate)
+		frErr := l.frs.EnsureHttpsForwardingRule(l.lbName, ipAddr, tpLink, forceUpdate)
 		if frErr != nil {
 			// Aggregate errors and return all at the end.
 			frErr = fmt.Errorf("Error ensuring https forwarding rule: %s", frErr)
@@ -316,11 +318,32 @@ func (l *LoadBalancerSyncer) RemoveFromClusters(ing *v1beta1.Ingress, removeClie
 
 // PrintStatus prints the current status of the load balancer.
 func (l *LoadBalancerSyncer) PrintStatus() (string, error) {
-	sd, err := l.frs.GetLoadBalancerStatus(l.lbName)
-	if err != nil {
-		return "", err
+	// First try to fetch the status from url map.
+	// If that fails, then we fetch it from forwarding rule.
+	// This is because we first used to store the status on forwarding rules and then migrated to url maps.
+	// https://github.com/GoogleCloudPlatform/k8s-multicluster-ingress/issues/145 has more details.
+	sd, umErr := l.ums.GetLoadBalancerStatus(l.lbName)
+	if umErr == nil {
+		return formatLoadBalancerStatus(l.lbName, *sd), nil
 	}
-	return fmt.Sprintf("Load balancer %s has IPAddress %s and is spread across %d clusters (%s)", l.lbName, sd.IPAddress, len(sd.Clusters), strings.Join(sd.Clusters, ",")), nil
+	if ingressutils.IsHTTPErrorCode(umErr, http.StatusNotFound) {
+		return "", fmt.Errorf("Load balancer %s does not exist", l.lbName)
+	}
+	// Try forwarding rule.
+	sd, frErr := l.frs.GetLoadBalancerStatus(l.lbName)
+	if frErr == nil {
+		return formatLoadBalancerStatus(l.lbName, *sd), nil
+	}
+	if ingressutils.IsHTTPErrorCode(frErr, http.StatusNotFound) {
+		return "", fmt.Errorf("Load balancer %s does not exist", l.lbName)
+	}
+	// Failed to get status from both url map and forwarding rule.
+	return "", fmt.Errorf("failed to get status from both url map and forwarding rule. Error in extracting status from url map: %s. Error in extracting status from forwarding rule: %s", umErr, frErr)
+}
+
+// formatLoadBalancerStatus formats the given status to be printed for get-status output.
+func formatLoadBalancerStatus(lbName string, s status.LoadBalancerStatus) string {
+	return fmt.Sprintf("Load balancer %s has IPAddress %s and is spread across %d clusters (%s)", lbName, s.IPAddress, len(s.Clusters), strings.Join(s.Clusters, ","))
 }
 
 func formatLoadBalancersList(balancers []status.LoadBalancerStatus) (string, error) {
@@ -340,12 +363,27 @@ func formatLoadBalancersList(balancers []status.LoadBalancerStatus) (string, err
 }
 
 func (l *LoadBalancerSyncer) ListLoadBalancers() (string, error) {
-	balancers, err := l.frs.ListLoadBalancerStatuses()
+	var err error
+	// We fetch the list from both url maps and forwarding rules and then merge them.
+	// This is because we first used to store the status on forwarding rules and then migrated to url maps.
+	// https://github.com/GoogleCloudPlatform/k8s-multicluster-ingress/issues/145 has more details.
+	umBalancers, umErr := l.ums.ListLoadBalancerStatuses()
+	if umErr != nil {
+		// Aggregate errors and return all at the end.
+		err = multierror.Append(err, umErr)
+	}
+
+	frBalancers, frErr := l.frs.ListLoadBalancerStatuses()
+	if frErr != nil {
+		// Aggregate errors and return all at the end.
+		err = multierror.Append(err, frErr)
+	}
 	if err != nil {
 		return "", err
 	}
-	return formatLoadBalancersList(balancers)
-
+	// We merge the list of load balancers from both url map syncer and forwarding rule syncer.
+	// We assume that every load balancer has status on either url map or forwarding rule and only on one of those.
+	return formatLoadBalancersList(append(umBalancers, frBalancers...))
 }
 
 func (l *LoadBalancerSyncer) getIPAddress(ing *v1beta1.Ingress) (string, error) {
