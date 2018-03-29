@@ -55,7 +55,7 @@ func cleanupBasic(kubectlArgs []string, lbName, ipName string, clients map[strin
 }
 
 func testHTTPIngress(project, kubeConfigPath, lbName string) {
-	glog.Infof("Testing HTTP ingress")
+	glog.Infof("------- Testing HTTP ingress ---------")
 	deleteFn, err := createIngress(project, kubeConfigPath, lbName, "examples/zone-printer/ingress/nginx.yaml")
 	if err != nil {
 		glog.Fatalf("error creating ingress: %+v", err)
@@ -64,6 +64,9 @@ func testHTTPIngress(project, kubeConfigPath, lbName string) {
 
 	// Tests
 	ipAddress := getIpAddress(project, lbName)
+	if ipAddress == "" {
+		glog.Fatalf("ip addr is empty.")
+	}
 	// Ensure that the IP address eventually returns 202.
 	if err := waitForIngress("http", ipAddress, "/"); err != nil {
 		glog.Errorf("error in waiting for ingress: %s", err)
@@ -82,7 +85,7 @@ func testHTTPIngress(project, kubeConfigPath, lbName string) {
 }
 
 func testHTTPSIngress(project, kubeConfigPath, lbName string, kubectlArgs []string, clients map[string]kubeclient.Interface) {
-	glog.Infof("Testing HTTPS ingress")
+	glog.Infof("------- Testing HTTPS ingress ---------")
 	// Creates secrets with TLS crt and key in every cluster
 	deleteTLSFn := createTLSSecrets(kubectlArgs, clients)
 	defer deleteTLSFn()
@@ -100,11 +103,12 @@ func testHTTPSIngress(project, kubeConfigPath, lbName string, kubectlArgs []stri
 	if err := waitForIngress("http", ipAddress, "/"); err != nil {
 		glog.Errorf("error in GET %s: %s", ipAddress, err)
 	}
+	fmt.Println("PASS: got 200 from ingress HTTP url")
 	// Ensure that the IP address returns 202 for https as well.
 	if err := waitForIngress("https", ipAddress, "/"); err != nil {
 		glog.Errorf("error in GET %s: %s", ipAddress, err)
 	}
-	fmt.Println("PASS: got 200 from ingress url")
+	fmt.Println("PASS: got 200 from ingress HTTPS url")
 	testList(project, ipAddress, lbName)
 
 	// Running create again should not return any error.
@@ -112,6 +116,7 @@ func testHTTPSIngress(project, kubeConfigPath, lbName string, kubectlArgs []stri
 	if err != nil {
 		glog.Fatalf("Unexpected error in re-creating https ingress: %+v", err)
 	}
+	fmt.Println("PASS: Creating MCI a 2nd time succeeded")
 
 	// TODO(nikhiljindal): Ensure that the ingress is created and deleted in all
 	// clusters as expected.
