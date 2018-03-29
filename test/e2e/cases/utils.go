@@ -77,10 +77,12 @@ func findIPv4(input string) string {
 func createIngress(project, kubeConfigPath, lbName, ingressPath string) (func(), error) {
 	kubemciArgs := []string{kubemci, fmt.Sprintf("--ingress=%s", ingressPath), fmt.Sprintf("--gcp-project=%s", project), fmt.Sprintf("--kubeconfig=%s", kubeConfigPath)}
 	createArgs := append(kubemciArgs, []string{"create", lbName}...)
-	if _, err := kubeutils.ExecuteCommand(createArgs); err != nil {
-		glog.Fatalf("Error running kubemci create: %v", err)
-		return nil, err
+	glog.Infof("running: %v", createArgs)
+	output, err := kubeutils.ExecuteCommand(createArgs)
+	if err != nil {
+		glog.Fatalf("Error running kubemci create: %s", err)
 	}
+	glog.Infof("kubemci output:\n%s", output)
 
 	deleteFn := func() {
 		glog.Infof("Deleting ingress %s", ingressPath)
