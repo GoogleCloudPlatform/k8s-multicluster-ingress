@@ -367,6 +367,10 @@ func TestDeleteLoadBalancer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error in test setup: %s", err)
 	}
+	// Verify that trying to delete when no load balancer exists does not return any error.
+	if err := lbc.DeleteLoadBalancer(ing); err != nil {
+		t.Fatalf("unexpected error while deleting load balancer when none exist: %s", err)
+	}
 	if err := lbc.CreateLoadBalancer(ing, true /*forceUpdate*/, true /*validate*/, clusters); err != nil {
 		t.Fatalf("unexpected error %s", err)
 	}
@@ -424,6 +428,7 @@ func TestRemoveFromClusters(t *testing.T) {
 	igName := "my-fake-ig"
 	igZone := "my-fake-zone"
 	zoneLink := fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/fake-project/zones/%s", igZone)
+	igLink := fmt.Sprintf("%s/instanceGroups/%s", zoneLink, igName)
 	clusters := []string{"cluster1", "cluster2"}
 	lbc := newLoadBalancerSyncer(lbName)
 	ipAddress := &compute.Address{
@@ -439,38 +444,30 @@ func TestRemoveFromClusters(t *testing.T) {
 	if err := lbc.CreateLoadBalancer(ing, true /*forceUpdate*/, true /*validate*/, clusters); err != nil {
 		t.Fatalf("unexpected error %s", err)
 	}
-	fhc := lbc.hcs.(*healthcheck.FakeHealthCheckSyncer)
-	if len(fhc.EnsuredHealthChecks) == 0 {
-		t.Errorf("unexpected health checks not created")
-	}
+	// Verify that backend service, firewall rule and status are as expected.
 	fbs := lbc.bss.(*backendservice.FakeBackendServiceSyncer)
-	if len(fbs.EnsuredBackendServices) == 0 {
-		t.Errorf("unexpected backend services not created")
+	if len(fbs.EnsuredBackendServices) != 2 {
+		t.Errorf("unexpected backend services, expected 2 backend services, got: %v", fbs.EnsuredBackendServices)
 	}
-	fum := lbc.ums.(*urlmap.FakeURLMapSyncer)
-	if len(fum.EnsuredURLMaps) == 0 {
-		t.Errorf("unexpected url maps not created")
-	}
-	ftp := lbc.tps.(*targetproxy.FakeTargetProxySyncer)
-	if len(ftp.EnsuredTargetProxies) == 0 {
-		t.Errorf("unexpected target proxies not created")
-	}
-	ffr := lbc.frs.(*forwardingrule.FakeForwardingRuleSyncer)
-	if len(ffr.EnsuredForwardingRules) == 0 {
-		t.Errorf("unexpected forwarding rules not created")
+	be := fbs.EnsuredBackendServices[0]
+	expectedIGlinks := []string{igLink, igLink}
+	if !reflect.DeepEqual(be.IGLinks, expectedIGlinks) {
+		t.Errorf("unexpected IG links on backend service. expected: %v, got: %v", expectedIGlinks, be.IGLinks)
 	}
 	ffw := lbc.fws.(*firewallrule.FakeFirewallRuleSyncer)
-	if len(ffw.EnsuredFirewallRules) == 0 {
-		t.Errorf("unexpected firewall rules not created")
+	if len(ffw.EnsuredFirewallRules) != 1 {
+		t.Errorf("unexpected firewall rules, expected 1, got: %v", ffw.EnsuredFirewallRules)
 	}
-	// Add status to the forwarding rule to simulate old forwarding rule which has status.
-	// TODO: This should not be required once lbc.RemoveFromClusters can update url map status:
-	// https://github.com/GoogleCloudPlatform/k8s-multicluster-ingress/pull/151
-	typedFRS := lbc.frs.(*forwardingrule.FakeForwardingRuleSyncer)
-	typedFRS.AddStatus(lbName, &status.LoadBalancerStatus{Clusters: clusters})
-
+	fw := ffw.EnsuredFirewallRules[0]
+	expectedFWIGLinks := map[string][]string{
+		"cluster1": []string{igLink},
+		"cluster2": []string{igLink},
+	}
+	if !reflect.DeepEqual(fw.IGLinks, expectedFWIGLinks) {
+		t.Errorf("unexpected IG links on firewall rule, expected: %v, got: %v", expectedFWIGLinks, fw.IGLinks)
+	}
 	// Verify that the load balancer is spread to both clusters.
-	if err := verifyClusters(lbName, lbc.frs, clusters); err != nil {
+	if err := verifyClusters(lbc, clusters); err != nil {
 		t.Errorf("%s", err)
 	}
 
@@ -481,7 +478,27 @@ func TestRemoveFromClusters(t *testing.T) {
 	if err := lbc.RemoveFromClusters(ing, removeClients, false /*forceUpdate*/); err != nil {
 		t.Errorf("unexpected error in removing existing load balancer from clusters: %s", err)
 	}
-	if err := verifyClusters(lbName, lbc.frs, []string{"cluster2"}); err != nil {
+
+	// Verify that the backend service, firewall rule and status are updated as expected.
+	if len(fbs.EnsuredBackendServices) != 2 {
+		t.Errorf("unexpected backend services, expected 2 backend services, got: %v", fbs.EnsuredBackendServices)
+	}
+	be = fbs.EnsuredBackendServices[0]
+	expectedIGlinks = []string{igLink}
+	if !reflect.DeepEqual(be.IGLinks, expectedIGlinks) {
+		t.Errorf("unexpected IG links on backend service. expected: %v, got: %v", expectedIGlinks, be.IGLinks)
+	}
+	if len(ffw.EnsuredFirewallRules) != 1 {
+		t.Errorf("unexpected firewall rules, expected 1, got: %v", ffw.EnsuredFirewallRules)
+	}
+	fw = ffw.EnsuredFirewallRules[0]
+	expectedFWIGLinks = map[string][]string{
+		"cluster2": []string{igLink},
+	}
+	if !reflect.DeepEqual(fw.IGLinks, expectedFWIGLinks) {
+		t.Errorf("unexpected IG links on firewall rule, expected: %v, got: %v", expectedFWIGLinks, fw.IGLinks)
+	}
+	if err := verifyClusters(lbc, []string{"cluster2"}); err != nil {
 		t.Errorf("%s", err)
 	}
 
@@ -516,14 +533,15 @@ func TestRemoveClustersFromStatus(t *testing.T) {
 	}{
 		{
 			// Default case.
-			true,
 			false,
+			true,
 			false,
 		},
 		{
-			false,
+			// Old setup - forwarding rule has the status, url map does not.
 			true,
-			true, // TODO: Update this to false when GetLoadBalancerStatus can read from url map.
+			false,
+			false,
 		},
 		{
 			true,
@@ -541,18 +559,16 @@ func TestRemoveClustersFromStatus(t *testing.T) {
 			t.Fatalf("unexpected error %s", err)
 		}
 		if c.frHasStatus {
+			// Explicitly add status, since forwarding rule will not have status by default.
 			lbc.frs.(*forwardingrule.FakeForwardingRuleSyncer).AddStatus(lbName, &status.LoadBalancerStatus{Clusters: clusters})
 		}
 		if !c.umHasStatus {
+			// Explicitly remove status, since url map will have status by default.
 			lbc.ums.(*urlmap.FakeURLMapSyncer).RemoveStatus(lbName)
 		}
 		// Verify that the load balancer is spread to both clusters.
-		// TODO: Remove this if once we update GetLoadBalancerStatus to read from urlmap as well.
-		if c.frHasStatus {
-
-			if err := verifyClusters(lbName, lbc.frs, clusters); c.errorInGetStatus != (err != nil) {
-				t.Errorf("expected error in verifying status: %v, got err: %s", c.errorInGetStatus, err)
-			}
+		if err := verifyClusters(lbc, clusters); c.errorInGetStatus != (err != nil) {
+			t.Errorf("expected error in verifying status: %v, got err: %s", c.errorInGetStatus, err)
 		}
 
 		// Remove the load balancer from the first cluster and verify that the load balancer status is updated appropriately.
@@ -560,12 +576,9 @@ func TestRemoveClustersFromStatus(t *testing.T) {
 		if err := lbc.removeClustersFromStatus(lbName, clustersToRemove); err != nil {
 			t.Errorf("unexpected error in removing existing load balancer from clusters: %s", err)
 		}
-		// TODO: Remove this if once we update GetLoadBalancerStatus to read from urlmap as well.
-		if c.frHasStatus {
-			if err := verifyClusters(lbName, lbc.frs, []string{"cluster2"}); c.errorInGetStatus != (err != nil) {
+		if err := verifyClusters(lbc, []string{"cluster2"}); c.errorInGetStatus != (err != nil) {
 
-				t.Errorf("expected error in verifying status: %v, got err: %s", c.errorInGetStatus, err)
-			}
+			t.Errorf("expected error in verifying status: %v, got err: %s", c.errorInGetStatus, err)
 		}
 		if err := lbc.DeleteLoadBalancer(ing); err != nil {
 			t.Fatalf("unexpected error %s", err)
@@ -573,8 +586,8 @@ func TestRemoveClustersFromStatus(t *testing.T) {
 	}
 }
 
-func verifyClusters(lbName string, frs forwardingrule.ForwardingRuleSyncerInterface, expectedClusters []string) error {
-	status, err := frs.GetLoadBalancerStatus(lbName)
+func verifyClusters(lbc *LoadBalancerSyncer, expectedClusters []string) error {
+	status, err := lbc.getLoadBalancerStatus()
 	if status == nil || err != nil {
 		return fmt.Errorf("unexpected error in getting load balancer status: %s", err)
 	}

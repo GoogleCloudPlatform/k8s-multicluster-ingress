@@ -389,59 +389,23 @@ func TestRemoveClustersFromStatus(t *testing.T) {
 		t.Errorf("expected no error in ensuring url map, actual: %v", err)
 	}
 
-	// Should run silently when url map does not have a status (old url map)
+	// Verify that the status is updated as expected.
 	if err := ums.RemoveClustersFromStatus(clustersToRemove); err != nil {
-		t.Errorf("expected no error when url map does not have load balancer status, got: %s", err)
+		t.Errorf("unexpected error in removing cluster from status: %s", err)
 	}
+	expectedClusters := []string{"cluster2"}
+	verifyClustersInStatus(ums, lbName, expectedClusters)
 
+	// Should run without error when url map does not have a status (old url map)
 	typedUMS := ums.(*URLMapSyncer)
-	if err := addStatus(typedUMS, lbName, clusters); err != nil {
-		t.Errorf("unexpected error in adding status to url map: %s", err)
+	if err := removeStatus(typedUMS); err != nil {
+		t.Errorf("unexpected error in removing status from url map: %s", err)
 	}
 	if err := ums.RemoveClustersFromStatus(clustersToRemove); err != nil {
 		t.Errorf("expected no error in updating load balancer status, got: %s", err)
 	}
-
-	// Verify that the status is updated.
-	// TODO(nikhiljindal): Uncomment when https://github.com/GoogleCloudPlatform/k8s-multicluster-ingress/pull/149 is merged.
-	/*
-		status, err := ums.GetLoadBalancerStatus(lbName)
-		if err != nil {
-			t.Errorf("unexpected error in getting status description for load balancer %s, err: %s", lbName, err)
-		}
-		if err == nil {
-			// Verify that status description has both the clusters
-			expectedClusters := []string{"cluster2"}
-			if !reflect.DeepEqual(status.Clusters, expectedClusters) {
-				return fmt.Errorf("unexpected list of clusters, expected: %v, got: %v", expectedClusters, status.Clusters)
-			}
-		}
-	*/
-}
-
-// addStatus updates the existing url map of the given name to have a status as per the given parameters.
-func addStatus(ums *URLMapSyncer, lbName string, clusters []string) error {
-	// Update the url map to have a status to simulate new url maps that have the right status.
-	name := ums.namer.URLMapName()
-	um, err := ums.ump.GetUrlMap(name)
-	if err != nil {
-		return fmt.Errorf("unexpected error in fetching existing url map: %s", err)
-	}
-	lbStatus := status.LoadBalancerStatus{
-		LoadBalancerName: lbName,
-		Clusters:         clusters,
-	}
-	descStr, err := lbStatus.ToString()
-	if err != nil {
-		return fmt.Errorf("unexpected error in converting status to string: %s", err)
-	}
-	// Shallow copy is fine since we only change the description.
-	newUM := *um
-	newUM.Description = descStr
-	if _, err := ums.updateURLMap(&newUM); err != nil {
-		return fmt.Errorf("unexpected error in updating url map: %s", err)
-	}
-	return nil
+	// Should not have changed the list of clusters.
+	verifyClustersInStatus(ums, lbName, expectedClusters)
 }
 
 // removeStatus updates the existing url map of the given name to remove load balancer status.
@@ -457,6 +421,17 @@ func removeStatus(ums *URLMapSyncer) error {
 	newUM.Description = "Basic description"
 	if _, err := ums.updateURLMap(&newUM); err != nil {
 		return fmt.Errorf("unexpected error in updating url map: %s", err)
+	}
+	return nil
+}
+
+func verifyClustersInStatus(ums URLMapSyncerInterface, lbName string, expectedClusters []string) error {
+	status, err := ums.GetLoadBalancerStatus(lbName)
+	if err != nil {
+		return fmt.Errorf("unexpected error in getting status description for load balancer %s, err: %s", lbName, err)
+	}
+	if !reflect.DeepEqual(status.Clusters, expectedClusters) {
+		return fmt.Errorf("unexpected list of clusters, expected: %v, got: %v", expectedClusters, status.Clusters)
 	}
 	return nil
 }
