@@ -10,8 +10,6 @@ metadata:
     version: v3.0.0
 spec:
   updateStrategy:
-    rollingUpdate:
-      maxUnavailable: 5000
     type: RollingUpdate
   template:
     metadata:
@@ -110,4 +108,4 @@ spec:
           path: /var/lib/docker/containers
       - name: config-volume
         configMap:
-          name: fluentd-gcp-config-v1.2.4
+          name: fluentd-gcp-config-v1.2.5

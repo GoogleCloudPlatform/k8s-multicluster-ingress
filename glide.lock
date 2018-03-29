@@ -1,5 +1,5 @@
 hash: 7845ab3f3640d4a97f6291b96c52cfb67ba5dd895263c08108f4c6f09335d62f
-updated: 2018-03-26T18:08:14.202639036-07:00
+updated: 2018-03-28T18:17:04.783326761-07:00
 imports:
 - name: cloud.google.com/go
   version: 3b1ae45394a234c385be014e9a488f2bb6eef821
@@ -59,7 +59,7 @@ imports:
 - name: github.com/howeyc/gopass
   version: bf9dde6d0d2c004a008c27aaee91170c786f6db8
 - name: github.com/imdario/mergo
-  version: 0d4b488675fdec1dde48751b05ab530cf0b630e1
+  version: 6633656539c1639d9d78127b7d47c622b5d7b6dc
 - name: github.com/inconshreveable/mousetrap
   version: 76626ae9c91c4f2a10f34cad8ce83ea42c93bb75
 - name: github.com/json-iterator/go
@@ -96,34 +96,18 @@ imports:
 - name: golang.org/x/crypto
   version: 49796115aa4b964c318aad4f3084fdb41e9aa067
   subpackages:
-  - bcrypt
-  - blowfish
-  - cryptobyte
-  - cryptobyte/asn1
-  - curve25519
   - ed25519
   - ed25519/internal/edwards25519
-  - internal/chacha20
-  - nacl/secretbox
-  - ocsp
-  - pkcs12
-  - pkcs12/internal/rc2
-  - poly1305
-  - salsa20/salsa
-  - ssh
   - ssh/terminal
 - name: golang.org/x/net
   version: 1c05540f6879653db88113bc4a2b70aec4bd491f
   subpackages:
   - context
   - context/ctxhttp
-  - html
-  - html/atom
   - http2
   - http2/hpack
   - idna
   - lex/httplex
-  - websocket
 - name: golang.org/x/oauth2
   version: a6bd8cefa1811bd24b86f8902872e4e8225f74c4
   subpackages:
@@ -136,7 +120,6 @@ imports:
   subpackages:
   - unix
   - windows
-  - windows/svc
 - name: golang.org/x/text
   version: b19bf474d317b857955b12035d2c5acb57ce8b01
   subpackages:
@@ -160,7 +143,7 @@ imports:
   - googleapi/internal/uritemplates
   - tpu/v1alpha1
 - name: google.golang.org/appengine
-  version: 5bee14b453b4c71be47ec1781b0fa61c2ea182db
+  version: 138cbf02a83223cf40a1e4b7834cc0a732fb383b
   subpackages:
   - internal
   - internal/app_identity
@@ -190,8 +173,9 @@ imports:
 - name: gopkg.in/yaml.v2
   version: 670d4cfef0544295bc27a114dbac37980d83185a
 - name: k8s.io/api
-  version: 055879e38033d1526b0fe169089a055c33fa3990
+  version: 7e796de92438aede7cb5d6bcf6c10f4fa65db560
   subpackages:
+  - admission/v1beta1
   - admissionregistration/v1alpha1
   - admissionregistration/v1beta1
   - apps/v1
@@ -210,6 +194,7 @@ imports:
   - core/v1
   - events/v1beta1
   - extensions/v1beta1
+  - imagepolicy/v1alpha1
   - networking/v1
   - policy/v1beta1
   - rbac/v1
@@ -221,11 +206,11 @@ imports:
   - storage/v1alpha1
   - storage/v1beta1
 - name: k8s.io/apiextensions-apiserver
-  version: b7d6d691cfaa689eb82b21f71ca447dfdb325b0c
+  version: 43047e402215d319c9b1acec99a67cf1a693b0c0
   subpackages:
   - pkg/features
 - name: k8s.io/apimachinery
-  version: 7175867f4d9f782220ceae4fc323e3aaae35f23a
+  version: 00b86ef5712a9fafe489160774c254f46c254a30
   subpackages:
   - pkg/api/equality
   - pkg/api/errors
@@ -283,7 +268,7 @@ imports:
   - pkg/features
   - pkg/util/feature
 - name: k8s.io/client-go
-  version: b9a0cf870f239c4a4ecfd3feb075a50e7cbe1473
+  version: 30089d3674f3dd2ecf53eb0505b40ab05e3ad04f
   subpackages:
   - discovery
   - discovery/fake
@@ -439,7 +424,7 @@ imports:
   - util/retry
   - util/workqueue
 - name: k8s.io/ingress-gce
-  version: f5c87b1611ed3034b5cc795f63b7bcb8915c7365
+  version: 5911f806cf189cdb8741a819d3d90ce3c0859c51
   subpackages:
   - pkg/annotations
   - pkg/backends
@@ -455,7 +440,7 @@ imports:
   subpackages:
   - pkg/util/proto
 - name: k8s.io/kubernetes
-  version: 7ee1a61e9016b822816caf2a860378410938be3b
+  version: 3cb73605aa6679b24a4cefadd41eb2669b06bab9
   subpackages:
   - pkg/api/legacyscheme
   - pkg/api/service
@@ -471,6 +456,7 @@ imports:
   - pkg/apis/core/validation
   - pkg/apis/extensions
   - pkg/apis/networking
+  - pkg/apis/scheduling
   - pkg/capabilities
   - pkg/cloudprovider
   - pkg/cloudprovider/providers/gce
@@ -480,11 +466,11 @@ imports:
   - pkg/controller
   - pkg/features
   - pkg/fieldpath
+  - pkg/kubectl/scheme
   - pkg/kubelet/apis
   - pkg/kubelet/types
   - pkg/master/ports
   - pkg/printers
-  - pkg/scheduler/api
   - pkg/security/apparmor
   - pkg/serviceaccount
   - pkg/util/file
