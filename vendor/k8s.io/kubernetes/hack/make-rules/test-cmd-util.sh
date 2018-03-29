@@ -361,7 +361,7 @@ run_pod_tests() {
   kube::test::get_object_assert 'pods/valid-pod' "{{.metadata.namespace}} {{.metadata.name}}" '<no value> valid-pod' "--export=true"
 
   ### Dump current valid-pod POD
-  output_pod=$(kubectl get pod valid-pod -o yaml --output-version=v1 "${kube_flags[@]}")
+  output_pod=$(kubectl get pod valid-pod -o yaml "${kube_flags[@]}")
 
   ### Delete POD valid-pod by id
   # Pre-condition: valid-pod POD exists
@@ -1324,15 +1324,15 @@ run_kubectl_run_tests() {
   set +o errexit
 }
 
-run_kubectl_server_print_tests() {
+run_kubectl_old_print_tests() {
   set -o nounset
   set -o errexit
 
   create_and_use_new_namespace
-  kube::log::status "Testing kubectl get --experimental-server-print"
+  kube::log::status "Testing kubectl get --server-print=false"
   ### Test retrieval of all types in discovery
   # Pre-condition: no resources exist
-  output_message=$(kubectl get pods --experimental-server-print 2>&1 "${kube_flags[@]}")
+  output_message=$(kubectl get pods --server-print=false 2>&1 "${kube_flags[@]}")
   # Post-condition: Expect text indicating no resources were found
   kube::test::if_has_string "${output_message}" 'No resources found.'
 
@@ -1343,7 +1343,7 @@ run_kubectl_server_print_tests() {
   # Compare "old" output with experimental output and ensure both are the same
   # remove the last column, as it contains the object's AGE, which could cause a mismatch.
   expected_output=$(kubectl get pod "${kube_flags[@]}" | awk 'NF{NF--};1')
-  actual_output=$(kubectl get pod --experimental-server-print "${kube_flags[@]}" | awk 'NF{NF--};1')
+  actual_output=$(kubectl get pod --server-print=false "${kube_flags[@]}" | awk 'NF{NF--};1')
   kube::test::if_has_string "${actual_output}" "${expected_output}"
 
   ### Test retrieval of daemonsets against server-side printing
@@ -1353,7 +1353,7 @@ run_kubectl_server_print_tests() {
   # Compare "old" output with experimental output and ensure both are the same
   # remove the last column, as it contains the object's AGE, which could cause a mismatch.
   expected_output=$(kubectl get ds "${kube_flags[@]}" | awk 'NF{NF--};1')
-  actual_output=$(kubectl get ds --experimental-server-print "${kube_flags[@]}" | awk 'NF{NF--};1')
+  actual_output=$(kubectl get ds --server-print=false "${kube_flags[@]}" | awk 'NF{NF--};1')
   kube::test::if_has_string "${actual_output}" "${expected_output}"
 
   ### Test retrieval of replicationcontrollers against server-side printing
@@ -1363,7 +1363,7 @@ run_kubectl_server_print_tests() {
   # Compare "old" output with experimental output and ensure both are the same
   # remove the last column, as it contains the object's AGE, which could cause a mismatch.
   expected_output=$(kubectl get rc "${kube_flags[@]}" | awk 'NF{NF--};1')
-  actual_output=$(kubectl get rc --experimental-server-print "${kube_flags[@]}" | awk 'NF{NF--};1')
+  actual_output=$(kubectl get rc --server-print=false "${kube_flags[@]}" | awk 'NF{NF--};1')
   kube::test::if_has_string "${actual_output}" "${expected_output}"
 
   ### Test retrieval of replicasets against server-side printing
@@ -1373,7 +1373,7 @@ run_kubectl_server_print_tests() {
   # Compare "old" output with experimental output and ensure both are the same
   # remove the last column, as it contains the object's AGE, which could cause a mismatch.
   expected_output=$(kubectl get rs "${kube_flags[@]}" | awk 'NF{NF--};1')
-  actual_output=$(kubectl get rs --experimental-server-print "${kube_flags[@]}" | awk 'NF{NF--};1')
+  actual_output=$(kubectl get rs --server-print=false "${kube_flags[@]}" | awk 'NF{NF--};1')
   kube::test::if_has_string "${actual_output}" "${expected_output}"
 
   ### Test retrieval of jobs against server-side printing
@@ -1383,7 +1383,7 @@ run_kubectl_server_print_tests() {
   # Compare "old" output with experimental output and ensure both are the same
   # remove the last column, as it contains the object's AGE, which could cause a mismatch.
   expected_output=$(kubectl get jobs/pi "${kube_flags[@]}" | awk 'NF{NF--};1')
-  actual_output=$(kubectl get jobs/pi --experimental-server-print "${kube_flags[@]}" | awk 'NF{NF--};1')
+  actual_output=$(kubectl get jobs/pi --server-print=false "${kube_flags[@]}" | awk 'NF{NF--};1')
   kube::test::if_has_string "${actual_output}" "${expected_output}"
 
   ### Test retrieval of clusterroles against server-side printing
@@ -1393,7 +1393,7 @@ run_kubectl_server_print_tests() {
   # Compare "old" output with experimental output and ensure both are the same
   # remove the last column, as it contains the object's AGE, which could cause a mismatch.
   expected_output=$(kubectl get clusterroles/sample-role "${kube_flags[@]}" | awk 'NF{NF--};1')
-  actual_output=$(kubectl get clusterroles/sample-role --experimental-server-print "${kube_flags[@]}" | awk 'NF{NF--};1')
+  actual_output=$(kubectl get clusterroles/sample-role --server-print=false "${kube_flags[@]}" | awk 'NF{NF--};1')
   kube::test::if_has_string "${actual_output}" "${expected_output}"
 
   ### Test retrieval of crds against server-side printing
@@ -1422,7 +1422,7 @@ __EOF__
   kube::test::get_object_assert foos "{{range.items}}{{$id_field}}:{{end}}" ''
   # Compare "old" output with experimental output and ensure both are the same
   expected_output=$(kubectl get foos "${kube_flags[@]}")
-  actual_output=$(kubectl get foos --experimental-server-print "${kube_flags[@]}" | awk 'NF{NF--};1')
+  actual_output=$(kubectl get foos --server-print=false "${kube_flags[@]}" | awk 'NF{NF--};1')
   kube::test::if_has_string "${actual_output}" "${expected_output}"
 
   # teardown
@@ -2386,6 +2386,13 @@ run_secrets_test() {
 
   create_and_use_new_namespace
   kube::log::status "Testing secrets"
+
+  # Ensure dry run succeeds and includes kind, apiVersion and data
+  output_message=$(kubectl create secret generic test --from-literal=key1=value1 --dry-run -o yaml)
+  kube::test::if_has_string "${output_message}" 'kind: Secret'
+  kube::test::if_has_string "${output_message}" 'apiVersion: v1'
+  kube::test::if_has_string "${output_message}" 'key1: dmFsdWUx'
+
   ### Create a new namespace
   # Pre-condition: the test-secrets namespace does not exist
   kube::test::get_object_assert 'namespaces' '{{range.items}}{{ if eq $id_field \"test-secrets\" }}found{{end}}{{end}}:' ':'
@@ -2566,7 +2573,7 @@ run_service_tests() {
   kube::test::get_object_assert 'services redis-master' "{{range$service_selector_field}}{{.}}:{{end}}" "redis:master:backend:"
 
   ### Dump current redis-master service
-  output_service=$(kubectl get service redis-master -o json --output-version=v1 "${kube_flags[@]}")
+  output_service=$(kubectl get service redis-master -o json "${kube_flags[@]}")
 
   ### Delete redis-master-service by id
   # Pre-condition: redis-master service exists
@@ -4935,7 +4942,7 @@ runTests() {
 
   if kube::test::if_supports_resource "${pods}" ; then
     record_command run_kubectl_get_tests
-    record_command run_kubectl_server_print_tests
+    record_command run_kubectl_old_print_tests
   fi
 
 

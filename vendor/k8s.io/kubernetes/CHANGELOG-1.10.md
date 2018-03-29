@@ -157,7 +157,7 @@ filename | sha256 hash
 
 ### Node
 
-Many of the changes within SIG-Node revolve around control, with the beta release of [Dynamic Kubelet Configuration](https://github.com/kubernetes/features/issues/281), the ability to make changes to Kubelet without having to bring down the node, and alpha support for the ability to [configure whether containers in a pod should share a single process namespace](https://github.com/kubernetes/features/issues/495), The CRI has also seen some improvements and has been upgraded to v1alpha2, with support for  [support for Windows Container Configuration](https://github.com/kubernetes/features/issues/547) and the beta release of the [CRI validation test suite](https://github.com/kubernetes/features/issues/292). 
+Many of the changes within SIG-Node revolve around control. With the beta release of the `kubelet.config.k8s.io` API group, a significant subset of Kubelet configuration can now be [configured via a versioned config file](https://kubernetes.io/docs/tasks/administer-cluster/kubelet-config-file/). Kubernetes v1.10 adds alpha support for the ability to [configure whether containers in a pod should share a single process namespace](https://github.com/kubernetes/features/issues/495), and the CRI has been upgraded to v1alpha2, which adds [support for Windows Container Configuration](https://github.com/kubernetes/features/issues/547). Kubernetes v1.10 also ships with the beta release of the [CRI validation test suite](https://github.com/kubernetes/features/issues/292). 
 
 The Resource Management Working Group graduated three features to beta in the 1.10 release.  First, [CPU Manager](https://kubernetes.io/docs/tasks/administer-cluster/cpu-management-policies/), which allows users to request exclusive CPU cores.  This helps performance in a variety of use-cases, including network latency sensitive applications, as well as applications that benefit from CPU cache residency.  Next, [Huge Pages](https://kubernetes.io/docs/tasks/manage-hugepages/scheduling-hugepages/), which allows pods to consume either 2Mi or 1Gi Huge Pages.  This benefits applications that consume large amounts of memory.  Use of Huge Pages is a common tuning recommendation for databases and JVMs.  Finally, the [Device Plugin](https://kubernetes.io/docs/concepts/cluster-administration/device-plugins/) feature, which provides a framework for vendors to advertise their resources to the Kubelet without changing Kubernetes core code.  Targeted devices include GPUs, High-performance NICs, FPGAs, InfiniBand, and other similar computing resources that may require vendor specific initialization and setup.
 
@@ -192,10 +192,6 @@ Kubernetes 1.10 includes alpha [Azure support for cluster-autoscaler](https://gi
 ### CLI
 
 This release includes a change to [kubectl get and describe to work better with extensions](https://github.com/kubernetes/features/issues/515), as the server, rather than the client, returns this information for a smoother user experience.
-
-### Cluster Lifecycle
-
-This release includes beta [support for out-of-process and out-of-tree cloud providers](https://github.com/kubernetes/features/issues/88).
 
 ### Network
 
@@ -1587,12 +1583,12 @@ filename | sha256 hash
 * Eviction thresholds set to 0% or 100% are now ignored. ([#59681](https://github.com/kubernetes/kubernetes/pull/59681), [@mtaufen](https://github.com/mtaufen))
 * [advanced audit] support subresources wildcard matching. ([#55306](https://github.com/kubernetes/kubernetes/pull/55306), [@hzxuzhonghu](https://github.com/hzxuzhonghu))
 * CronJobs can be accessed through cj alias ([#59499](https://github.com/kubernetes/kubernetes/pull/59499), [@soltysh](https://github.com/soltysh))
-* N/A ([#58275](https://github.com/kubernetes/kubernetes/pull/58275), [@carmark](https://github.com/carmark))
+* fix typo in resource_allocation.go ([#58275](https://github.com/kubernetes/kubernetes/pull/58275), [@carmark](https://github.com/carmark))
 * fix the error prone account creation method of blob disk ([#59739](https://github.com/kubernetes/kubernetes/pull/59739), [@andyzhangx](https://github.com/andyzhangx))
 * Add automatic etcd 3.2->3.1 and 3.1->3.0 minor version rollback support to gcr.io/google_container/etcd images. For HA clusters, all members must be stopped before performing a rollback. ([#59298](https://github.com/kubernetes/kubernetes/pull/59298), [@jpbetz](https://github.com/jpbetz))
 * `kubeadm init` can now omit the tainting of the master node if configured to do so in `kubeadm.yaml`. ([#55479](https://github.com/kubernetes/kubernetes/pull/55479), [@ijc](https://github.com/ijc))
 * Updated kubernetes-worker to request new security tokens when the aws cloud provider changes the registered node name. ([#59730](https://github.com/kubernetes/kubernetes/pull/59730), [@hyperbolic2346](https://github.com/hyperbolic2346))
-* 1. Controller-manager --service-sync-period flag is removed (was never used in the code). ([#59359](https://github.com/kubernetes/kubernetes/pull/59359), [@khenidak](https://github.com/khenidak))
+* Controller-manager --service-sync-period flag is removed (was never used in the code). ([#59359](https://github.com/kubernetes/kubernetes/pull/59359), [@khenidak](https://github.com/khenidak))
 * Pod priority can be specified ins PodSpec even when the feature is disabled, but it will be effective only when the feature is enabled. ([#59291](https://github.com/kubernetes/kubernetes/pull/59291), [@bsalamat](https://github.com/bsalamat))
 * kubeadm: Enable auditing behind a feature gate. ([#59067](https://github.com/kubernetes/kubernetes/pull/59067), [@chuckha](https://github.com/chuckha))
 * Map correct vmset name for Azure internal load balancers ([#59747](https://github.com/kubernetes/kubernetes/pull/59747), [@feiskyer](https://github.com/feiskyer))
