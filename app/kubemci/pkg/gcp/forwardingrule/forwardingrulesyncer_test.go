@@ -642,8 +642,9 @@ func TestRemoveClustersFromStatus(t *testing.T) {
 			t.Errorf("%s", err)
 		}
 		// Update status to remove one cluster.
-		if err := frs.RemoveClustersFromStatus([]string{"cluster1"}); err != nil {
-			t.Errorf("unexpected error in updating status to remove clusters: %s", err)
+		err := frs.RemoveClustersFromStatus([]string{"cluster1"})
+		if c.shouldErr != (err != nil) {
+			t.Errorf("unexpected error in updating status to remove clusters, expected err != nil: %v, actual err != nil: %v, err: %s", c.shouldErr, err != nil, err)
 		}
 		// Verify that status description has only one cluster now.
 		if err := verifyClusters(lbName, frs, c.shouldErr, []string{"cluster2"}); err != nil {

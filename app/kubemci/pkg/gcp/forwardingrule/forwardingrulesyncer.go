@@ -206,14 +206,29 @@ func (s *ForwardingRuleSyncer) ListLoadBalancerStatuses() ([]status.LoadBalancer
 
 // See interface for comment.
 func (s *ForwardingRuleSyncer) RemoveClustersFromStatus(clusters []string) error {
-	// Update HTTPS status first and then HTTP.
-	// This ensures that get-status returns the old status until both HTTPS and HTTP forwarding rules are updated.
-	// This is because get-status reads from HTTP if it exists.
-	// Also note that it continues silently if either HTTP or HTTPS forwarding rules do not exist.
-	if err := s.removeClustersFromStatus("https", s.namer.HttpsForwardingRuleName(), clusters); err != nil {
-		return fmt.Errorf("unexpected error in updating the https forwarding rule status: %s", err)
+	httpsErr := s.removeClustersFromStatus("https", s.namer.HttpsForwardingRuleName(), clusters)
+	httpErr := s.removeClustersFromStatus("http", s.namer.HttpForwardingRuleName(), clusters)
+	// If both are not found, then return that.
+	if utils.IsHTTPErrorCode(httpErr, http.StatusNotFound) && utils.IsHTTPErrorCode(httpsErr, http.StatusNotFound) {
+		return httpErr
 	}
-	return s.removeClustersFromStatus("http", s.namer.HttpForwardingRuleName(), clusters)
+	if canIgnoreStatusUpdateError(httpErr) && canIgnoreStatusUpdateError(httpsErr) {
+		return nil
+	}
+	if canIgnoreStatusUpdateError(httpsErr) {
+		return httpErr
+	}
+	if canIgnoreStatusUpdateError(httpErr) {
+		return httpsErr
+	}
+	return fmt.Errorf("errors in updating both http and https forwarding rules, http rule error: %s, https rule error: %s", httpErr, httpsErr)
+}
+
+// canIgnoreStatusUpdateError returns true if and only if either of the following is true:
+// * err is nil
+// * err has http.StatusNotFound code
+func canIgnoreStatusUpdateError(err error) bool {
+	return (err == nil || utils.IsHTTPErrorCode(err, http.StatusNotFound))
 }
 
 // removeClustersFromStatus removes the given list of clusters from the existing forwarding rule with the given name.
@@ -221,10 +236,9 @@ func (s *ForwardingRuleSyncer) removeClustersFromStatus(httpProtocol, name strin
 	fmt.Println("Removing clusters", clusters, "from", httpProtocol, "forwarding rule")
 	existingFR, err := s.frp.GetGlobalForwardingRule(name)
 	if err != nil {
-		// Ignore NotFound error.
 		if utils.IsHTTPErrorCode(err, http.StatusNotFound) {
-			fmt.Println(httpProtocol, "forwarding rule not found. Nothing to update. Continuing")
-			return nil
+			// Return this error as is.
+			return err
 		}
 		err := fmt.Errorf("error in fetching existing forwarding rule %s: %s", name, err)
 		fmt.Println(err)
@@ -307,28 +321,14 @@ func (s *ForwardingRuleSyncer) desiredForwardingRule(lbName, ipAddress, targetPr
 	}, nil
 }
 
-func (s *ForwardingRuleSyncer) desiredForwardingRuleWithoutClusters(existingFR *compute.ForwardingRule, removeClusters []string) (*compute.ForwardingRule, error) {
-	statusStr := existingFR.Description
-	status, err := status.FromString(statusStr)
+func (s *ForwardingRuleSyncer) desiredForwardingRuleWithoutClusters(existingFR *compute.ForwardingRule, clustersToRemove []string) (*compute.ForwardingRule, error) {
+	existingStatusStr := existingFR.Description
+	newStatusStr, err := status.RemoveClusters(existingStatusStr, clustersToRemove)
 	if err != nil {
-		return nil, fmt.Errorf("error in parsing string %s: %s", statusStr, err)
+		return nil, fmt.Errorf("unexpected error in updating status to remove clusters on forwarding rule %s: %s", existingFR.Name, err)
 	}
-	removeMap := map[string]bool{}
-	for _, v := range removeClusters {
-		removeMap[v] = true
-	}
-	var newClusters []string
-	for _, v := range status.Clusters {
-		if !removeMap[v] {
-			newClusters = append(newClusters, v)
-		}
-	}
-	status.Clusters = newClusters
-	newDesc, err := status.ToString()
-	if err != nil {
-		return nil, fmt.Errorf("unexpected error in generating the description for forwarding rule: %s", err)
-	}
+	// Shallow copy is fine since we are only changing description.
 	desiredFR := existingFR
-	desiredFR.Description = newDesc
+	desiredFR.Description = newStatusStr
 	return desiredFR, nil
 }

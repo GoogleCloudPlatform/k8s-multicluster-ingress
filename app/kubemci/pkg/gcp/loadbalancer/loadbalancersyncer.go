@@ -262,7 +262,7 @@ func (l *LoadBalancerSyncer) DeleteLoadBalancer(ing *v1beta1.Ingress) error {
 	return err
 }
 
-// DeleteLoadBalancer deletes the GCP resources associated with the L7 GCP load balancer for the given ingress.
+// RemoveFromClusters removes the given ingress from the clusters corresponding to the given clients.
 // TODO(nikhiljindal): Do not require the ingress yaml from users. Just the name should be enough. We can fetch ingress YAML from one of the clusters.
 func (l *LoadBalancerSyncer) RemoveFromClusters(ing *v1beta1.Ingress, removeClients map[string]kubeclient.Interface, forceUpdate bool) error {
 	client, cErr := getAnyClient(l.clients)
@@ -301,19 +301,37 @@ func (l *LoadBalancerSyncer) RemoveFromClusters(ing *v1beta1.Ingress, removeClie
 	}
 
 	// Convert the client map to an array of cluster names.
-	removeClusters := make([]string, len(removeClients))
+	clustersToRemove := make([]string, len(removeClients))
 	removeIndex := 0
 	for k := range removeClients {
-		removeClusters[removeIndex] = k
+		clustersToRemove[removeIndex] = k
 		removeIndex++
 	}
-	// Update the forwarding rule status at the end.
-	if frErr := l.frs.RemoveClustersFromStatus(removeClusters); frErr != nil {
+	// Update the status at the end.
+	if statusErr := l.removeClustersFromStatus(l.lbName, clustersToRemove); statusErr != nil {
 		// Aggregate errors and return all at the end.
-		err = multierror.Append(err, frErr)
+		err = multierror.Append(err, statusErr)
 	}
-
 	return err
+}
+
+// removeClustersFromStatus updates the status of the given load balancer to remove the given list of clusters from it.
+// Since the status could be stored on either the url map or the forwarding rule, it tries updating both and returns an error if that fails.
+// Returns an http.StatusNotFound error if either the url map or the forwarding rule does not exist.
+func (l *LoadBalancerSyncer) removeClustersFromStatus(lbName string, clustersToRemove []string) error {
+	// Try updating status in both url map and forwarding rule.
+	frErr := l.frs.RemoveClustersFromStatus(clustersToRemove)
+	umErr := l.ums.RemoveClustersFromStatus(clustersToRemove)
+	if ingressutils.IsHTTPErrorCode(frErr, http.StatusNotFound) || ingressutils.IsHTTPErrorCode(umErr, http.StatusNotFound) {
+		return fmt.Errorf("load balancer %s does not exist", lbName)
+	}
+	if frErr == nil {
+		return umErr
+	}
+	if umErr == nil {
+		return frErr
+	}
+	return fmt.Errorf("errors in updating both forwarding rule and url map, forwarding rule error: %s, url map error: %s", frErr, umErr)
 }
 
 // PrintStatus prints the current status of the load balancer.
