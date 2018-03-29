@@ -336,27 +336,36 @@ func (l *LoadBalancerSyncer) removeClustersFromStatus(lbName string, clustersToR
 
 // PrintStatus prints the current status of the load balancer.
 func (l *LoadBalancerSyncer) PrintStatus() (string, error) {
+	sd, err := l.getLoadBalancerStatus()
+	if err != nil {
+		return "", err
+	}
+	return formatLoadBalancerStatus(l.lbName, *sd), nil
+}
+
+// getLoadBalancerStatus returns the current status of the load balancer.
+func (l *LoadBalancerSyncer) getLoadBalancerStatus() (*status.LoadBalancerStatus, error) {
 	// First try to fetch the status from url map.
 	// If that fails, then we fetch it from forwarding rule.
 	// This is because we first used to store the status on forwarding rules and then migrated to url maps.
 	// https://github.com/GoogleCloudPlatform/k8s-multicluster-ingress/issues/145 has more details.
-	sd, umErr := l.ums.GetLoadBalancerStatus(l.lbName)
-	if umErr == nil {
-		return formatLoadBalancerStatus(l.lbName, *sd), nil
+	umSd, umErr := l.ums.GetLoadBalancerStatus(l.lbName)
+	if umSd != nil && umErr == nil {
+		return umSd, nil
 	}
 	if ingressutils.IsHTTPErrorCode(umErr, http.StatusNotFound) {
-		return "", fmt.Errorf("Load balancer %s does not exist", l.lbName)
+		return nil, fmt.Errorf("Load balancer %s does not exist", l.lbName)
 	}
 	// Try forwarding rule.
-	sd, frErr := l.frs.GetLoadBalancerStatus(l.lbName)
-	if frErr == nil {
-		return formatLoadBalancerStatus(l.lbName, *sd), nil
+	frSd, frErr := l.frs.GetLoadBalancerStatus(l.lbName)
+	if frSd != nil && frErr == nil {
+		return frSd, nil
 	}
 	if ingressutils.IsHTTPErrorCode(frErr, http.StatusNotFound) {
-		return "", fmt.Errorf("Load balancer %s does not exist", l.lbName)
+		return nil, fmt.Errorf("Load balancer %s does not exist", l.lbName)
 	}
 	// Failed to get status from both url map and forwarding rule.
-	return "", fmt.Errorf("failed to get status from both url map and forwarding rule. Error in extracting status from url map: %s. Error in extracting status from forwarding rule: %s", umErr, frErr)
+	return nil, fmt.Errorf("failed to get status from both url map and forwarding rule. Error in extracting status from url map: %s. Error in extracting status from forwarding rule: %s", umErr, frErr)
 }
 
 // formatLoadBalancerStatus formats the given status to be printed for get-status output.
