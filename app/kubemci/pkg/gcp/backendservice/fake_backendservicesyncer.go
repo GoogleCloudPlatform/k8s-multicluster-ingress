@@ -72,17 +72,20 @@ func (h *FakeBackendServiceSyncer) RemoveFromClusters(ports []ingressbe.ServiceP
 	for _, v := range removeIGLinks {
 		removeLinks[v] = true
 	}
-	for _, v := range h.EnsuredBackendServices {
+	for i, v := range h.EnsuredBackendServices {
 		if _, has := affectedPorts[v.Port.NodePort]; !has {
 			continue
 		}
 		newIGLinks := []string{}
 		for _, ig := range v.IGLinks {
-			if _, has := removeLinks[ig]; !has {
+			if !removeLinks[ig] {
 				newIGLinks = append(newIGLinks, ig)
+			} else {
+				// Mark the link as removed.
+				removeLinks[ig] = false
 			}
 		}
-		v.IGLinks = newIGLinks
+		h.EnsuredBackendServices[i].IGLinks = newIGLinks
 	}
 	return nil
 }

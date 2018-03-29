@@ -18,6 +18,7 @@ import (
 	"fmt"
 
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/status"
+	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/goutils"
 )
 
 type FakeForwardingRule struct {
@@ -88,17 +89,14 @@ func (f *FakeForwardingRuleSyncer) ListLoadBalancerStatuses() ([]status.LoadBala
 }
 
 func (f *FakeForwardingRuleSyncer) RemoveClustersFromStatus(clusters []string) error {
-	removeClusters := make(map[string]bool, len(clusters))
-	for _, c := range clusters {
-		removeClusters[c] = true
-	}
+	clustersToRemove := goutils.MapFromSlice(clusters)
 	for i, fr := range f.EnsuredForwardingRules {
 		if fr.Status == nil {
 			continue
 		}
 		newClusters := []string{}
 		for _, c := range fr.Status.Clusters {
-			if _, has := removeClusters[c]; !has {
+			if _, has := clustersToRemove[c]; !has {
 				newClusters = append(newClusters, c)
 			}
 		}

@@ -21,6 +21,7 @@ import (
 
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/backendservice"
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/status"
+	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/goutils"
 )
 
 const (
@@ -56,7 +57,8 @@ func (f *FakeURLMapSyncer) EnsureURLMap(lbName, ipAddress string, clusters []str
 		Clusters:  clusters,
 		Ingress:   ing,
 		BeMap:     beMap,
-		HasStatus: false,
+		// URL map has status by default.
+		HasStatus: true,
 	})
 	return FakeUrlSelfLink, nil
 }
@@ -69,6 +71,9 @@ func (f *FakeURLMapSyncer) DeleteURLMap() error {
 func (f *FakeURLMapSyncer) GetLoadBalancerStatus(lbName string) (*status.LoadBalancerStatus, error) {
 	for _, fr := range f.EnsuredURLMaps {
 		if fr.LBName == lbName {
+			if !fr.HasStatus {
+				return nil, nil
+			}
 			return &status.LoadBalancerStatus{
 				LoadBalancerName: lbName,
 				Clusters:         fr.Clusters,
@@ -82,6 +87,9 @@ func (f *FakeURLMapSyncer) GetLoadBalancerStatus(lbName string) (*status.LoadBal
 func (f *FakeURLMapSyncer) ListLoadBalancerStatuses() ([]status.LoadBalancerStatus, error) {
 	var ret []status.LoadBalancerStatus
 	for _, fr := range f.EnsuredURLMaps {
+		if !fr.HasStatus {
+			continue
+		}
 		status := status.LoadBalancerStatus{
 			LoadBalancerName: fr.LBName,
 			Clusters:         fr.Clusters,
@@ -93,7 +101,19 @@ func (f *FakeURLMapSyncer) ListLoadBalancerStatuses() ([]status.LoadBalancerStat
 }
 
 func (f *FakeURLMapSyncer) RemoveClustersFromStatus(clusters []string) error {
-	// TODO(nikhiljindal): Update this once https://github.com/GoogleCloudPlatform/k8s-multicluster-ingress/pull/149 is merged.
+	clustersToRemove := goutils.MapFromSlice(clusters)
+	for i, fr := range f.EnsuredURLMaps {
+		if !fr.HasStatus {
+			continue
+		}
+		newClusters := []string{}
+		for _, c := range fr.Clusters {
+			if _, has := clustersToRemove[c]; !has {
+				newClusters = append(newClusters, c)
+			}
+		}
+		f.EnsuredURLMaps[i].Clusters = newClusters
+	}
 	return nil
 }
 
