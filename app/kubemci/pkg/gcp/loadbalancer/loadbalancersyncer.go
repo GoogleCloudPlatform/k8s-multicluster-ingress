@@ -282,6 +282,19 @@ func (l *LoadBalancerSyncer) DeleteLoadBalancer(ing *v1beta1.Ingress, forceDelet
 // RemoveFromClusters removes the given ingress from the clusters corresponding to the given clients.
 // TODO(nikhiljindal): Do not require the ingress yaml from users. Just the name should be enough. We can fetch ingress YAML from one of the clusters.
 func (l *LoadBalancerSyncer) RemoveFromClusters(ing *v1beta1.Ingress, removeClients map[string]kubeclient.Interface, forceUpdate bool) error {
+	// First verify that removing it from the given clusters will not remove it from all clusters.
+	// If yes, then prompt users to use delete instead or use --force.
+	lbStatus, statusErr := l.getLoadBalancerStatus()
+	if statusErr != nil {
+		return fmt.Errorf("error in fetching status of existing load balancer: %s", statusErr)
+	}
+	if !hasSomeRemainingClusters(lbStatus.Clusters, removeClients) {
+		if !forceUpdate {
+			return fmt.Errorf("This will remove the ingress from all clusters. You should use kubemci delete to delete the ingress completely. If you really want to just remove it from existing clusters without deleting it completely, use --force flag with remove-clusters command")
+		}
+		fmt.Println("This will remove the ingress from all clusters. Continuing with force update")
+	}
+
 	client, cErr := getAnyClient(l.clients)
 	if cErr != nil {
 		// No point in continuing without a client.
@@ -290,31 +303,35 @@ func (l *LoadBalancerSyncer) RemoveFromClusters(ing *v1beta1.Ingress, removeClie
 	var err error
 	ports := l.ingToNodePorts(ing, client)
 	removeIGLinks, igErr := l.getIGs(ing, removeClients)
+	if igErr == nil && len(removeIGLinks) == 0 {
+		igErr = fmt.Errorf("No instance group found")
+	}
+	// Can not really update resources without igs. So return on error.
+	// Allow users to continue using force since they can run into this if they are trying to remove their already deleted clusters.
 	if igErr != nil {
-		return multierror.Append(err, igErr)
-	}
-	// Can not really update any resource without igs. No point continuing.
-	// Note: User can run into this if they are trying to remove their already deleted clusters.
-	// TODO: Allow them to proceed to clean up whatever they can by using --force.
-	if len(removeIGLinks) == 0 {
-		err := multierror.Append(err, fmt.Errorf("No instance group found. Can not continue"))
-		return err
+		if !forceUpdate {
+			return igErr
+		}
+		fmt.Printf("Error in fetching instance groups: %s. Continuing with force update\n", igErr)
+		err = multierror.Append(err, igErr)
 	}
 
-	if fwErr := l.fws.RemoveFromClusters(l.lbName, removeIGLinks); fwErr != nil {
-		// Aggregate errors and return all at the end.
-		err = multierror.Append(err, fwErr)
-	}
+	if igErr == nil {
+		if fwErr := l.fws.RemoveFromClusters(l.lbName, removeIGLinks); fwErr != nil {
+			// Aggregate errors and return all at the end.
+			err = multierror.Append(err, fwErr)
+		}
 
-	// Convert the map of instance groups to a flat array.
-	igsForBE := []string{}
-	for k := range removeIGLinks {
-		igsForBE = append(igsForBE, removeIGLinks[k]...)
-	}
+		// Convert the map of instance groups to a flat array.
+		igsForBE := []string{}
+		for k := range removeIGLinks {
+			igsForBE = append(igsForBE, removeIGLinks[k]...)
+		}
 
-	if beErr := l.bss.RemoveFromClusters(ports, igsForBE); beErr != nil {
-		// Aggregate errors and return all at the end.
-		err = multierror.Append(err, beErr)
+		if beErr := l.bss.RemoveFromClusters(ports, igsForBE); beErr != nil {
+			// Aggregate errors and return all at the end.
+			err = multierror.Append(err, beErr)
+		}
 	}
 
 	// Convert the client map to an array of cluster names.
@@ -330,6 +347,16 @@ func (l *LoadBalancerSyncer) RemoveFromClusters(ing *v1beta1.Ingress, removeClie
 		err = multierror.Append(err, statusErr)
 	}
 	return err
+}
+
+// hasSomeRemainingClusters returns true if not all clusters are in the clustersToRemove list.
+func hasSomeRemainingClusters(clusters []string, clustersToRemove map[string]kubeclient.Interface) bool {
+	for _, v := range clusters {
+		if _, has := clustersToRemove[v]; !has {
+			return true
+		}
+	}
+	return false
 }
 
 // removeClustersFromStatus updates the status of the given load balancer to remove the given list of clusters from it.
