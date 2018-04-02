@@ -1,0 +1,20 @@
+apiVersion: apps/v1beta1
+kind: Deployment
+metadata:
+  name: zoneprinter
+  labels:
+    app: zoneprinter
+spec:
+  selector:
+    matchLabels:
+      app: zoneprinter
+  template:
+    metadata:
+      labels:
+        app: zoneprinter
+    spec:
+      containers:
+      - name: frontend
+        image: zoneprinter:latest
+        ports:
+          - containerPort: 80
