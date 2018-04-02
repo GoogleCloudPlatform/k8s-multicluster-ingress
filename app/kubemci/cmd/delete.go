@@ -53,6 +53,8 @@ type DeleteOptions struct {
 	// Required
 	// TODO(nikhiljindal): This should be optional. Figure it out from gcloud settings.
 	GCPProject string
+	// Delete whatever can be deleted in case of errors.
+	ForceDelete bool
 	// Name of the namespace for the ingress when none is provided (mismatch of option with spec causes an error).
 	// Optional.
 	Namespace string
@@ -86,6 +88,7 @@ func addDeleteFlags(cmd *cobra.Command, options *DeleteOptions) error {
 	cmd.Flags().StringSliceVar(&options.KubeContexts, "kubecontexts", options.KubeContexts, "[optional] contexts in the kubeconfig file to delete the ingress from")
 	// TODO(nikhiljindal): Add a short flag "-p" if it seems useful.
 	cmd.Flags().StringVarP(&options.GCPProject, "gcp-project", "", options.GCPProject, "[optional] name of the gcp project. Is fetched using gcloud config get-value project if unset here")
+	cmd.Flags().BoolVarP(&options.ForceDelete, "force", "f", options.ForceDelete, "[optional] delete whatever can be deleted in case of errors. This should only be used in exceptional cases (for example: when the clusters are deleted before the ingress was deleted)")
 	cmd.Flags().StringVarP(&options.Namespace, "namespace", "n", options.Namespace, "[optional] namespace for the ingress only if left unspecified by ingress spec")
 	// TODO Add a verbose flag that turns on glog logging.
 	return nil
@@ -114,34 +117,49 @@ func validateDeleteArgs(options *DeleteOptions, args []string) error {
 
 func runDelete(options *DeleteOptions, args []string) error {
 	options.LBName = args[0]
+	var err error
 
 	// Unmarshal the YAML into ingress struct.
 	var ing v1beta1.Ingress
-	if err := ingress.UnmarshallAndApplyDefaults(options.IngressFilename, options.Namespace, &ing); err != nil {
-		return fmt.Errorf("error in unmarshalling the yaml file %s, err: %s", options.IngressFilename, err)
+	ingErr := ingress.UnmarshallAndApplyDefaults(options.IngressFilename, options.Namespace, &ing)
+	if ingErr != nil {
+		ingErr = fmt.Errorf("error in unmarshalling the yaml file %s, err: %s", options.IngressFilename, ingErr)
+		if !options.ForceDelete {
+			return ingErr
+		}
+		fmt.Printf("%s. Continuing with force delete\n", ingErr)
+		err = multierror.Append(err, ingErr)
 	}
-	cloudInterface, err := cloudinterface.NewGCECloudInterface(options.GCPProject)
-	if err != nil {
-		return fmt.Errorf("error in creating cloud interface: %s", err)
+	cloudInterface, ciErr := cloudinterface.NewGCECloudInterface(options.GCPProject)
+	if ciErr != nil {
+		return fmt.Errorf("error in creating cloud interface: %s", ciErr)
 	}
 
 	// Get clients for all clusters
-	clients, err := kubeutils.GetClients(options.KubeconfigFilename, options.KubeContexts)
-	if err != nil {
-		return err
+	clients, clientsErr := kubeutils.GetClients(options.KubeconfigFilename, options.KubeContexts)
+	if clientsErr != nil {
+		if !options.ForceDelete {
+			return clientsErr
+		}
+		fmt.Printf("%s. Continuing with force delete\n", clientsErr)
+		err = multierror.Append(err, clientsErr)
 	}
 
 	// Delete ingress resource in clusters
-	err = ingress.NewIngressSyncer().DeleteIngress(&ing, clients)
-	if err != nil {
-		return err
+	isErr := ingress.NewIngressSyncer().DeleteIngress(&ing, clients)
+	if isErr != nil {
+		if !options.ForceDelete {
+			return isErr
+		}
+		fmt.Printf("%s. Continuing with force delete\n", isErr)
+		err = multierror.Append(err, isErr)
 	}
 
-	lbs, err := gcplb.NewLoadBalancerSyncer(options.LBName, clients, cloudInterface, options.GCPProject)
-	if err != nil {
-		return err
+	lbs, lbErr := gcplb.NewLoadBalancerSyncer(options.LBName, clients, cloudInterface, options.GCPProject)
+	if lbErr != nil {
+		return lbErr
 	}
-	if delErr := lbs.DeleteLoadBalancer(&ing); delErr != nil {
+	if delErr := lbs.DeleteLoadBalancer(&ing, options.ForceDelete); delErr != nil {
 		err = multierror.Append(err, delErr)
 	}
 	return err

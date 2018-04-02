@@ -228,14 +228,17 @@ func (l *LoadBalancerSyncer) CreateLoadBalancer(ing *v1beta1.Ingress, forceUpdat
 
 // DeleteLoadBalancer deletes the GCP resources associated with the L7 GCP load balancer for the given ingress.
 // TODO(nikhiljindal): Do not require the ingress yaml from users. Just the name should be enough. We can fetch ingress YAML from one of the clusters.
-func (l *LoadBalancerSyncer) DeleteLoadBalancer(ing *v1beta1.Ingress) error {
+func (l *LoadBalancerSyncer) DeleteLoadBalancer(ing *v1beta1.Ingress, forceDelete bool) error {
+	var err error
 	client, cErr := getAnyClient(l.clients)
 	if cErr != nil {
-		// No point in continuing without a client.
-		return cErr
+		if !forceDelete {
+			// No point in continuing without a client.
+			return cErr
+		}
+		fmt.Printf("%s. Continuing with force delete. Will not be able to delete backend services and healthchecks\n", cErr)
+		err = multierror.Append(err, cErr)
 	}
-	ports := l.ingToNodePorts(ing, client)
-	var err error
 	// We delete resources in the reverse order in which they were created.
 	// For ex: we create health checks before creating backend services (so that backend service can point to the health check),
 	// but delete backend service before deleting health check. We cannot delete the health check when backend service is still pointing to it.
@@ -260,13 +263,16 @@ func (l *LoadBalancerSyncer) DeleteLoadBalancer(ing *v1beta1.Ingress) error {
 		// Aggregate errors and return all at the end.
 		err = multierror.Append(err, umErr)
 	}
-	if beErr := l.bss.DeleteBackendServices(ports); beErr != nil {
-		// Aggregate errors and return all at the end.
-		err = multierror.Append(err, beErr)
-	}
-	if hcErr := l.hcs.DeleteHealthChecks(ports); hcErr != nil {
-		// Aggregate errors and return all at the end.
-		err = multierror.Append(err, hcErr)
+	if cErr == nil {
+		ports := l.ingToNodePorts(ing, client)
+		if beErr := l.bss.DeleteBackendServices(ports); beErr != nil {
+			// Aggregate errors and return all at the end.
+			err = multierror.Append(err, beErr)
+		}
+		if hcErr := l.hcs.DeleteHealthChecks(ports); hcErr != nil {
+			// Aggregate errors and return all at the end.
+			err = multierror.Append(err, hcErr)
+		}
 	}
 	return err
 }
