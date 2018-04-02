@@ -68,21 +68,33 @@ func (h *FakeBackendServiceSyncer) RemoveFromClusters(ports []ingressbe.ServiceP
 	for _, v := range ports {
 		affectedPorts[v.NodePort] = true
 	}
-	removeLinks := make(map[string]bool, len(removeIGLinks))
-	for _, v := range removeIGLinks {
-		removeLinks[v] = true
-	}
-	for _, v := range h.EnsuredBackendServices {
+	for i, v := range h.EnsuredBackendServices {
 		if _, has := affectedPorts[v.Port.NodePort]; !has {
 			continue
 		}
+		// We remove the given instance group links from each backend service.
+		// For a given backend service, we remove an instance group link only once.
+		// This is because we use duplicate ig links in our tests.
+		removeLinksEachBe := sliceToMap(removeIGLinks)
 		newIGLinks := []string{}
 		for _, ig := range v.IGLinks {
-			if _, has := removeLinks[ig]; !has {
+			if !removeLinksEachBe[ig] {
 				newIGLinks = append(newIGLinks, ig)
+			} else {
+				// Mark the link as removed.
+				// This is to handle duplicate ig links in our tests.
+				removeLinksEachBe[ig] = false
 			}
 		}
-		v.IGLinks = newIGLinks
+		h.EnsuredBackendServices[i].IGLinks = newIGLinks
 	}
 	return nil
+}
+
+func sliceToMap(slice []string) map[string]bool {
+	desiredMap := make(map[string]bool, len(slice))
+	for _, v := range slice {
+		desiredMap[v] = true
+	}
+	return desiredMap
 }

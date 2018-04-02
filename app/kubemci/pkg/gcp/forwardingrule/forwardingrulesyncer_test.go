@@ -569,8 +569,8 @@ func addStatus(frs *ForwardingRuleSyncer, lbName, name, ipAddr string, clusters 
 	return nil
 }
 
-// Tests that the Load Balancer status contains the expected data (mci metadata).
-func TestRemoveClustersFromStatus(t *testing.T) {
+// Tests RemoveClustersFromStatus assuming that the forwarding rule has the status.
+func TestRemoveClustersFromStatusWithStatus(t *testing.T) {
 	lbName := "lb-name"
 	ipAddr := "1.2.3.4"
 	tpLink := "fakeLink"
@@ -618,8 +618,6 @@ func TestRemoveClustersFromStatus(t *testing.T) {
 			}
 			name := typedFRS.namer.HttpForwardingRuleName()
 			// Add status to the forwarding rule to simulate old forwarding rule which has status.
-			// TODO: This should not be required once lbc.RemoveFromClusters can update url map status:
-			// https://github.com/GoogleCloudPlatform/k8s-multicluster-ingress/pull/151
 			if err := addStatus(typedFRS, lbName, name, ipAddr, clusters); err != nil {
 				t.Errorf("%s", err)
 			}
@@ -658,6 +656,78 @@ func TestRemoveClustersFromStatus(t *testing.T) {
 					t.Errorf("unexpeted error in deleting forwarding rules: %s", err)
 				}
 			}
+		}
+	}
+}
+
+// Tests RemoveClustersFromStatus when forwarding rule may or may not have the status.
+func TestRemoveClustersFromStatus(t *testing.T) {
+	lbName := "lb-name"
+	ipAddr := "1.2.3.4"
+	tpLink := "fakeLink"
+	clusters := []string{"cluster1", "cluster2"}
+	// Should create the forwarding rule as expected.
+	frp := ingresslb.NewFakeLoadBalancers("" /*name*/, nil /*namer*/)
+	namer := utilsnamer.NewNamer("mci1", lbName)
+	frs := NewForwardingRuleSyncer(namer, frp)
+	testCases := []struct {
+		ruleExists bool
+		hasStatus  bool
+		// is RemoveClustersFromStatus expected to return an error.
+		shouldErr bool
+	}{
+		{
+			ruleExists: false,
+			hasStatus:  false,
+			// Should return a NotFound error.
+			shouldErr: true,
+		},
+		{
+			ruleExists: true,
+			hasStatus:  false,
+			shouldErr:  false,
+		},
+		{
+			ruleExists: true,
+			hasStatus:  true,
+			shouldErr:  false,
+		},
+	}
+	for i, c := range testCases {
+		glog.Infof("===============testing case: %d=================", i)
+		typedFRS := frs.(*ForwardingRuleSyncer)
+
+		if c.ruleExists {
+			// Ensure http forwarding rule.
+			if err := frs.EnsureHttpForwardingRule(lbName, ipAddr, tpLink, false /*force*/); err != nil {
+				t.Errorf("expected no error in ensuring http forwarding rule, actual: %v", err)
+			}
+		}
+		if c.hasStatus {
+			name := typedFRS.namer.HttpForwardingRuleName()
+			// Add status to the forwarding rule to simulate old forwarding rule which has status.
+			if err := addStatus(typedFRS, lbName, name, ipAddr, clusters); err != nil {
+				t.Errorf("%s", err)
+			}
+			if err := verifyClusters(lbName, frs, c.shouldErr, clusters); err != nil {
+				t.Errorf("%s", err)
+			}
+		}
+		// Update status to remove one cluster.
+		err := frs.RemoveClustersFromStatus([]string{"cluster1"})
+		if c.shouldErr != (err != nil) {
+			t.Errorf("unexpected error in updating status to remove clusters, expected err != nil: %v, actual err != nil: %v, err: %s", c.shouldErr, err != nil, err)
+		}
+		if c.hasStatus {
+			// Verify that status description has only one cluster now.
+			if err := verifyClusters(lbName, frs, c.shouldErr, []string{"cluster2"}); err != nil {
+				t.Errorf("%s", err)
+			}
+		}
+
+		// Cleanup
+		if err := frs.DeleteForwardingRules(); err != nil {
+			t.Errorf("unexpeted error in deleting forwarding rules: %s", err)
 		}
 	}
 }
