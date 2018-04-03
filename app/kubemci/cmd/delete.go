@@ -18,7 +18,6 @@ import (
 	"fmt"
 	"io"
 
-	multierror "github.com/hashicorp/go-multierror"
 	"github.com/spf13/cobra"
 	"k8s.io/api/extensions/v1beta1"
 	// gcp is needed for GKE cluster auth to work.
@@ -131,18 +130,23 @@ func runDelete(options *DeleteOptions, args []string) error {
 		return err
 	}
 
-	// Delete ingress resource in clusters
-	err = ingress.NewIngressSyncer().DeleteIngress(&ing, clients)
-	if err != nil {
-		return err
-	}
-
 	lbs, err := gcplb.NewLoadBalancerSyncer(options.LBName, clients, cloudInterface, options.GCPProject)
 	if err != nil {
 		return err
 	}
 	if delErr := lbs.DeleteLoadBalancer(&ing); delErr != nil {
-		err = multierror.Append(err, delErr)
+		return delErr
 	}
+
+	// Delete ingress resource in clusters
+	// Note: Delete ingress from clusters after deleting the GCP resources.
+	// This is to ensure that the backend service is deleted when ingress-gce controller
+	// observes ingress deletion and hence tries to delete instance groups.
+	// https://github.com/kubernetes/ingress-gce/issues/186 has more details.
+	err = ingress.NewIngressSyncer().DeleteIngress(&ing, clients)
+	if err != nil {
+		return err
+	}
+
 	return err
 }
