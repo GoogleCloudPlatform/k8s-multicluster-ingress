@@ -20,7 +20,7 @@ import (
 	"net/http"
 
 	"golang.org/x/oauth2/google"
-	"google.golang.org/api/compute/v1"
+	compute "google.golang.org/api/compute/v1"
 
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/utils"
 )
@@ -45,13 +45,13 @@ type InstanceGetter struct {
 // Ensure this implements InstanceGetterInterface
 var _ InstanceGetterInterface = &InstanceGetter{}
 
-func (g *InstanceGetter) GetInstance(igUrl string) (*compute.Instance, error) {
+func (g *InstanceGetter) GetInstance(igURL string) (*compute.Instance, error) {
 	service, err := compute.New(g.client)
 	if err != nil {
 		return nil, fmt.Errorf("error in instantiating GCP client: %s", err)
 	}
 	// First get an instance from this instance group.
-	igZone, igName, err := utils.GetZoneAndNameFromIGUrl(igUrl)
+	igZone, igName, err := utils.GetZoneAndNameFromIGURL(igURL)
 	if err != nil {
 		return nil, err
 	}
@@ -64,7 +64,7 @@ func (g *InstanceGetter) GetInstance(igUrl string) (*compute.Instance, error) {
 		return nil, fmt.Errorf("no instance found in instance group %s/%s", igZone, igName)
 	}
 	// Fetch the instance to get its network tags.
-	iZone, iName, err := utils.GetZoneAndNameFromInstanceUrl(res.Items[0].Instance)
+	iZone, iName, err := utils.GetZoneAndNameFromInstanceURL(res.Items[0].Instance)
 	if err != nil {
 		return nil, fmt.Errorf("error in parsing an instance Url %s: %s", res.Items[0].Instance, err)
 	}
