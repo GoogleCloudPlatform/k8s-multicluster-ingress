@@ -27,6 +27,7 @@ import (
 	"k8s.io/api/extensions/v1beta1"
 )
 
+// Validate performs pre-flight checks on the clusters and services.
 func Validate(clients map[string]kubeclient.Interface, ing *v1beta1.Ingress) error {
 	return servicesNodePortsSame(clients, ing)
 }
@@ -58,6 +59,7 @@ func servicesNodePortsSame(clients map[string]kubeclient.Interface, ing *v1beta1
 		}
 		glog.V(1).Infof("Default backend's nodeports passed validation.")
 	} else {
+		glog.V(1).Infof("Default backend is missing from Ingress Spec:\n%+v", ing.Spec)
 		multiErr = multierror.Append(multiErr, fmt.Errorf("unexpected: ing.spec.backend is nil. Multicluster ingress needs a user-specified default backend"))
 	}
 	return multiErr
@@ -74,7 +76,7 @@ func nodePortSameInAllClusters(backend v1beta1.IngressBackend, namespace string,
 
 		servicePort, err := kubeutils.GetServiceNodePort(backend, namespace, client)
 		if err != nil {
-			return fmt.Errorf("could not get service NodePort in cluster %s: %s", clientName, err)
+			return fmt.Errorf("could not get service NodePort in cluster '%s': %s", clientName, err)
 		}
 		glog.V(2).Infof("cluster %s: Service's servicePort: %+v", clientName, servicePort)
 		clusterNodePort := servicePort.NodePort
@@ -92,6 +94,7 @@ func nodePortSameInAllClusters(backend v1beta1.IngressBackend, namespace string,
 	return nil
 }
 
+// ServerVersionsNewEnough returns an error if the cluster Kubernetes server versions are not supported.
 func ServerVersionsNewEnough(clients map[string]kubeclient.Interface) error {
 	for key := range clients {
 		glog.Infof("Checking client %s", key)
@@ -109,7 +112,7 @@ func ServerVersionsNewEnough(clients map[string]kubeclient.Interface) error {
 			return err
 		}
 		if newEnough := serverVersionNewEnough(major, minor, patch); !newEnough {
-			return fmt.Errorf("Cluster %s (ver %d.%d.%d) is not running a supported kubernetes version. Need >= 1.8.1 and not 1.10.0.\n",
+			return fmt.Errorf("cluster %s (ver %d.%d.%d) is not running a supported kubernetes version. Need >= 1.8.1 and not 1.10.0",
 				key, major, minor, patch)
 		}
 

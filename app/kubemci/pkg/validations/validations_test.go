@@ -17,12 +17,73 @@ package validations
 import (
 	"testing"
 
+	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/ingress"
 	"github.com/golang/glog"
+
+	"k8s.io/api/core/v1"
+	"k8s.io/api/extensions/v1beta1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/version"
 	fakediscovery "k8s.io/client-go/discovery/fake"
 	kubeclient "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/fake"
+	coretesting "k8s.io/client-go/testing"
 )
+
+func addServiceReactor(client *fake.Clientset, nodePort int64) {
+	client.AddReactor("get", "services", func(action coretesting.Action) (handled bool, ret runtime.Object, err error) {
+		glog.V(2).Infof("fake.Client.Get.Services.")
+		ret = &v1.Service{
+			Spec: v1.ServiceSpec{
+				Ports: []v1.ServicePort{
+					{
+						Port:     80,
+						NodePort: int32(nodePort),
+					},
+				},
+			},
+		}
+		return true, ret, nil
+	})
+}
+
+func TestServicesNodePortsSameFails(t *testing.T) {
+	ing := v1beta1.Ingress{}
+	if err := ingress.UnmarshallAndApplyDefaults("../../../../testdata/ingress.yaml", "" /*namespace*/, &ing); err != nil {
+		t.Fatalf("%s", err)
+	}
+
+	client1 := &fake.Clientset{}
+	client2 := &fake.Clientset{}
+	addServiceReactor(client1, 31000)
+	addServiceReactor(client2, 31000)
+
+	clients := map[string]kubeclient.Interface{
+		"cluster1": client1,
+		"cluster2": client2,
+	}
+
+	// Test where validation passes.
+	err := servicesNodePortsSame(clients, &ing)
+	glog.Infof("servicesNodePortsSame = %+v", err)
+	if err != nil {
+		t.Errorf("Validation should pass. Got err: %v", err)
+	}
+
+	// Test where validation fails
+	client3 := &fake.Clientset{}
+	addServiceReactor(client3, 31005)
+	clients = map[string]kubeclient.Interface{
+		"cluster2": client2,
+		"cluster3": client3,
+	}
+	err = servicesNodePortsSame(clients, &ing)
+	glog.Infof("servicesNodePortsSame = %+v", err)
+	if err == nil {
+		t.Errorf("Validation should pass. Got err: %v", err)
+	}
+
+}
 
 func TestParseVersion(t *testing.T) {
 	var parseTests = []struct {
@@ -108,7 +169,6 @@ func TestVersionsAcrossClusters(t *testing.T) {
 	}
 
 	for _, tt := range versionTests {
-		glog.Infof("start")
 		clients := make(map[string]kubeclient.Interface)
 		clients["cluster1"] = fake.NewSimpleClientset()
 
@@ -123,7 +183,6 @@ func TestVersionsAcrossClusters(t *testing.T) {
 		fakeclientDiscovery.FakedServerVersion = &verInfo
 
 		err := ServerVersionsNewEnough(clients)
-		glog.Infof("err: %v", err)
 		if tt.isErr != (err != nil) {
 			t.Errorf("error testing version. Expected err? %v Err:%v", tt.isErr, err)
 		}
