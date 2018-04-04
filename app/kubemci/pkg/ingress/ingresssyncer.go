@@ -88,10 +88,10 @@ func (i *IngressSyncer) DeleteIngress(ing *v1beta1.Ingress, clients map[string]k
 		fmt.Printf("Deleting Ingress from cluster: %v...\n", cluster)
 		glog.V(3).Infof("Using namespace %s for ingress %s", ing.Namespace, ing.Name)
 		deleteErr := client.ExtensionsV1beta1().Ingresses(ing.Namespace).Delete(ing.Name, &metav1.DeleteOptions{})
-		glog.V(2).Infof("Error in deleting ingress %s: %s", ing.Name, deleteErr)
 		if deleteErr != nil {
-			if errors.IsNotFound(err) {
-				fmt.Println("Ingress doesnt exist; moving on.")
+			glog.V(2).Infof("Error in deleting ingress %s/%s: %s", ing.Namespace, ing.Name, deleteErr)
+			if errors.IsNotFound(deleteErr) {
+				fmt.Println("Ingress doesn't exist; moving on.")
 				continue
 			} else {
 				err = multierror.Append(err, fmt.Errorf("Error in deleting ingress from cluster %s: %s", cluster, deleteErr))

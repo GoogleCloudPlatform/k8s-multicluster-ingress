@@ -23,7 +23,7 @@ type reactorAction struct {
 func TestEnsureIngress(t *testing.T) {
 
 	var originalIngress, updatedIngress v1beta1.Ingress
-	if err := UnmarshallAndApplyDefaults("../../../../testdata/ingress.yaml", "", &originalIngress); err != nil {
+	if err := UnmarshallAndApplyDefaults("../../../../testdata/ingress.yaml", "" /*namespace*/, &originalIngress); err != nil {
 		t.Fatalf("%s", err)
 	}
 
@@ -134,6 +134,41 @@ func TestEnsureIngress(t *testing.T) {
 					verb: "delete",
 					action: func(action core.Action) (handled bool, ret runtime.Object, err error) {
 						return true, nil, nil
+					},
+				},
+			},
+			expectedActions: []string{
+				"delete",
+				"delete",
+			},
+		},
+		{
+			desc:    "expected deleting missing ingress to succeed",
+			action:  "delete",
+			ingress: originalIngress,
+			reactors: []reactorAction{
+				{
+					verb: "delete",
+					action: func(action core.Action) (handled bool, ret runtime.Object, err error) {
+						return true, &v1beta1.Ingress{}, errors.NewNotFound(schema.ParseGroupResource("extensions.ingress"), originalIngress.Name)
+					},
+				},
+			},
+			expectedActions: []string{
+				"delete",
+				"delete",
+			},
+		},
+		{
+			desc:       "expected error deleting ingress to fail",
+			action:     "delete",
+			ingress:    originalIngress,
+			shouldFail: true,
+			reactors: []reactorAction{
+				{
+					verb: "delete",
+					action: func(action core.Action) (handled bool, ret runtime.Object, err error) {
+						return true, &v1beta1.Ingress{}, errors.NewUnauthorized("unittest- unauthorized error")
 					},
 				},
 			},
