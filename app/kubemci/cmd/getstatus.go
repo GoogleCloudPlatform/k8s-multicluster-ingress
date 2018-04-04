@@ -18,10 +18,12 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/golang/glog"
 	"github.com/spf13/cobra"
 
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/cloudinterface"
 	gcplb "github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/loadbalancer"
+	gcputils "github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/utils"
 )
 
 var (
@@ -66,7 +68,7 @@ func NewCmdGetStatus(out, err io.Writer) *cobra.Command {
 
 func addGetStatusFlags(cmd *cobra.Command, options *GetStatusOptions) error {
 	// TODO(nikhiljindal): Add a short flag "-p" if it seems useful.
-	cmd.Flags().StringVarP(&options.GCPProject, "gcp-project", "", options.GCPProject, "[required] name of the gcp project")
+	cmd.Flags().StringVarP(&options.GCPProject, "gcp-project", "", options.GCPProject, "[optional] name of the gcp project. Is fetched using gcloud config get-value project if unset here")
 	// TODO Add a verbose flag that turns on glog logging.
 	return nil
 }
@@ -75,9 +77,14 @@ func validateGetStatusArgs(options *GetStatusOptions, args []string) error {
 	if len(args) != 1 {
 		return fmt.Errorf("unexpected args: %v. Expected one arg as name of load balancer.", args)
 	}
-	// Verify that the required params are not missing.
+	// Verify that the project is available somewhere.
 	if options.GCPProject == "" {
-		return fmt.Errorf("unexpected missing argument gcp-project.")
+		project, err := gcputils.GetProjectFromGCloud()
+		if project == "" || err != nil {
+			return fmt.Errorf("unexpected cannot determine GCP project. Either set --gcp-project flag, or set a default project with gcloud such that gcloud config get-value project returns that")
+		}
+		glog.V(2).Infof("Got project from gcloud: %s.", project)
+		options.GCPProject = project
 	}
 	return nil
 }
