@@ -15,7 +15,11 @@
 package cmd
 
 import (
+	"strings"
 	"testing"
+
+	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/kubeutils"
+	"github.com/golang/glog"
 )
 
 func TestValidateGetStatusArgs(t *testing.T) {
@@ -33,12 +37,6 @@ func TestValidateGetStatusArgs(t *testing.T) {
 		t.Errorf("Expected error for missing load balancer name")
 	}
 
-	// validateGetStatusArgs should return an error with missing gcp project.
-	options = GetStatusOptions{}
-	if err := validateGetStatusArgs(&options, []string{"lbname"}); err == nil {
-		t.Errorf("Expected error for missing gcp-project")
-	}
-
 	// validateGetStatusArgs should succeed when all arguments are passed as expected.
 	options = GetStatusOptions{
 		GCPProject: "gcp-project",
@@ -46,4 +44,38 @@ func TestValidateGetStatusArgs(t *testing.T) {
 	if err := validateGetStatusArgs(&options, []string{"lbname"}); err != nil {
 		t.Errorf("unexpected error from validateGetStatusArgs: %s", err)
 	}
+}
+
+// This tests the various ways GCP project can be specified, or not.
+func TestValidateGetStatusWithGCPProject(t *testing.T) {
+	mockProject := ""
+	kubeutils.ExecuteCommand = func(args []string) (string, error) {
+		if strings.Join(args, " ") == "gcloud config get-value project" {
+			glog.V(2).Infof("Returning proj: [%s]", mockProject)
+			return mockProject, nil
+		}
+		return "", nil
+	}
+
+	// 1) no project option or gcloud: error
+	options := GetStatusOptions{}
+	if err := validateGetStatusArgs(&options, []string{"lbname"}); err == nil {
+		t.Errorf("expected error. got: nil")
+	}
+
+	// 2) with project option: success
+	options = GetStatusOptions{
+		GCPProject: "gcp-project",
+	}
+	if err := validateGetStatusArgs(&options, []string{"lbname"}); err != nil {
+		t.Errorf("expected no error. got: %s", err)
+	}
+
+	// 3) project from gcloud: success
+	mockProject = "gregs-mock-project"
+	options = GetStatusOptions{}
+	if err := validateGetStatusArgs(&options, []string{"lbname"}); err != nil {
+		t.Errorf("expected no error. got: %s", err)
+	}
+
 }
