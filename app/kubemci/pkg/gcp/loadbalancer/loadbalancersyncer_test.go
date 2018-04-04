@@ -368,58 +368,152 @@ func TestDeleteLoadBalancer(t *testing.T) {
 		t.Fatalf("unexpected error in test setup: %s", err)
 	}
 	// Verify that trying to delete when no load balancer exists does not return any error.
-	if err := lbc.DeleteLoadBalancer(ing); err != nil {
+	if err := lbc.DeleteLoadBalancer(ing, false /* forceDelete */); err != nil {
 		t.Fatalf("unexpected error while deleting load balancer when none exist: %s", err)
 	}
 	if err := lbc.CreateLoadBalancer(ing, true /*forceUpdate*/, true /*validate*/, clusters); err != nil {
 		t.Fatalf("unexpected error %s", err)
 	}
-	fhc := lbc.hcs.(*healthcheck.FakeHealthCheckSyncer)
-	if len(fhc.EnsuredHealthChecks) == 0 {
-		t.Errorf("unexpected health checks not created")
-	}
-	fbs := lbc.bss.(*backendservice.FakeBackendServiceSyncer)
-	if len(fbs.EnsuredBackendServices) == 0 {
-		t.Errorf("unexpected backend services not created")
-	}
-	fum := lbc.ums.(*urlmap.FakeURLMapSyncer)
-	if len(fum.EnsuredURLMaps) == 0 {
-		t.Errorf("unexpected url maps not created")
-	}
-	ftp := lbc.tps.(*targetproxy.FakeTargetProxySyncer)
-	if len(ftp.EnsuredTargetProxies) == 0 {
-		t.Errorf("unexpected target proxies not created")
-	}
-	ffr := lbc.frs.(*forwardingrule.FakeForwardingRuleSyncer)
-	if len(ffr.EnsuredForwardingRules) == 0 {
-		t.Errorf("unexpected forwarding rules not created")
-	}
-	ffw := lbc.fws.(*firewallrule.FakeFirewallRuleSyncer)
-	if len(ffw.EnsuredFirewallRules) == 0 {
-		t.Errorf("unexpected firewall rules not created")
-	}
+	expectLBResources(lbc)
 	// Verify that all expected resources are deleted.
-	if err := lbc.DeleteLoadBalancer(ing); err != nil {
+	if err := lbc.DeleteLoadBalancer(ing, false /* forceDelete */); err != nil {
 		t.Fatalf("unexpected error in deleting load balancer: %s", err)
 	}
+	if err := expectNoLBResources(lbc); err != nil {
+		t.Errorf("%s", err)
+	}
+}
+
+func TestDeleteLoadBalancerWithForce(t *testing.T) {
+	lbName := "lb-name"
+	nodePort := int64(32211)
+	igName := "my-fake-ig"
+	igZone := "my-fake-zone"
+	zoneLink := fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/fake-project/zones/%s", igZone)
+	clusters := []string{"cluster1", "cluster2"}
+	lbc := newLoadBalancerSyncer(lbName)
+	ipAddress := &compute.Address{
+		Name:    "ipAddressName",
+		Address: "1.2.3.4",
+	}
+	// Reserve a global address. User is supposed to do this before calling CreateLoadBalancer.
+	lbc.ipp.ReserveGlobalAddress(ipAddress)
+	ing, err := setupLBCForCreateIng(lbc, nodePort, false /*randNodePort*/, igName, igZone, zoneLink, ipAddress)
+	if err != nil {
+		t.Fatalf("unexpected error in test setup: %s", err)
+	}
+	if err := lbc.CreateLoadBalancer(ing, false /*forceUpdate*/, true /*validate*/, clusters); err != nil {
+		t.Fatalf("unexpected error %s", err)
+	}
+	if err := expectLBResources(lbc); err != nil {
+		t.Fatalf("%s", err)
+	}
+	// Delete should return an error when no clients are found and we are
+	// not force deleting.
+	clients := lbc.clients
+	lbc.clients = nil
+	if err := lbc.DeleteLoadBalancer(ing, false /* forceDelete */); err == nil {
+		t.Errorf("unexpected nil error in deleting load balancer. expected to get no client found error")
+	}
+	// All resources should still exist.
+	if err := expectLBResources(lbc); err != nil {
+		t.Errorf("%s", err)
+	}
+	if err := lbc.DeleteLoadBalancer(ing, true /* forceDelete */); err == nil {
+		t.Errorf("unexpected nil error in deleting load balancer. expected to get no client found error")
+	}
+
+	// All resources except backend services and health checks should be deleted.
+	ffw := lbc.fws.(*firewallrule.FakeFirewallRuleSyncer)
 	if len(ffw.EnsuredFirewallRules) != 0 {
 		t.Errorf("unexpected firewall rules have not been deleted: %v", ffw.EnsuredFirewallRules)
 	}
+	ffr := lbc.frs.(*forwardingrule.FakeForwardingRuleSyncer)
 	if len(ffr.EnsuredForwardingRules) != 0 {
 		t.Errorf("unexpected forwarding rules have not been deleted: %v", ffr.EnsuredForwardingRules)
 	}
+	ftp := lbc.tps.(*targetproxy.FakeTargetProxySyncer)
 	if len(ftp.EnsuredTargetProxies) != 0 {
 		t.Errorf("unexpected target proxies have not been deleted: %v", ftp.EnsuredTargetProxies)
 	}
+	fum := lbc.ums.(*urlmap.FakeURLMapSyncer)
 	if len(fum.EnsuredURLMaps) != 0 {
 		t.Errorf("unexpected url maps have not been deleted: %v", fum.EnsuredURLMaps)
 	}
-	if len(fbs.EnsuredBackendServices) != 0 {
-		t.Errorf("unexpected backend services have not been deleted: %v", fbs.EnsuredBackendServices)
+	fbs := lbc.bss.(*backendservice.FakeBackendServiceSyncer)
+	if len(fbs.EnsuredBackendServices) == 0 {
+		t.Errorf("unexpected backend services should not have been deleted: %v", fbs.EnsuredBackendServices)
 	}
+	fhc := lbc.hcs.(*healthcheck.FakeHealthCheckSyncer)
+	if len(fhc.EnsuredHealthChecks) == 0 {
+		t.Errorf("unexpected health checks should not have been deleted: %v", fhc.EnsuredHealthChecks)
+	}
+	// Set the clients back to their original value and verify that deleting now deletes all resources.
+	lbc.clients = clients
+	if err := lbc.DeleteLoadBalancer(ing, false /* forceDelete */); err != nil {
+		t.Errorf("unexpected error in deleting load balancer: %s", err)
+	}
+	if err := expectNoLBResources(lbc); err != nil {
+		t.Errorf("%s", err)
+	}
+}
+
+// Verifies that all expected LB resources exist. Returns an error if that is not true.
+func expectLBResources(lbc *LoadBalancerSyncer) error {
+	fhc := lbc.hcs.(*healthcheck.FakeHealthCheckSyncer)
+	if len(fhc.EnsuredHealthChecks) == 0 {
+		return fmt.Errorf("unexpected health checks do not exist")
+	}
+	fbs := lbc.bss.(*backendservice.FakeBackendServiceSyncer)
+	if len(fbs.EnsuredBackendServices) == 0 {
+		return fmt.Errorf("unexpected backend services do not exist")
+	}
+	fum := lbc.ums.(*urlmap.FakeURLMapSyncer)
+	if len(fum.EnsuredURLMaps) == 0 {
+		return fmt.Errorf("unexpected url maps do not exist")
+	}
+	ftp := lbc.tps.(*targetproxy.FakeTargetProxySyncer)
+	if len(ftp.EnsuredTargetProxies) == 0 {
+		return fmt.Errorf("unexpected target proxies do not exist")
+	}
+	ffr := lbc.frs.(*forwardingrule.FakeForwardingRuleSyncer)
+	if len(ffr.EnsuredForwardingRules) == 0 {
+		return fmt.Errorf("unexpected forwarding rules do not exist")
+	}
+	ffw := lbc.fws.(*firewallrule.FakeFirewallRuleSyncer)
+	if len(ffw.EnsuredFirewallRules) == 0 {
+		return fmt.Errorf("unexpected firewall rules do not exist")
+	}
+	return nil
+}
+
+// Verifies that no expected LB resources exist. Returns an error if that is not true.
+func expectNoLBResources(lbc *LoadBalancerSyncer) error {
+	fhc := lbc.hcs.(*healthcheck.FakeHealthCheckSyncer)
 	if len(fhc.EnsuredHealthChecks) != 0 {
-		t.Errorf("unexpected health checks have not been deleted: %v", fhc.EnsuredHealthChecks)
+		return fmt.Errorf("unexpected health checks exist: %v", fhc.EnsuredHealthChecks)
 	}
+	fbs := lbc.bss.(*backendservice.FakeBackendServiceSyncer)
+	if len(fbs.EnsuredBackendServices) != 0 {
+		return fmt.Errorf("unexpected backend services exist: %v", fbs.EnsuredBackendServices)
+	}
+	fum := lbc.ums.(*urlmap.FakeURLMapSyncer)
+	if len(fum.EnsuredURLMaps) != 0 {
+		return fmt.Errorf("unexpected url maps exist: %v", fum.EnsuredURLMaps)
+	}
+	ftp := lbc.tps.(*targetproxy.FakeTargetProxySyncer)
+	if len(ftp.EnsuredTargetProxies) != 0 {
+		return fmt.Errorf("unexpected target proxies exist: %v", ftp.EnsuredTargetProxies)
+	}
+	ffr := lbc.frs.(*forwardingrule.FakeForwardingRuleSyncer)
+	if len(ffr.EnsuredForwardingRules) != 0 {
+		return fmt.Errorf("unexpected forwarding rules exist: %v", ffr.EnsuredForwardingRules)
+	}
+	ffw := lbc.fws.(*firewallrule.FakeFirewallRuleSyncer)
+	if len(ffw.EnsuredFirewallRules) != 0 {
+		return fmt.Errorf("unexpected firewall rules exist: %v", ffw.EnsuredFirewallRules)
+	}
+	return nil
 }
 
 func TestRemoveFromClusters(t *testing.T) {
@@ -507,7 +601,7 @@ func TestRemoveFromClusters(t *testing.T) {
 	}
 
 	// Cleanup.
-	if err := lbc.DeleteLoadBalancer(ing); err != nil {
+	if err := lbc.DeleteLoadBalancer(ing, false /* forceDelete */); err != nil {
 		t.Fatalf("unexpected error in deleting load balancer: %s", err)
 	}
 }
@@ -591,7 +685,7 @@ func TestRemoveClustersFromStatus(t *testing.T) {
 
 			t.Errorf("expected error in verifying status: %v, got err: %s", c.errorInGetStatus, err)
 		}
-		if err := lbc.DeleteLoadBalancer(ing); err != nil {
+		if err := lbc.DeleteLoadBalancer(ing, false /* forceDelete */); err != nil {
 			t.Fatalf("unexpected error %s", err)
 		}
 	}
