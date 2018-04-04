@@ -25,7 +25,7 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 )
 
-var fakeError = fmt.Errorf("fake error")
+var errFake = fmt.Errorf("fake error")
 
 type expectedCommand struct {
 	Args   []string
@@ -83,7 +83,7 @@ func TestGetClusterContexts(t *testing.T) {
 				{
 					[]string{"kubectl", "--kubeconfig=kubeconfig", "config", "get-contexts", "-o=name"},
 					"error",
-					fakeError,
+					errFake,
 				},
 			},
 			[]string{},
@@ -109,7 +109,7 @@ func TestGetClusterContexts(t *testing.T) {
 				{
 					[]string{"kubectl", "--kubeconfig=kubeconfig", "config", "get-contexts", "-o=name", "cluster3"},
 					"error",
-					fakeError,
+					errFake,
 				},
 			},
 			[]string{},
@@ -164,7 +164,7 @@ func TestGetClientsForContexts(t *testing.T) {
 			// Should return an error if getClientset returns an error.
 			[]string{"cluster1", "cluster2"},
 			func(string, string) (kubeclient.Interface, error) {
-				return nil, fakeError
+				return nil, errFake
 			},
 			map[string]kubeclient.Interface{},
 			true,
