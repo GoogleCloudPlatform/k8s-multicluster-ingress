@@ -22,17 +22,18 @@ var (
 	instanceGroupAnnotationKey = "ingress.gcp.kubernetes.io/instance-groups"
 )
 
-type IngressSyncer struct {
+type syncer struct {
 }
 
-func NewIngressSyncer() IngressSyncerInterface {
-	return &IngressSyncer{}
+// NewIngressSyncer returns a new instance of syncer.
+func NewIngressSyncer() SyncerInterface {
+	return &syncer{}
 }
 
 // EnsureIngress ensures that the ingress exists in all clusters given.
 // Does nothing if it already exists in a cluster, else creates the resource.
 // Returns a list of clusters where the ingress resource has been ensured.
-func (i *IngressSyncer) EnsureIngress(ing *v1beta1.Ingress, clients map[string]kubeclient.Interface, forceUpdate bool) ([]string, error) {
+func (i *syncer) EnsureIngress(ing *v1beta1.Ingress, clients map[string]kubeclient.Interface, forceUpdate bool) ([]string, error) {
 	var err error
 	var ensuredClusters []string
 	for cluster, client := range clients {
@@ -82,7 +83,7 @@ func (i *IngressSyncer) EnsureIngress(ing *v1beta1.Ingress, clients map[string]k
 }
 
 // DeleteIngress deletes the ingress resource from all clusters.
-func (i *IngressSyncer) DeleteIngress(ing *v1beta1.Ingress, clients map[string]kubeclient.Interface) error {
+func (i *syncer) DeleteIngress(ing *v1beta1.Ingress, clients map[string]kubeclient.Interface) error {
 	var err error
 	for cluster, client := range clients {
 		fmt.Printf("Deleting Ingress from cluster: %v...\n", cluster)
@@ -101,6 +102,9 @@ func (i *IngressSyncer) DeleteIngress(ing *v1beta1.Ingress, clients map[string]k
 	return err
 }
 
+// UnmarshallAndApplyDefaults unmarshals ingress from the given file and sets the given namespace.
+// It sets the namespace only if the unmarshalled ingress does not have a namespace.
+// Returns an error if the unmarshalled ingress has a namespace set and it is different than the desired value.
 func UnmarshallAndApplyDefaults(filename, namespace string, ing *v1beta1.Ingress) error {
 	if err := unmarshall(filename, ing); err != nil {
 		return err
@@ -112,7 +116,7 @@ func UnmarshallAndApplyDefaults(filename, namespace string, ing *v1beta1.Ingress
 			ing.Namespace = namespace
 		}
 	} else if namespace != "" && ing.Namespace != namespace {
-		return fmt.Errorf("the namespace from the provided ingress %q does not match the namespace %q. You must pass '--namespace=%v' to perform this operation.", ing.Namespace, namespace, ing.Namespace)
+		return fmt.Errorf("the namespace from the provided ingress %q does not match the namespace %q. You must pass '--namespace=%v' to perform this operation", ing.Namespace, namespace, ing.Namespace)
 	}
 	ingAnnotations := annotations.FromIngress(ing)
 	class := ingAnnotations.IngressClass()
@@ -126,6 +130,9 @@ func UnmarshallAndApplyDefaults(filename, namespace string, ing *v1beta1.Ingress
 	return nil
 }
 
+// ApplyStaticIP sets the static-ip annotation on the given ingress to match the given staticIPName.
+// It sets that annotation only if it is not set already.
+// Returns an error if static-ip annotation is set already and it does not match the desired value.
 func ApplyStaticIP(staticIPName string, ing *v1beta1.Ingress) error {
 	ingAnnotations := annotations.FromIngress(ing)
 
@@ -135,7 +142,7 @@ func ApplyStaticIP(staticIPName string, ing *v1beta1.Ingress) error {
 		}
 		addAnnotation(ing, annotations.StaticIPNameKey, staticIPName)
 	} else if staticIPName != "" && ingAnnotations.StaticIPName() != staticIPName {
-		return fmt.Errorf("the %q from the provided ingress %q does not match --static-ip=%v. You must pass '--static-ip=%v' to perform this operation.", annotations.StaticIPNameKey, ingAnnotations.StaticIPName(), staticIPName, ingAnnotations.StaticIPName())
+		return fmt.Errorf("the %q from the provided ingress %q does not match --static-ip=%v. You must pass '--static-ip=%v' to perform this operation", annotations.StaticIPNameKey, ingAnnotations.StaticIPName(), staticIPName, ingAnnotations.StaticIPName())
 	}
 
 	return nil

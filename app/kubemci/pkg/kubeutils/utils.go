@@ -109,8 +109,8 @@ var getClientset = func(kubeconfigPath, contextName string) (kubeclient.Interfac
 	return kubeclient.NewForConfigOrDie(clientConfig), nil
 }
 
-// TODO refactor `getHTTPProbe` in ingress-gce/controller/utils.go so we can share code
 // GetProbe returns a probe that's used for the given nodeport
+// TODO refactor `getHTTPProbe` in ingress-gce/controller/utils.go so we can share code
 func GetProbe(client kubeclient.Interface, port ingressbe.ServicePort) (*api_v1.Probe, error) {
 	svc, err := client.CoreV1().Services(port.SvcName.Namespace).Get(port.SvcName.Name, meta_v1.GetOptions{})
 	if err != nil {
@@ -186,11 +186,11 @@ func ignoreAnnotations(annotations, ignore map[string]string) map[string]string 
 	return result
 }
 
-// Note: copied from https://github.com/kubernetes/federation/blob/7951a643cebc3abdcd903eaff90d1383b43928d1/pkg/federation-controller/util/meta.go#L61
-// Checks if cluster-independent, user provided data in two given ObjectMeta are equal. If in
-// the future the ObjectMeta structure is expanded then any field that is not populated
+// ObjectMetaEquivalent checks if cluster-independent, user provided data in two given ObjectMeta are equal.
+// If in the future the ObjectMeta structure is expanded then any field that is not populated
 // by the api server should be included here.
 // Ignores annotations with keys in ignoreAnnotationKeys.
+// Note: copied from https://github.com/kubernetes/federation/blob/7951a643cebc3abdcd903eaff90d1383b43928d1/pkg/federation-controller/util/meta.go#L61
 func ObjectMetaEquivalent(a, b meta_v1.ObjectMeta, ignoreAnnotationKeys map[string]string) bool {
 	if a.Name != b.Name {
 		return false
@@ -210,10 +210,10 @@ func ObjectMetaEquivalent(a, b meta_v1.ObjectMeta, ignoreAnnotationKeys map[stri
 	return true
 }
 
-// Note: copied from https://github.com/kubernetes/federation/blob/7951a643cebc3abdcd903eaff90d1383b43928d1/pkg/federation-controller/util/meta.go#L79
-// Checks if cluster-independent, user provided data in ObjectMeta and Spec in two given top
-// level api objects are equivalent.
+// ObjectMetaAndSpecEquivalent checks if cluster-independent, user provided data in ObjectMeta
+// and Spec in two given top level api objects are equivalent.
 // Ignores annotations with keys in ignoreAnnotationKeys.
+// Note: copied from https://github.com/kubernetes/federation/blob/7951a643cebc3abdcd903eaff90d1383b43928d1/pkg/federation-controller/util/meta.go#L79
 func ObjectMetaAndSpecEquivalent(a, b runtime.Object, ignoreAnnotationKeys map[string]string) bool {
 	objectMetaA := reflect.ValueOf(a).Elem().FieldByName("ObjectMeta").Interface().(meta_v1.ObjectMeta)
 	objectMetaB := reflect.ValueOf(b).Elem().FieldByName("ObjectMeta").Interface().(meta_v1.ObjectMeta)
