@@ -72,7 +72,7 @@ func TestValidateGetStatusWithGCPProject(t *testing.T) {
 	}
 
 	// 3) project from gcloud: success
-	mockProject = "gregs-mock-project"
+	mockProject = "mock-project"
 	options = GetStatusOptions{}
 	if err := validateGetStatusArgs(&options, []string{"lbname"}); err != nil {
 		t.Errorf("expected no error. got: %s", err)
