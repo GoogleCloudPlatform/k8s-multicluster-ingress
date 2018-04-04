@@ -18,10 +18,12 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/golang/glog"
 	"github.com/spf13/cobra"
 
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/cloudinterface"
 	gcplb "github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/loadbalancer"
+	gcputils "github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/utils"
 )
 
 var (
@@ -77,7 +79,12 @@ func validateGetStatusArgs(options *GetStatusOptions, args []string) error {
 	}
 	// Verify that the required params are not missing.
 	if options.GCPProject == "" {
-		return fmt.Errorf("unexpected missing argument gcp-project.")
+		project, err := gcputils.GetProjectFromGCloud()
+		if project == "" || err != nil {
+			return fmt.Errorf("unexpected cannot determine GCP project. Either set --gcp-project flag, or set a default project with gcloud such that gcloud config get-value project returns that")
+		}
+		glog.V(2).Infof("Got project from gcloud: %s.", project)
+		options.GCPProject = project
 	}
 	return nil
 }
