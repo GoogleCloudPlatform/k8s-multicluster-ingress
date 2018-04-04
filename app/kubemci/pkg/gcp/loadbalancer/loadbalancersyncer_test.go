@@ -539,31 +539,13 @@ func TestRemoveFromClusters(t *testing.T) {
 		t.Fatalf("unexpected error %s", err)
 	}
 	// Verify that backend service, firewall rule and status are as expected.
-	fbs := lbc.bss.(*backendservice.FakeBackendServiceSyncer)
-	if len(fbs.EnsuredBackendServices) != 2 {
-		t.Errorf("unexpected backend services, expected 2 backend services, got: %v", fbs.EnsuredBackendServices)
-	}
+	expectedClusters := clusters
 	expectedIGlinks := []string{igLink, igLink}
-	if err := verifyBackendService(fbs.EnsuredBackendServices[0], expectedIGlinks); err != nil {
-		t.Errorf("%s", err)
-	}
-	if err := verifyBackendService(fbs.EnsuredBackendServices[1], expectedIGlinks); err != nil {
-		t.Errorf("%s", err)
-	}
-	ffw := lbc.fws.(*firewallrule.FakeFirewallRuleSyncer)
-	if len(ffw.EnsuredFirewallRules) != 1 {
-		t.Errorf("unexpected firewall rules, expected 1, got: %v", ffw.EnsuredFirewallRules)
-	}
-	fw := ffw.EnsuredFirewallRules[0]
 	expectedFWIGLinks := map[string][]string{
 		"cluster1": {igLink},
 		"cluster2": {igLink},
 	}
-	if !reflect.DeepEqual(fw.IGLinks, expectedFWIGLinks) {
-		t.Errorf("unexpected IG links on firewall rule, expected: %v, got: %v", expectedFWIGLinks, fw.IGLinks)
-	}
-	// Verify that the load balancer is spread to both clusters.
-	if err := verifyClusters(lbc, clusters); err != nil {
+	if err := verifyRemoveClustersResult(lbc, expectedClusters, expectedIGlinks, expectedFWIGLinks); err != nil {
 		t.Errorf("%s", err)
 	}
 
@@ -574,29 +556,35 @@ func TestRemoveFromClusters(t *testing.T) {
 	if err := lbc.RemoveFromClusters(ing, removeClients, false /*forceUpdate*/); err != nil {
 		t.Errorf("unexpected error in removing existing load balancer from clusters: %s", err)
 	}
-
-	// Verify that the backend service, firewall rule and status are updated as expected.
-	if len(fbs.EnsuredBackendServices) != 2 {
-		t.Errorf("unexpected backend services, expected 2 backend services, got: %v", fbs.EnsuredBackendServices)
-	}
+	expectedClusters = []string{"cluster2"}
 	expectedIGlinks = []string{igLink}
-	if err := verifyBackendService(fbs.EnsuredBackendServices[0], expectedIGlinks); err != nil {
-		t.Errorf("%s", err)
-	}
-	if err := verifyBackendService(fbs.EnsuredBackendServices[1], expectedIGlinks); err != nil {
-		t.Errorf("err: %s\nEnsuredBackendServices: %v", err, fbs.EnsuredBackendServices)
-	}
-	if len(ffw.EnsuredFirewallRules) != 1 {
-		t.Errorf("unexpected firewall rules, expected 1, got: %v", ffw.EnsuredFirewallRules)
-	}
-	fw = ffw.EnsuredFirewallRules[0]
 	expectedFWIGLinks = map[string][]string{
 		"cluster2": {igLink},
 	}
-	if !reflect.DeepEqual(fw.IGLinks, expectedFWIGLinks) {
-		t.Errorf("unexpected IG links on firewall rule, expected: %v, got: %v", expectedFWIGLinks, fw.IGLinks)
+	if err := verifyRemoveClustersResult(lbc, expectedClusters, expectedIGlinks, expectedFWIGLinks); err != nil {
+		t.Errorf("%s", err)
 	}
-	if err := verifyClusters(lbc, []string{"cluster2"}); err != nil {
+
+	// Try removing it from the second cluster as well and verify that it returns an error.
+	removeClients = map[string]kubeclient.Interface{
+		"cluster2": lbc.clients["cluster2"],
+	}
+	if err := lbc.RemoveFromClusters(ing, removeClients, false /*forceUpdate*/); err == nil {
+		t.Errorf("unexpected nil error in removing load balancer from all clusters, expected an error to prompt using delete command instead")
+	}
+	// Verify that nothing was changed.
+	if err := verifyRemoveClustersResult(lbc, expectedClusters, expectedIGlinks, expectedFWIGLinks); err != nil {
+		t.Errorf("%s", err)
+	}
+
+	// Verify that remove succeeds with force=true.
+	if err := lbc.RemoveFromClusters(ing, removeClients, true /*forceUpdate*/); err != nil {
+		t.Errorf("unexpected error in removing load balancer from all clusters with force=true: %s", err)
+	}
+	expectedClusters = []string{}
+	expectedIGlinks = []string{}
+	expectedFWIGLinks = map[string][]string{}
+	if err := verifyRemoveClustersResult(lbc, expectedClusters, expectedIGlinks, expectedFWIGLinks); err != nil {
 		t.Errorf("%s", err)
 	}
 
@@ -604,6 +592,34 @@ func TestRemoveFromClusters(t *testing.T) {
 	if err := lbc.DeleteLoadBalancer(ing, false /* forceDelete */); err != nil {
 		t.Fatalf("unexpected error in deleting load balancer: %s", err)
 	}
+}
+
+// verifyRemoveClustersResult verifies that backend services, firewall rules and load balancer status are as expected after a remove clusters command.
+// Returns an error if not true.
+func verifyRemoveClustersResult(lbc *LoadBalancerSyncer, expectedClusters, expectedIGlinks []string, expectedFWIGLinks map[string][]string) error {
+	fbs := lbc.bss.(*backendservice.FakeBackendServiceSyncer)
+	if len(fbs.EnsuredBackendServices) != 2 {
+		return fmt.Errorf("unexpected backend services, expected 2 backend services, got: %v", fbs.EnsuredBackendServices)
+	}
+	if err := verifyBackendService(fbs.EnsuredBackendServices[0], expectedIGlinks); err != nil {
+		return err
+	}
+	if err := verifyBackendService(fbs.EnsuredBackendServices[1], expectedIGlinks); err != nil {
+		return err
+	}
+	ffw := lbc.fws.(*firewallrule.FakeFirewallRuleSyncer)
+	if len(ffw.EnsuredFirewallRules) != 1 {
+		return fmt.Errorf("unexpected firewall rules, expected 1, got: %v", ffw.EnsuredFirewallRules)
+	}
+	fw := ffw.EnsuredFirewallRules[0]
+	if !reflect.DeepEqual(fw.IGLinks, expectedFWIGLinks) {
+		return fmt.Errorf("unexpected IG links on firewall rule, expected: %v, got: %v", expectedFWIGLinks, fw.IGLinks)
+	}
+	// Verify that the load balancer is spread to both clusters.
+	if err := verifyClusters(lbc, expectedClusters); err != nil {
+		return err
+	}
+	return nil
 }
 
 func verifyBackendService(be backendservice.FakeBackendService, expectedIGlinks []string) error {
