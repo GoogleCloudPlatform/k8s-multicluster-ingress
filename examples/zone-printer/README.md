@@ -1,258 +1,244 @@
-# Zone Printer
+# Demo: Zone Printer
 
-Zone printer is an application that displays the
-[Google Cloud Platform (GCP) zone](https://cloud.google.com/compute/docs/regions-zones/)
-where the application is running. 
+Zone Printer is a web application that displays the
+[Google Cloud Platform (GCP) compute zone](https://cloud.google.com/compute/docs/regions-zones/)
+where the application is running.
 
-# How does it work?
+## How does it work?
 
-> **Note:** This section explains how the application is setup. Feel free to skip to the next section if you don't care about these
-details. 
+Zone Printer application is a web server written in Go. It greets the user
+with the country name, flag and the zone of the server it is deployed in.
 
-Zone printer is intended to be run in a Kubernetes cluster and is
-composed of: a ConfigMap (`app/zonefetch.yaml`), a Deployment
-(`app/nginx-dep.yaml`) and a Service (`app/nginx-svc.yaml`).
+It queries the [GCE metadata
+server](https://cloud.google.com/compute/docs/storing-retrieving-metadata) to
+find out the zone name it is running on. Since GKE nodes are GCE instances, this
+application will print the name of the zone it is running on.
 
-The ConfigMap consists of a script that fetches GCP zone
-information from the
-[GCE metadata server](https://cloud.google.com/compute/docs/storing-retrieving-metadata). The Deployment consists of a pod
-spec with two containers. One container mounts the aforementioned
-ConfigMap, executes the script in the ConfigMap and writes the
-output to `/usr/share/nginx/html/index.html`. The other container
-runs a standard nginx server that reads from `/usr/share/nginx/html/`.
+The `Deployment` consists of a container image that is listening on port `80`.
+The Service exposes the `Deployment` pods on `nodePort: 30061` on all the nodes
+in the Kubernetes cluster.
 
-The pod, therefore, exposes the fetched zone information at
-`/` or `/index.html` HTTP paths.
+The example also includes an `Ingress` manifest (`ingress/nginx.yaml`) that is
+used by `kubemci` to provision the multi-cluster Ingress.
 
-The Service exposes the Deployment pods on port `30061` on all the
-nodes in its Kubernetes cluster.
+## Step 0: Before you begin
 
-The example also includes an Ingress manifest (`ingress/nginx.yaml`)
-that will be used by `kubemci`.
+1. **GCP Project**
 
-# Tutorial
+    Ensure that you have a GCP Project. If you don't have one already,
+    you can create a project by following the instructions at
+    [Creating and Managing Projects](https://cloud.google.com/resource-manager/docs/creating-managing-projects).
 
-## 0. Prerequisite
+    After your project is created, run the following commands in your
+    terminal:
 
-### 0.1 GCP Project
+    ```shell
+    PROJECT=<your-project-name>
+    ```
 
-Ensure you that you have a GCP Project. If you don't have one already,
-you can create a project by following the instructions at
-[Creating and Managing Projects](https://cloud.google.com/resource-manager/docs/creating-managing-projects).
+2. **Set up `gcloud`**:
 
-After your project is created, run the following command in your
-terminal:
+    You can install `gcloud` by following the instructions at
+    [Installing Cloud SDK](https://cloud.google.com/sdk/downloads) and
+    initialize it by running the following commands:
 
-```shell
-PROJECT=<your-project-name>
-```
+    ```shell
+    gcloud init # Set $PROJECT as the default project
+    gcloud auth login
+    gcloud auth application-default login
+    ```
 
-### 0.2 `gcloud` installed and initialized
+3. Set up **`kubectl`**:
 
-You can install `gcloud` by following the instructions at
-[Installing Cloud SDK](https://cloud.google.com/sdk/downloads) and
-initialize it by running the following commands:
+    You can install `kubectl` by running:
 
-```shell
-gcloud init # Set $PROJECT as the default project
-gcloud auth login
-gcloud auth application-default login
-```
+    ```shell
+    gcloud components install kubectl
+    ```
 
-### 0.3 kubectl
+## 1. Create Kubernetes Clusters
 
-You can install `kubectl` by running:
+`kubemci` requires Kubernetes clusters that are v1.8.1 or newer. (You can check
+your cluster version using the `kubectl version` command.)
 
-```shell
-gcloud components install kubectl
-```
+You will need at least two Kubernetes clusters in two different compute [zones]
+to verify that `kubemci` works.
 
-### 0.4 Kubernetes clusters on GCP
+[zones]: https://cloud.google.com/compute/docs/regions-zones/
 
-#### Existing clusters
+#### Creating new GKE clusters
 
-> **Note:**: If you don't already have Kubernetes cluster on GCP,
-skip to the next subsection on [creating new clusters](#creating-new-clusters).
+The following commands will create two clusters:
 
-`kubemci` requires Kubernetes clusters that are v1.8.1 or newer. Please
-ensure that all the clusters you are using in this tutorial satisfy the
-minimum version requirement. You can check your cluster version using
-the `kubectl version` command.
+- `cluster-1` in `us-east4-a`
+- `cluster-2` in `europe-west1-c`
 
-If you already have clusters with their credentials in your local
-kubeconfig (`$HOME/.kube/config` by default) file, you need to ensure
-that you either only have clusters you are going to use for this
-tutorial in your default kubeconfig file or create a new kubeconfig
-file that just contains credentials for those clusters. Assuming that
-the clusters you are going to use for this tutorial are called
-`us-east`, `eu-west` and `asia-east`.
-
-List the contexts available (note the names of the ones you wish to
-use with kubemci)
-
-```shell
-$ kubectl config get-contexts -o name
-us-east
-eu-west
-asia-east
-i-dont-care
-doesnt-exist
-```
-
-Now iterate over the contexts you identified, making it the context
-in-use and then extracting that context to its own file.
-
-```shell
-# First, do this for the us-east one.
-kubectl config use-context us-east
-kubectl config view --minify --flatten > mciuseast
-
-# Second, do this for the eu-west one.
-kubectl config use-context eu-west
-kubectl config view --minify --flatten > mcieuwest
-
-# Finally, do this for the asia-east one.
-kubectl config use-context asia-east
-kubectl config view --minify --flatten > mciasiaeast
-```
-
-Combine (flatten) all of these extracted contexts to create a
-single kubeconfig file with just the contexts we care about
-
-```shell
-# Use KUBECONFIG to specify the context filenames we created in
-# the previous step
-KUBECONFIG=mciuseast:mcieuwest:mciasiaeast kubectl config view \
-  --flatten > zpkubeconfig
-```
-
-#### Creating new clusters
-
-You need at least two Kubernetes clusters in two different GCP zones
-to verify that `kubemci` works. Clusters must be v1.8.1 or newer.
-Let's create three GKE clusters and get their credentials for the
-purposes of this tutorial:
+and save their connection details to a file named `clusters.yaml`.
 
 ```shell
 # Create a cluster in us-east and get its credentials
-gcloud container clusters create \
-    --cluster-version=1.8.4-gke.1 \
+KUBECONFIG=clusters.yaml gcloud container clusters create \
+    --cluster-version=1.9 \
     --zone=us-east4-a \
-    cluster-us-east
-
-KUBECONFIG=./zpkubeconfig gcloud container clusters get-credentials \
-    --zone=us-east4-a \
-    cluster-us-east
-
+    cluster-1
 
 # Create a cluster in eu-west and get its credentials
-gcloud container clusters create \
-    --cluster-version=1.8.4-gke.1 \
+KUBECONFIG=clusters.yaml gcloud container clusters create \
+    --cluster-version=1.9 \
     --zone=europe-west1-c \
-    cluster-eu-west
-
-KUBECONFIG=./zpkubeconfig gcloud container clusters get-credentials \
-    --zone=europe-west1-c \
-    cluster-eu-west
-
-
-# Create a cluster in asia-east and get its credentials
-gcloud container clusters create \
-    --cluster-version=1.8.4-gke.1 \
-    --zone=asia-east1-b \
-    cluster-asia-east
-
-KUBECONFIG=./zpkubeconfig gcloud container clusters get-credentials \
-    --zone=asia-east1-b \
-    cluster-asia-east
+    cluster-2
 ```
 
-## 1. Deploy the application
+#### Using existing GKE clusters
 
-Deploy the application along with its NodePort service in each of the
-three clusters. You can get the cluster contexts from `kubectl config get-contexts` and iterate through all the clusters to deploy the
-application manifests. This could be accomplished by running the
-following loop:
+> **Note:** If you don't already have Kubernetes clusters on GCP, skip to the
+next subsection on [creating new clusters](#creating-new-gke-clusters).
+
+If you already have existing Kubernetes Engine clusters, run `get-credentials`
+with them to create a `clusters.yaml` file with the connection information of
+these clusters.
+
+For example:
 
 ```shell
-for ctx in $(kubectl config get-contexts --kubeconfig=./zpkubeconfig -o name); do
+KUBECONFIG=clusters.yaml gcloud container clusters \
+    get-credentials cluster-1 --zone=us-east4-a
+
+KUBECONFIG=clusters.yaml gcloud container clusters \
+    get-credentials cluster-2 --zone=europe-west1-c
+
+# ...repeat for other clusters you would like to add to the Ingress
+```
+
+#### Using non-GKE clusters on GCE
+
+It is possible to use Kubernetes clusters hosted on Google Compute Engine (GCE)
+with `kubemci`. You need to create a kubeconfig file that contains the
+connection information of the clusters you want to add to the multi-cluster Ingress.
+
+First, make sure you have the kubeconfig entries of the clusters:
+
+```shell
+$ kubectl config get-contexts -o name
+
+name-of-cluster-1
+name-of-cluster-2
+[...]
+```
+
+For each cluster you will use, export its configuration into a YAML file:
+
+```shell
+# do this for the cluster-1 in us-east:
+kubectl config use-context [name-of-cluster-1]
+kubectl config view --minify --flatten > cluster-1.yaml
+
+# do this for the cluster-2 in eu-west:
+kubectl config use-context [name-of-cluster-2]
+kubectl config view --minify --flatten > cluster-2.yaml
+```
+
+Combine these `cluster-1.yaml` and `cluster-2.yaml` config files into one called `clusters.yaml`:
+
+```shell
+KUBECONFIG=cluster-1.yaml:cluster-2.yaml kubectl config view \
+  --flatten > clusters.yaml
+```
+
+## Step 2: Deploy the sample application
+
+Deploy the application along with its NodePort Service in each of the two
+clusters. You can get the cluster contexts from `kubectl config get-contexts`
+and iterate through all the clusters to deploy the application manifests. This
+could be accomplished by running the following loop:
+
+```shell
+for ctx in $(kubectl config get-contexts -o=name --kubeconfig clusters.yaml); do
   kubectl --context="${ctx}" create -f app/
 done
 ```
 
-## 2. Reserve a static IP on GCP.
+## Step 3: Reserve a static IP address
 
-We need to reserve a static IP on GCP for kubemci. Run the following
-command to reserve the IP.
+This command reserves a static IP address for the load balancer.
 
 ```shell
 ZP_KUBEMCI_IP="zp-kubemci-ip"
 gcloud compute addresses create --global "${ZP_KUBEMCI_IP}"
 ```
 
-## 3. Modify the Ingress manifest.
+## Step 4: Use the static IP on Ingress manifest
 
 Replace the value of `kubernetes.io/ingress.global-static-ip-name`
-annotation in `ingress/nginx.yaml` with the value of $ZP_KUBEMCI_IP.
+annotation in `ingress/nginx.yaml` with the value of `$ZP_KUBEMCI_IP`.
 
 ```shell
 sed -i -e "s/\$ZP_KUBEMCI_IP/${ZP_KUBEMCI_IP}/" ingress/nginx.yaml
 ```
 
-## 4. Deploy the Multi-Cluster Ingress (with kubemci)
+## Step 5: Deploy the multi-cluster Ingress with `kubemci`
 
-Run kubemci to create the multi-cluster ingress.
+Run `kubemci` to create the multi-cluster Ingress named `zone-printer`:
 
 ```shell
 kubemci create zone-printer \
     --ingress=ingress/nginx.yaml \
     --gcp-project=$PROJECT \
-    --kubeconfig=./zpkubeconfig
+    --kubeconfig=clusters.yaml
 ```
 
-Voila! You should have a multi-cluster ingress once the command
-successfully exits!
+This command creates the multi-cluster Ingress.
 
+## Step 6: View multi-cluster Ingress status
 
-## 5. Get the status of Multi-Cluster Ingress
-
-You can get the status of the multi-cluster ingress you just created
-by using `kubemci get-status` command.
+You can view the status of the multi-cluster Ingress you just created using the
+`kubemci get-status` command:
 
 ```shell
-kubemci get-status zone-printer --gcp-project=$PROJECT
+$ kubemci get-status zone-printer --gcp-project=$PROJECT
+
+Load balancer zone-printer has IPAddress 35.190.74.228 and
+is spread across 2 clusters (gke_yourproject_us-east4-a_cluster-1,
+gke_yourproject_europe-west1-c_cluster-2).
 ```
 
-## 6. Test the Multicluster Ingress
+## Step 7: Test the multi-cluster Ingress
 
-It may take several minutes for the ingress to propagate, but once it does, you
-can test it by curl'ing the IP from the get-status command. You should see it
-report a zone from the nearest region.
+It will take several minutes from when the Ingress and Google Cloud HTTP Load
+Balancer are created until they are ready. (You may see HTTP 404 or HTTP 502
+errors while the load balancer is getting ready.)
 
-## 7. Clean up
+Once the load balancer is ready to serve traffic, use the IP address printed
+in the previous step and query the server:
 
-Delete the multi-cluster ingress by using the `kubemci delete` command.
+```shell
+$ curl http://35.190.74.228
+
+Welcome to the global site! You are being served from us-central1-b.
+Congratulations
+```
+
+Multi-cluster Ingress has routed your traffic to a cluster in the nearest
+GCP region.
+
+## Step 8: Cleanup
+
+To delete the multi-cluster Ingress you created, run:
 
 ```shell
 kubemci delete zone-printer \
     --ingress=ingress/nginx.yaml \
     --gcp-project=$PROJECT \
-    --kubeconfig=./zpkubeconfig
+    --kubeconfig=clusters.yaml
 ```
 
-Delete the GKE clusters if you created them earlier in this tutorial
-and you don't need them any more.
+This will also clean up the underlying networking resources provisioned by
+`kubemci`.
+
+If you created new Kubernetes Engine clusters for this tutorial, clean them up:
 
 ```shell
-gcloud container clusters delete \
-    --zone=us-east4-a \
-    cluster-us-east
+gcloud container clusters delete cluster-1 --zone=us-east4-a -q
 
-gcloud container clusters delete \
-    --zone=europe-west1-c \
-    cluster-eu-west
-
-gcloud container clusters delete \
-    --zone=asia-east1-b \
-    cluster-asia-east
+gcloud container clusters delete cluster-2 --zone=europe-west1-c -q
 ```
