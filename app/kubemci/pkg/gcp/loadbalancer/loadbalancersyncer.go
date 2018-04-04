@@ -115,6 +115,7 @@ func (l *LoadBalancerSyncer) CreateLoadBalancer(ing *v1beta1.Ingress, forceUpdat
 	}
 
 	if validate {
+		// TODO(G-Harmon): Move this earlier to create.go and consolidate with the other validation there.
 		if err := validations.Validate(l.clients, ing); err != nil {
 			return fmt.Errorf("validation failed: %s", err)
 		}
