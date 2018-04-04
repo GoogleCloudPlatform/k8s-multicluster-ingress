@@ -26,8 +26,8 @@ You can get the list of existing GCP IP addresses in your project by running:
 You can create a new IP address by running:
 `gcloud compute addresses create --global "${ZP_KUBEMCI_IP}"`
 
-To update `ingress/nginx.yaml` to use your reserved IP address name, run:
-`sed -i -e "s/\$ZP_KUBEMCI_IP/${ZP_KUBEMCI_IP}/" ../ingress/nginx.yaml`
+To update `ingress/ingress.yaml` to use your reserved IP address name, run:
+`sed -i -e "s/\$ZP_KUBEMCI_IP/${ZP_KUBEMCI_IP}/" ../ingress/ingress.yaml`
 
 Edit `demo.sh` to include your IP address in the `IP` variable.
 

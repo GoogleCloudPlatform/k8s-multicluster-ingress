@@ -18,7 +18,7 @@ The `Deployment` consists of a container image that is listening on port `80`.
 The Service exposes the `Deployment` pods on `nodePort: 30061` on all the nodes
 in the Kubernetes cluster.
 
-The example also includes an `Ingress` manifest (`ingress/nginx.yaml`) that is
+The example also includes an `Ingress` manifest (`ingress/ingress.yaml`) that is
 used by `kubemci` to provision the multi-cluster Ingress.
 
 ## Step 0: Before you begin
@@ -149,12 +149,12 @@ KUBECONFIG=cluster-1.yaml:cluster-2.yaml kubectl config view \
 
 Deploy the application along with its NodePort Service in each of the two
 clusters. You can get the cluster contexts from `kubectl config get-contexts`
-and iterate through all the clusters to deploy the application manifests. This
-could be accomplished by running the following loop:
+and iterate through all the clusters to deploy the [application
+manifests](./manifests/). This could be accomplished by running the following loop:
 
 ```shell
 for ctx in $(kubectl config get-contexts -o=name --kubeconfig clusters.yaml); do
-  kubectl --context="${ctx}" create -f app/
+  kubectl --context="${ctx}" create -f manifests/
 done
 ```
 
@@ -170,19 +170,20 @@ gcloud compute addresses create --global "${ZP_KUBEMCI_IP}"
 ## Step 4: Use the static IP on Ingress manifest
 
 Replace the value of `kubernetes.io/ingress.global-static-ip-name`
-annotation in `ingress/nginx.yaml` with the value of `$ZP_KUBEMCI_IP`.
+annotation in `ingress/ingress.yaml` with the value of `$ZP_KUBEMCI_IP`.
 
 ```shell
-sed -i -e "s/\$ZP_KUBEMCI_IP/${ZP_KUBEMCI_IP}/" ingress/nginx.yaml
+sed -i -e "s/\$ZP_KUBEMCI_IP/${ZP_KUBEMCI_IP}/" ingress/ingress.yaml
 ```
 
 ## Step 5: Deploy the multi-cluster Ingress with `kubemci`
 
-Run `kubemci` to create the multi-cluster Ingress named `zone-printer`:
+Run `kubemci` to deploy the [ingress/ingress.yaml](./ingress/ingress.yaml) and
+create the multi-cluster Ingress named `zone-printer`:
 
 ```shell
 kubemci create zone-printer \
-    --ingress=ingress/nginx.yaml \
+    --ingress=ingress/ingress.yaml \
     --gcp-project=$PROJECT \
     --kubeconfig=clusters.yaml
 ```
@@ -227,7 +228,7 @@ To delete the multi-cluster Ingress you created, run:
 
 ```shell
 kubemci delete zone-printer \
-    --ingress=ingress/nginx.yaml \
+    --ingress=ingress/ingress.yaml \
     --gcp-project=$PROJECT \
     --kubeconfig=clusters.yaml
 ```
