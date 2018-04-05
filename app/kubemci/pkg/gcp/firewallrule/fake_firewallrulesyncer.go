@@ -18,27 +18,30 @@ import (
 	ingressbe "k8s.io/ingress-gce/pkg/backends"
 )
 
-type FakeFirewallRule struct {
+type fakeFirewallRule struct {
 	LBName  string
 	Ports   []ingressbe.ServicePort
 	IGLinks map[string][]string
 }
 
+// FakeFirewallRuleSyncer is a fake implementation of SyncerInterface to be used in tests.
 type FakeFirewallRuleSyncer struct {
 	// List of firewall rules that this has been asked to ensure.
-	EnsuredFirewallRules []FakeFirewallRule
+	EnsuredFirewallRules []fakeFirewallRule
 }
 
-// Fake firewall rule syncer to be used for tests.
-func NewFakeFirewallRuleSyncer() FirewallRuleSyncerInterface {
+// NewFakeFirewallRuleSyncer returns a new instance of the fake syncer.
+func NewFakeFirewallRuleSyncer() SyncerInterface {
 	return &FakeFirewallRuleSyncer{}
 }
 
-// Ensure this implements FirewallRuleSyncerInterface.
-var _ FirewallRuleSyncerInterface = &FakeFirewallRuleSyncer{}
+// Ensure this implements SyncerInterface.
+var _ SyncerInterface = &FakeFirewallRuleSyncer{}
 
+// EnsureFirewallRule ensures that the required firewall rules exist.
+// See the interface for more details.
 func (h *FakeFirewallRuleSyncer) EnsureFirewallRule(lbName string, ports []ingressbe.ServicePort, igLinks map[string][]string, forceUpdate bool) error {
-	h.EnsuredFirewallRules = append(h.EnsuredFirewallRules, FakeFirewallRule{
+	h.EnsuredFirewallRules = append(h.EnsuredFirewallRules, fakeFirewallRule{
 		LBName:  lbName,
 		Ports:   ports,
 		IGLinks: igLinks,
@@ -46,11 +49,15 @@ func (h *FakeFirewallRuleSyncer) EnsureFirewallRule(lbName string, ports []ingre
 	return nil
 }
 
+// DeleteFirewallRules deletes the firewall rules that EnsureFirewallRule would have created.
+// See the interface for more details.
 func (h *FakeFirewallRuleSyncer) DeleteFirewallRules() error {
 	h.EnsuredFirewallRules = nil
 	return nil
 }
 
+// RemoveFromClusters removes the clusters corresponding to the given instance groups from the firewall rule.
+// See the interface for more details.
 func (h *FakeFirewallRuleSyncer) RemoveFromClusters(lbName string, removeIGLinks map[string][]string) error {
 	for i, v := range h.EnsuredFirewallRules {
 		if v.LBName != lbName {

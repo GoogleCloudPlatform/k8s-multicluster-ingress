@@ -32,26 +32,28 @@ import (
 	utilsnamer "github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/namer"
 )
 
-// SSLCertSyncer manages GCP ssl certs for multicluster GCP L7 load balancers.
-type SSLCertSyncer struct {
+// Syncer manages GCP ssl certs for multicluster GCP L7 load balancers.
+type Syncer struct {
 	namer *utilsnamer.Namer
 	// Instance of SSLCertProvider interface for calling GCE SSLCert APIs.
 	// There is no separate SSLCertProvider interface, so we use the bigger LoadBalancers interface here.
 	scp ingresslb.LoadBalancers
 }
 
-func NewSSLCertSyncer(namer *utilsnamer.Namer, scp ingresslb.LoadBalancers) SSLCertSyncerInterface {
-	return &SSLCertSyncer{
+// NewSSLCertSyncer returns a new instance of syncer.
+func NewSSLCertSyncer(namer *utilsnamer.Namer, scp ingresslb.LoadBalancers) SyncerInterface {
+	return &Syncer{
 		namer: namer,
 		scp:   scp,
 	}
 }
 
-// Ensure this implements SSLCertSyncerInterface.
-var _ SSLCertSyncerInterface = &SSLCertSyncer{}
+// Ensure this implements SyncerInterface.
+var _ SyncerInterface = &Syncer{}
 
-// See interfaces.go comment.
-func (s *SSLCertSyncer) EnsureSSLCert(lbName string, ing *v1beta1.Ingress, client kubeclient.Interface, forceUpdate bool) (string, error) {
+// EnsureSSLCert ensures that the required ssl certs exist for the given ingress.
+// See the interface for more details.
+func (s *Syncer) EnsureSSLCert(lbName string, ing *v1beta1.Ingress, client kubeclient.Interface, forceUpdate bool) (string, error) {
 	fmt.Println("Ensuring ssl cert")
 	annotations := annotations.FromIngress(ing)
 	if annotations.UseNamedTLS() != "" {
@@ -60,7 +62,7 @@ func (s *SSLCertSyncer) EnsureSSLCert(lbName string, ing *v1beta1.Ingress, clien
 	return s.ensureSecretSSLCert(lbName, ing, client, forceUpdate)
 }
 
-func (s *SSLCertSyncer) ensurePreSharedSSLCert(lbName string, ing *v1beta1.Ingress, forceUpdate bool) (string, error) {
+func (s *Syncer) ensurePreSharedSSLCert(lbName string, ing *v1beta1.Ingress, forceUpdate bool) (string, error) {
 	ingAnnotations := annotations.FromIngress(ing)
 	certName := ingAnnotations.UseNamedTLS()
 	if certName == "" {
@@ -74,7 +76,7 @@ func (s *SSLCertSyncer) ensurePreSharedSSLCert(lbName string, ing *v1beta1.Ingre
 	return cert.SelfLink, nil
 }
 
-func (s *SSLCertSyncer) ensureSecretSSLCert(lbName string, ing *v1beta1.Ingress, client kubeclient.Interface, forceUpdate bool) (string, error) {
+func (s *Syncer) ensureSecretSSLCert(lbName string, ing *v1beta1.Ingress, client kubeclient.Interface, forceUpdate bool) (string, error) {
 	var err error
 	desiredCert, err := s.desiredSSLCert(lbName, ing, client)
 	if err != nil {
@@ -96,10 +98,9 @@ func (s *SSLCertSyncer) ensureSecretSSLCert(lbName string, ing *v1beta1.Ingress,
 		fmt.Println("Existing SSL certificate does not match the desired certificate. Note that updating existing certificate will cause downtime.")
 		if forceUpdate {
 			return s.updateSSLCert(desiredCert)
-		} else {
-			fmt.Println("Will not overwrite this differing SSL cert without the --force flag.")
-			return "", fmt.Errorf("will not overwrite SSL cert without --force")
 		}
+		fmt.Println("Will not overwrite this differing SSL cert without the --force flag.")
+		return "", fmt.Errorf("will not overwrite SSL cert without --force")
 	}
 	glog.V(5).Infof("Got error %s while trying to get existing ssl cert %s. Will try to create new one", err, name)
 	// TODO: Handle non NotFound errors. We should create only if the error is NotFound.
@@ -107,7 +108,9 @@ func (s *SSLCertSyncer) ensureSecretSSLCert(lbName string, ing *v1beta1.Ingress,
 	return s.createSSLCert(desiredCert)
 }
 
-func (s *SSLCertSyncer) DeleteSSLCert() error {
+// DeleteSSLCert deletes the ssl certs that EnsureSSLCert would have created.
+// See the interface for more details.
+func (s *Syncer) DeleteSSLCert() error {
 	name := s.namer.SSLCertName()
 	fmt.Println("Deleting SSL cert", name)
 	err := s.scp.DeleteSslCertificate(name)
@@ -115,17 +118,15 @@ func (s *SSLCertSyncer) DeleteSSLCert() error {
 		if utils.IsHTTPErrorCode(err, http.StatusNotFound) {
 			fmt.Println("SSL cert", name, "does not exist. Nothing to delete")
 			return nil
-		} else {
-			fmt.Println("Error", err, "in deleting SSL cert", name)
-			return err
 		}
-	} else {
-		fmt.Println("SSL cert", name, "deleted successfully")
-		return nil
+		fmt.Println("Error", err, "in deleting SSL cert", name)
+		return err
 	}
+	fmt.Println("SSL cert", name, "deleted successfully")
+	return nil
 }
 
-func (s *SSLCertSyncer) updateSSLCert(desiredCert *compute.SslCertificate) (string, error) {
+func (s *Syncer) updateSSLCert(desiredCert *compute.SslCertificate) (string, error) {
 	name := desiredCert.Name
 	fmt.Println("Deleting existing ssl cert", name, "and recreating it to match the desired state.")
 	// SSL Cert does not support update. We need to delete and then create again.
@@ -153,7 +154,7 @@ func (s *SSLCertSyncer) updateSSLCert(desiredCert *compute.SslCertificate) (stri
 	return sc.SelfLink, nil
 }
 
-func (s *SSLCertSyncer) createSSLCert(desiredCert *compute.SslCertificate) (string, error) {
+func (s *Syncer) createSSLCert(desiredCert *compute.SslCertificate) (string, error) {
 	name := desiredCert.Name
 	fmt.Println("Creating ssl cert", name)
 	glog.V(5).Infof("Creating ssl cert %v", desiredCert)
@@ -182,7 +183,7 @@ func sslCertMatches(desiredCert, existingCert compute.SslCertificate) bool {
 	return reflect.DeepEqual(existingCert.Certificate, desiredCert.Certificate)
 }
 
-func (s *SSLCertSyncer) desiredSSLCert(lbName string, ing *v1beta1.Ingress, client kubeclient.Interface) (*compute.SslCertificate, error) {
+func (s *Syncer) desiredSSLCert(lbName string, ing *v1beta1.Ingress, client kubeclient.Interface) (*compute.SslCertificate, error) {
 	// Check for secret.
 	tlsLoader := &tls.TLSCertsFromSecretsLoader{Client: client}
 	cert, err := tlsLoader.Load(ing)

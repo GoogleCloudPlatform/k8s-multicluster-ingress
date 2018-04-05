@@ -21,6 +21,7 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/healthcheck"
 )
 
+// FakeBackendService is a fake representation of a backend service ensured by invoking EnsureBackendService.
 type FakeBackendService struct {
 	LBName  string
 	Port    ingressbe.ServicePort
@@ -29,19 +30,22 @@ type FakeBackendService struct {
 	IGLinks []string
 }
 
+// FakeBackendServiceSyncer is a fake implementation of SyncerInterface to be used in tests.
 type FakeBackendServiceSyncer struct {
 	// List of backend services that this has been asked to ensure.
 	EnsuredBackendServices []FakeBackendService
 }
 
-// Fake backend service syncer to be used for tests.
-func NewFakeBackendServiceSyncer() BackendServiceSyncerInterface {
+// NewFakeBackendServiceSyncer returns a new instance of the fake syncer.
+func NewFakeBackendServiceSyncer() SyncerInterface {
 	return &FakeBackendServiceSyncer{}
 }
 
-// Ensure this implements BackendServiceSyncerInterface.
-var _ BackendServiceSyncerInterface = &FakeBackendServiceSyncer{}
+// Ensure this implements SyncerInterface.
+var _ SyncerInterface = &FakeBackendServiceSyncer{}
 
+// EnsureBackendService ensures that the backend service exists.
+// See interface for more details.
 func (h *FakeBackendServiceSyncer) EnsureBackendService(lbName string, ports []ingressbe.ServicePort, hcMap healthcheck.HealthChecksMap, npMap NamedPortsMap, igLinks []string, forceUpdate bool) (BackendServicesMap, error) {
 	beMap := BackendServicesMap{}
 	for _, p := range ports {
@@ -57,11 +61,15 @@ func (h *FakeBackendServiceSyncer) EnsureBackendService(lbName string, ports []i
 	return beMap, nil
 }
 
+// DeleteBackendServices deletes the backend services that EnsureBackendService would have created.
+// See the interface for more details.
 func (h *FakeBackendServiceSyncer) DeleteBackendServices(ports []ingressbe.ServicePort) error {
 	h.EnsuredBackendServices = nil
 	return nil
 }
 
+// RemoveFromClusters removes the given backend services corresponsding to the given ports from clusters corresponding to the given removeIGLinks.
+// See the interface for more details.
 func (h *FakeBackendServiceSyncer) RemoveFromClusters(ports []ingressbe.ServicePort, removeIGLinks []string) error {
 	// Convert array to maps for easier lookups.
 	affectedPorts := make(map[int64]bool, len(ports))

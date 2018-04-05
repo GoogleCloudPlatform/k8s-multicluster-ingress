@@ -21,36 +21,41 @@ import (
 )
 
 const (
+	// FakeSSLCertSelfLink is a fake self link for ssl certs.
 	FakeSSLCertSelfLink = "target/cert/self/link"
 )
 
-type FakeSSLCert struct {
+type fakeSSLCert struct {
 	LBName  string
 	Ingress *v1beta1.Ingress
 }
 
-type FakeSSLCertSyncer struct {
+type fakeSSLCertSyncer struct {
 	// List of ssl certs that this has been asked to ensure.
-	EnsuredSSLCerts []FakeSSLCert
+	EnsuredSSLCerts []fakeSSLCert
 }
 
-// Fake ssl cert syncer to be used for tests.
-func NewFakeSSLCertSyncer() SSLCertSyncerInterface {
-	return &FakeSSLCertSyncer{}
+// NewFakeSSLCertSyncer returns a new instance of the fake syncer.
+func NewFakeSSLCertSyncer() SyncerInterface {
+	return &fakeSSLCertSyncer{}
 }
 
 // Ensure this implements SSLCertSyncerInterface.
-var _ SSLCertSyncerInterface = &FakeSSLCertSyncer{}
+var _ SyncerInterface = &fakeSSLCertSyncer{}
 
-func (f *FakeSSLCertSyncer) EnsureSSLCert(lbName string, ing *v1beta1.Ingress, client kubeclient.Interface, forceUpdate bool) (string, error) {
-	f.EnsuredSSLCerts = append(f.EnsuredSSLCerts, FakeSSLCert{
+// EnsureSSLCert ensures that the required ssl certs exist for the given load balancer.
+// See interface for more details.
+func (f *fakeSSLCertSyncer) EnsureSSLCert(lbName string, ing *v1beta1.Ingress, client kubeclient.Interface, forceUpdate bool) (string, error) {
+	f.EnsuredSSLCerts = append(f.EnsuredSSLCerts, fakeSSLCert{
 		LBName:  lbName,
 		Ingress: ing,
 	})
 	return FakeSSLCertSelfLink, nil
 }
 
-func (f *FakeSSLCertSyncer) DeleteSSLCert() error {
+// DeleteSSLCert deletes the ssl certs that EnsureSSLCert would have created.
+// See interface for more details.
+func (f *fakeSSLCertSyncer) DeleteSSLCert() error {
 	f.EnsuredSSLCerts = nil
 	return nil
 }

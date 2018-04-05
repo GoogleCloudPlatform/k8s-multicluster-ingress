@@ -69,7 +69,7 @@ func TestEnsureTargetHttpProxy(t *testing.T) {
 	}
 	for _, c := range testCases {
 		glog.Infof("test case:%v", c.desc)
-		tpLink, err := tps.EnsureHttpTargetProxy(lbName, c.umLink, c.forceUpdate)
+		tpLink, err := tps.EnsureHTTPTargetProxy(lbName, c.umLink, c.forceUpdate)
 		if (err != nil) != c.ensureErr {
 			glog.Errorf("expected_error:%v Got Error:%v", c.ensureErr, err)
 			t.Errorf("in ensuring target proxy, expected error? %v, actual: %v", c.ensureErr, err)
@@ -143,7 +143,7 @@ func TestEnsureTargetHttpsProxy(t *testing.T) {
 	}
 	for _, c := range testCases {
 		glog.Infof("test case:%v", c.desc)
-		tpLink, err := tps.EnsureHttpsTargetProxy(lbName, c.umLink, c.certLink, c.forceUpdate)
+		tpLink, err := tps.EnsureHTTPSTargetProxy(lbName, c.umLink, c.certLink, c.forceUpdate)
 		if (err != nil) != c.ensureErr {
 			glog.Errorf("expected_error:%v Got Error:%v", c.ensureErr, err)
 			t.Errorf("in ensuring target proxy, expected error? %v, actual: %v", c.ensureErr, err)
@@ -183,13 +183,13 @@ func TestDeleteTargetProxies(t *testing.T) {
 		t.Errorf("unexpected error in deleting target proxies when none exist: %s", err)
 	}
 	// Create both http and https and verify that it deletes both.
-	if _, err := tps.EnsureHttpTargetProxy(lbName, umLink, false /*forceUpdate*/); err != nil {
+	if _, err := tps.EnsureHTTPTargetProxy(lbName, umLink, false /*forceUpdate*/); err != nil {
 		t.Fatalf("expected no error in ensuring http target proxy, actual: %v", err)
 	}
 	if _, err := tpp.GetTargetHttpProxy(httpTpName); err != nil {
 		t.Fatalf("expected nil error, actual: %v", err)
 	}
-	if _, err := tps.EnsureHttpsTargetProxy(lbName, umLink, certLink, false /*forceUpdate*/); err != nil {
+	if _, err := tps.EnsureHTTPSTargetProxy(lbName, umLink, certLink, false /*forceUpdate*/); err != nil {
 		t.Fatalf("expected no error in ensuring https target proxy, actual: %v", err)
 	}
 	if _, err := tpp.GetTargetHttpsProxy(httpsTpName); err != nil {

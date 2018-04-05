@@ -37,12 +37,12 @@ import (
 )
 
 const (
+	// DefaultHealthCheckInterval defines how frequently a probe runs
 	// TODO(nikhiljindal): Share them with kubernetes/ingress.
 	// These values set a low health threshold and a high failure threshold.
 	// We're just trying to detect if the node networking is
 	// borked, service level outages will get detected sooner
 	// by kube-proxy.
-	// DefaultHealthCheckInterval defines how frequently a probe runs
 	DefaultHealthCheckInterval = 1 * time.Minute
 	// DefaultHealthyThreshold defines the threshold of success probes that declare a backend "healthy"
 	DefaultHealthyThreshold = 1
@@ -52,26 +52,27 @@ const (
 	DefaultTimeout = 1 * time.Minute
 )
 
-// HealthCheckSyncer manages GCP health checks for multicluster GCP L7 load balancers.
-type HealthCheckSyncer struct {
+// Syncer manages GCP health checks for multicluster GCP L7 load balancers.
+type Syncer struct {
 	namer *utilsnamer.Namer
 	hcp   ingresshc.HealthCheckProvider
 }
 
-func NewHealthCheckSyncer(namer *utilsnamer.Namer, hcp ingresshc.HealthCheckProvider) HealthCheckSyncerInterface {
-	return &HealthCheckSyncer{
+// NewHealthCheckSyncer returns a new instance of the syncer.
+func NewHealthCheckSyncer(namer *utilsnamer.Namer, hcp ingresshc.HealthCheckProvider) SyncerInterface {
+	return &Syncer{
 		namer: namer,
 		hcp:   hcp,
 	}
 }
 
-// Ensure this implements HealthCheckSyncerInterface.
-var _ HealthCheckSyncerInterface = &HealthCheckSyncer{}
+// Ensure this implements SyncerInterface.
+var _ SyncerInterface = &Syncer{}
 
 // EnsureHealthCheck ensures that the required health check exists.
 // Does nothing if it exists already, else creates a new one.
 // Returns a map of the ensured health checks keyed by the corresponding port.
-func (h *HealthCheckSyncer) EnsureHealthCheck(lbName string, ports []ingressbe.ServicePort, clients map[string]kubernetes.Interface, forceUpdate bool) (HealthChecksMap, error) {
+func (h *Syncer) EnsureHealthCheck(lbName string, ports []ingressbe.ServicePort, clients map[string]kubernetes.Interface, forceUpdate bool) (HealthChecksMap, error) {
 	fmt.Println("Ensuring health checks")
 	var err error
 	ensuredHealthChecks := HealthChecksMap{}
@@ -126,7 +127,9 @@ func getHealthCheckPath(port ingressbe.ServicePort, clients map[string]kubernete
 	return path, err
 }
 
-func (h *HealthCheckSyncer) DeleteHealthChecks(ports []ingressbe.ServicePort) error {
+// DeleteHealthChecks deletes the health checks that EnsureHealthCheck would have created.
+// See interface for more details.
+func (h *Syncer) DeleteHealthChecks(ports []ingressbe.ServicePort) error {
 	fmt.Println("Deleting health checks")
 	var err error
 	for _, p := range ports {
@@ -142,7 +145,7 @@ func (h *HealthCheckSyncer) DeleteHealthChecks(ports []ingressbe.ServicePort) er
 	return nil
 }
 
-func (h *HealthCheckSyncer) deleteHealthCheck(port ingressbe.ServicePort) error {
+func (h *Syncer) deleteHealthCheck(port ingressbe.ServicePort) error {
 	name := h.namer.HealthCheckName(port.NodePort)
 	glog.V(2).Infof("Deleting health check %s", name)
 	err := h.hcp.DeleteHealthCheck(name)
@@ -150,17 +153,15 @@ func (h *HealthCheckSyncer) deleteHealthCheck(port ingressbe.ServicePort) error 
 		if utils.IsHTTPErrorCode(err, http.StatusNotFound) {
 			fmt.Println("Health check", name, "does not exist. Nothing to delete")
 			return nil
-		} else {
-			fmt.Println("Error in deleting health check", name, ":", err)
-			return err
 		}
-	} else {
-		glog.V(2).Infof("Successfully deleted health check %s", name)
-		return nil
+		fmt.Println("Error in deleting health check", name, ":", err)
+		return err
 	}
+	glog.V(2).Infof("Successfully deleted health check %s", name)
+	return nil
 }
 
-func getJsonIgnoreErr(v interface{}) string {
+func getJSONIgnoreErr(v interface{}) string {
 	output, err := json.Marshal(v)
 	if err != nil {
 		glog.Warningf("Marshalling error: %v", err)
@@ -168,7 +169,7 @@ func getJsonIgnoreErr(v interface{}) string {
 	return string(output)
 }
 
-func (h *HealthCheckSyncer) ensureHealthCheck(lbName string, port ingressbe.ServicePort, path string, forceUpdate bool) (*compute.HealthCheck, error) {
+func (h *Syncer) ensureHealthCheck(lbName string, port ingressbe.ServicePort, path string, forceUpdate bool) (*compute.HealthCheck, error) {
 	fmt.Printf("Ensuring health check for port: %+v\n", port)
 	desiredHC, err := h.desiredHealthCheck(lbName, port, path)
 	if err != nil {
@@ -179,7 +180,7 @@ func (h *HealthCheckSyncer) ensureHealthCheck(lbName string, port ingressbe.Serv
 	existingHC, err := h.hcp.GetHealthCheck(name)
 	if err == nil {
 		fmt.Println("Health check", name, "exists already. Checking if it matches our desired health check")
-		glog.V(5).Infof("Existing health check:\n%v\nDesired health check:\n%v\n", getJsonIgnoreErr(existingHC), getJsonIgnoreErr(desiredHC))
+		glog.V(5).Infof("Existing health check:\n%v\nDesired health check:\n%v\n", getJSONIgnoreErr(existingHC), getJSONIgnoreErr(desiredHC))
 		// Health check with that name exists already. Check if it matches what we want.
 		if healthCheckMatches(desiredHC, *existingHC) {
 			// Nothing to do. Desired health check exists already.
@@ -188,11 +189,10 @@ func (h *HealthCheckSyncer) ensureHealthCheck(lbName string, port ingressbe.Serv
 		}
 		if forceUpdate {
 			return h.updateHealthCheck(&desiredHC)
-		} else {
-			// TODO(G-Harmon): prompt yes/no for overwriting.
-			fmt.Println("Will not overwrite this differing health check without the --force flag.")
-			return nil, fmt.Errorf("will not overwrite healthcheck without --force")
 		}
+		// TODO(G-Harmon): prompt yes/no for overwriting.
+		fmt.Println("Will not overwrite this differing health check without the --force flag.")
+		return nil, fmt.Errorf("will not overwrite healthcheck without --force")
 	}
 	glog.V(5).Infof("Got error %s while trying to get existing health check %s", err, name)
 	// TODO(nikhiljindal): Handle non NotFound errors. We should create only if the error is NotFound.
@@ -201,7 +201,7 @@ func (h *HealthCheckSyncer) ensureHealthCheck(lbName string, port ingressbe.Serv
 }
 
 // updateHealthCheck updates the health check and returns the updated health check.
-func (h *HealthCheckSyncer) updateHealthCheck(desiredHC *compute.HealthCheck) (*compute.HealthCheck, error) {
+func (h *Syncer) updateHealthCheck(desiredHC *compute.HealthCheck) (*compute.HealthCheck, error) {
 	name := desiredHC.Name
 	fmt.Println("Updating existing health check", name, "to match the desired state")
 	err := h.hcp.UpdateHealthCheck(desiredHC)
@@ -213,7 +213,7 @@ func (h *HealthCheckSyncer) updateHealthCheck(desiredHC *compute.HealthCheck) (*
 }
 
 // createHealthCheck creates the health check and returns the created health check.
-func (h *HealthCheckSyncer) createHealthCheck(desiredHC *compute.HealthCheck) (*compute.HealthCheck, error) {
+func (h *Syncer) createHealthCheck(desiredHC *compute.HealthCheck) (*compute.HealthCheck, error) {
 	name := desiredHC.Name
 	fmt.Println("Creating health check", name)
 	glog.V(5).Infof("Creating health check %v", desiredHC)
@@ -239,7 +239,7 @@ func healthCheckMatches(desiredHC, existingHC compute.HealthCheck) bool {
 	return equal
 }
 
-func (h *HealthCheckSyncer) desiredHealthCheck(lbName string, port ingressbe.ServicePort, path string) (compute.HealthCheck, error) {
+func (h *Syncer) desiredHealthCheck(lbName string, port ingressbe.ServicePort, path string) (compute.HealthCheck, error) {
 	// Compute the desired health check.
 	hc := compute.HealthCheck{
 		Name:        h.namer.HealthCheckName(port.NodePort),

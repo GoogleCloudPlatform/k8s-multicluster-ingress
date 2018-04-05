@@ -45,8 +45,8 @@ import (
 	"github.com/golang/glog"
 )
 
-func newLoadBalancerSyncer(lbName string) *LoadBalancerSyncer {
-	return &LoadBalancerSyncer{
+func newSyncer(lbName string) *Syncer {
+	return &Syncer{
 		lbName: lbName,
 		hcs:    healthcheck.NewFakeHealthCheckSyncer(),
 		bss:    backendservice.NewFakeBackendServiceSyncer(),
@@ -73,7 +73,7 @@ func TestCreateLoadBalancer(t *testing.T) {
 	igZone := "my-fake-zone"
 	zoneLink := fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/fake-project/zones/%s", igZone)
 	clusters := []string{"cluster1", "cluster2"}
-	lbc := newLoadBalancerSyncer(lbName)
+	lbc := newSyncer(lbName)
 	ipAddress := &compute.Address{
 		Name:    "ipAddressName",
 		Address: "1.2.3.4",
@@ -205,7 +205,7 @@ func TestCreateLoadBalancerBadNodePortsValidate(t *testing.T) {
 	igZone := "my-fake-zone"
 	zoneLink := fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/fake-project/zones/%s", igZone)
 	clusters := []string{"cluster1", "cluster2"}
-	lbc := newLoadBalancerSyncer(lbName)
+	lbc := newSyncer(lbName)
 	ipAddress := &compute.Address{
 		Name:    "ipAddressName",
 		Address: "1.2.3.4",
@@ -242,7 +242,7 @@ func TestCreateLoadBalancerBadNodePortsNoValidate(t *testing.T) {
 	igZone := "my-fake-zone"
 	zoneLink := fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/fake-project/zones/%s", igZone)
 	clusters := []string{"cluster1", "cluster2"}
-	lbc := newLoadBalancerSyncer(lbName)
+	lbc := newSyncer(lbName)
 	ipAddress := &compute.Address{
 		Name:    "ipAddressName",
 		Address: "1.2.3.4",
@@ -258,7 +258,7 @@ func TestCreateLoadBalancerBadNodePortsNoValidate(t *testing.T) {
 	}
 }
 
-func setupLBCForCreateIng(lbc *LoadBalancerSyncer, nodePort int64, randNodePort bool, igName, igZone, zoneLink string, ipAddress *compute.Address) (*v1beta1.Ingress, error) {
+func setupLBCForCreateIng(lbc *Syncer, nodePort int64, randNodePort bool, igName, igZone, zoneLink string, ipAddress *compute.Address) (*v1beta1.Ingress, error) {
 	portName := "my-port-name"
 	// Create ingress with instance groups annotation.
 	annotationsValue := []struct {
@@ -356,7 +356,7 @@ func TestDeleteLoadBalancer(t *testing.T) {
 	igZone := "my-fake-zone"
 	zoneLink := fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/fake-project/zones/%s", igZone)
 	clusters := []string{"cluster1", "cluster2"}
-	lbc := newLoadBalancerSyncer(lbName)
+	lbc := newSyncer(lbName)
 	ipAddress := &compute.Address{
 		Name:    "ipAddressName",
 		Address: "1.2.3.4",
@@ -391,7 +391,7 @@ func TestDeleteLoadBalancerWithForce(t *testing.T) {
 	igZone := "my-fake-zone"
 	zoneLink := fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/fake-project/zones/%s", igZone)
 	clusters := []string{"cluster1", "cluster2"}
-	lbc := newLoadBalancerSyncer(lbName)
+	lbc := newSyncer(lbName)
 	ipAddress := &compute.Address{
 		Name:    "ipAddressName",
 		Address: "1.2.3.4",
@@ -459,7 +459,7 @@ func TestDeleteLoadBalancerWithForce(t *testing.T) {
 }
 
 // Verifies that all expected LB resources exist. Returns an error if that is not true.
-func expectLBResources(lbc *LoadBalancerSyncer) error {
+func expectLBResources(lbc *Syncer) error {
 	fhc := lbc.hcs.(*healthcheck.FakeHealthCheckSyncer)
 	if len(fhc.EnsuredHealthChecks) == 0 {
 		return fmt.Errorf("unexpected health checks do not exist")
@@ -488,7 +488,7 @@ func expectLBResources(lbc *LoadBalancerSyncer) error {
 }
 
 // Verifies that no expected LB resources exist. Returns an error if that is not true.
-func expectNoLBResources(lbc *LoadBalancerSyncer) error {
+func expectNoLBResources(lbc *Syncer) error {
 	fhc := lbc.hcs.(*healthcheck.FakeHealthCheckSyncer)
 	if len(fhc.EnsuredHealthChecks) != 0 {
 		return fmt.Errorf("unexpected health checks exist: %v", fhc.EnsuredHealthChecks)
@@ -524,7 +524,7 @@ func TestRemoveFromClusters(t *testing.T) {
 	zoneLink := fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/fake-project/zones/%s", igZone)
 	igLink := fmt.Sprintf("%s/instanceGroups/%s", zoneLink, igName)
 	clusters := []string{"cluster1", "cluster2"}
-	lbc := newLoadBalancerSyncer(lbName)
+	lbc := newSyncer(lbName)
 	ipAddress := &compute.Address{
 		Name:    "ipAddressName",
 		Address: "1.2.3.4",
@@ -596,7 +596,7 @@ func TestRemoveFromClusters(t *testing.T) {
 
 // verifyRemoveClustersResult verifies that backend services, firewall rules and load balancer status are as expected after a remove clusters command.
 // Returns an error if not true.
-func verifyRemoveClustersResult(lbc *LoadBalancerSyncer, expectedClusters, expectedIGlinks []string, expectedFWIGLinks map[string][]string) error {
+func verifyRemoveClustersResult(lbc *Syncer, expectedClusters, expectedIGlinks []string, expectedFWIGLinks map[string][]string) error {
 	fbs := lbc.bss.(*backendservice.FakeBackendServiceSyncer)
 	if len(fbs.EnsuredBackendServices) != 2 {
 		return fmt.Errorf("unexpected backend services, expected 2 backend services, got: %v", fbs.EnsuredBackendServices)
@@ -636,7 +636,7 @@ func TestRemoveClustersFromStatus(t *testing.T) {
 	igZone := "my-fake-zone"
 	zoneLink := fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/fake-project/zones/%s", igZone)
 	clusters := []string{"cluster1", "cluster2"}
-	lbc := newLoadBalancerSyncer(lbName)
+	lbc := newSyncer(lbName)
 	ipAddress := &compute.Address{
 		Name:    "ipAddressName",
 		Address: "1.2.3.4",
@@ -707,7 +707,7 @@ func TestRemoveClustersFromStatus(t *testing.T) {
 	}
 }
 
-func verifyClusters(lbc *LoadBalancerSyncer, expectedClusters []string) error {
+func verifyClusters(lbc *Syncer, expectedClusters []string) error {
 	status, err := lbc.getLoadBalancerStatus()
 	if status == nil || err != nil {
 		return fmt.Errorf("unexpected error in getting load balancer status: %s", err)

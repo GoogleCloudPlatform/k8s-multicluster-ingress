@@ -38,39 +38,42 @@ const (
 	httpsDefaultPortRange = "443-443"
 )
 
-// ForwardingRuleSyncer manages GCP forwarding rules for multicluster GCP L7 load balancers.
-type ForwardingRuleSyncer struct {
+// Syncer manages GCP forwarding rules for multicluster GCP L7 load balancers.
+type Syncer struct {
 	namer *utilsnamer.Namer
 	// Instance of ForwardingRuleProvider interface for calling GCE ForwardingRule APIs.
 	// There is no separate ForwardingRuleProvider interface, so we use the bigger LoadBalancers interface here.
 	frp ingresslb.LoadBalancers
 }
 
-func NewForwardingRuleSyncer(namer *utilsnamer.Namer, frp ingresslb.LoadBalancers) ForwardingRuleSyncerInterface {
-	return &ForwardingRuleSyncer{
+// NewForwardingRuleSyncer returns a new instance of syncer.
+func NewForwardingRuleSyncer(namer *utilsnamer.Namer, frp ingresslb.LoadBalancers) SyncerInterface {
+	return &Syncer{
 		namer: namer,
 		frp:   frp,
 	}
 }
 
-// Ensure this implements ForwardingRuleSyncerInterface.
-var _ ForwardingRuleSyncerInterface = &ForwardingRuleSyncer{}
+// Ensure this implements SyncerInterface.
+var _ SyncerInterface = &Syncer{}
 
-// EnsureHttpForwardingRule ensures that the required http forwarding rule exists.
+// EnsureHTTPForwardingRule ensures that the required http forwarding rule exists.
 // Does nothing if it exists already, else creates a new one.
-func (s *ForwardingRuleSyncer) EnsureHttpForwardingRule(lbName, ipAddress, targetProxyLink string, forceUpdate bool) error {
+// See interface for more details.
+func (s *Syncer) EnsureHTTPForwardingRule(lbName, ipAddress, targetProxyLink string, forceUpdate bool) error {
 	s.namer.HttpForwardingRuleName()
 	return s.ensureForwardingRule(lbName, ipAddress, targetProxyLink, httpDefaultPortRange, "http", s.namer.HttpForwardingRuleName(), forceUpdate)
 }
 
-// EnsureHttpsForwardingRule ensures that the required https forwarding rule exists.
+// EnsureHTTPSForwardingRule ensures that the required https forwarding rule exists.
 // Does nothing if it exists already, else creates a new one.
-func (s *ForwardingRuleSyncer) EnsureHttpsForwardingRule(lbName, ipAddress, targetProxyLink string, forceUpdate bool) error {
+// See interface for more details.
+func (s *Syncer) EnsureHTTPSForwardingRule(lbName, ipAddress, targetProxyLink string, forceUpdate bool) error {
 	return s.ensureForwardingRule(lbName, ipAddress, targetProxyLink, httpsDefaultPortRange, "https", s.namer.HttpsForwardingRuleName(), forceUpdate)
 }
 
 // ensureForwardingRule ensures a forwarding rule exists as per the given input parameters.
-func (s *ForwardingRuleSyncer) ensureForwardingRule(lbName, ipAddress, targetProxyLink, portRange, httpProtocol, name string, forceUpdate bool) error {
+func (s *Syncer) ensureForwardingRule(lbName, ipAddress, targetProxyLink, portRange, httpProtocol, name string, forceUpdate bool) error {
 	fmt.Println("Ensuring", httpProtocol, "forwarding rule")
 	desiredFR, err := s.desiredForwardingRule(lbName, ipAddress, targetProxyLink, portRange, httpProtocol, name)
 	if err != nil {
@@ -90,10 +93,9 @@ func (s *ForwardingRuleSyncer) ensureForwardingRule(lbName, ipAddress, targetPro
 		}
 		if forceUpdate {
 			return s.updateForwardingRule(existingFR, desiredFR)
-		} else {
-			fmt.Println("Will not overwrite this differing Forwarding Rule without the --force flag")
-			return fmt.Errorf("Will not overwrite Forwarding Rule without --force")
 		}
+		fmt.Println("Will not overwrite this differing Forwarding Rule without the --force flag")
+		return fmt.Errorf("Will not overwrite Forwarding Rule without --force")
 	}
 	glog.V(2).Infof("Got error %s while trying to get existing forwarding rule %s. Will try to create new one", err, name)
 	// TODO: Handle non NotFound errors. We should create only if the error is NotFound.
@@ -101,7 +103,9 @@ func (s *ForwardingRuleSyncer) ensureForwardingRule(lbName, ipAddress, targetPro
 	return s.createForwardingRule(desiredFR)
 }
 
-func (s *ForwardingRuleSyncer) DeleteForwardingRules() error {
+// DeleteForwardingRules deletes the forwarding rules that EnsureHTTPSForwardingRule and EnsureHTTPForwardingRule would have created.
+// See interface for more details.
+func (s *Syncer) DeleteForwardingRules() error {
 	var err error
 	name := s.namer.HttpForwardingRuleName()
 	fmt.Println("Deleting HTTP forwarding rule", name)
@@ -134,7 +138,9 @@ func (s *ForwardingRuleSyncer) DeleteForwardingRules() error {
 	return err
 }
 
-func (s *ForwardingRuleSyncer) GetLoadBalancerStatus(lbName string) (*status.LoadBalancerStatus, error) {
+// GetLoadBalancerStatus returns the status for the given load balancer.
+// See interface for more details.
+func (s *Syncer) GetLoadBalancerStatus(lbName string) (*status.LoadBalancerStatus, error) {
 	// Fetch the http forwarding rule.
 	httpName := s.namer.HttpForwardingRuleName()
 	httpFr, httpErr := s.frp.GetGlobalForwardingRule(httpName)
@@ -158,7 +164,7 @@ func (s *ForwardingRuleSyncer) GetLoadBalancerStatus(lbName string) (*status.Loa
 func getStatus(fr *compute.ForwardingRule) (*status.LoadBalancerStatus, error) {
 	status, err := status.FromString(fr.Description)
 	if err != nil {
-		return nil, fmt.Errorf("error in parsing forwarding rule description %s. Cannot determine status without it.", err)
+		return nil, fmt.Errorf("error in parsing forwarding rule description %s. Cannot determine status without it", err)
 	}
 	return status, nil
 }
@@ -166,7 +172,7 @@ func getStatus(fr *compute.ForwardingRule) (*status.LoadBalancerStatus, error) {
 // ListLoadBalancerStatuses returns a list of load balancer status from load balancers that have the status stored on their forwarding rules.
 // It ignores the load balancers that dont have status on their forwarding rule.
 // Returns an error if listing forwarding rules fails.
-func (s *ForwardingRuleSyncer) ListLoadBalancerStatuses() ([]status.LoadBalancerStatus, error) {
+func (s *Syncer) ListLoadBalancerStatuses() ([]status.LoadBalancerStatus, error) {
 	var rules []*compute.ForwardingRule
 	var err error
 	result := []status.LoadBalancerStatus{}
@@ -177,7 +183,7 @@ func (s *ForwardingRuleSyncer) ListLoadBalancerStatuses() ([]status.LoadBalancer
 	}
 	if rules == nil {
 		// This is being defensive.
-		err = fmt.Errorf("Unexpected nil from ListGlobalForwardingRules.")
+		err = fmt.Errorf("Unexpected nil from ListGlobalForwardingRules")
 		fmt.Println(err)
 		return result, err
 	}
@@ -204,8 +210,9 @@ func (s *ForwardingRuleSyncer) ListLoadBalancerStatuses() ([]status.LoadBalancer
 	return result, err
 }
 
-// See interface for comment.
-func (s *ForwardingRuleSyncer) RemoveClustersFromStatus(clusters []string) error {
+// RemoveClustersFromStatus removes the given clusters from the forwarding rule.
+// See interface for more details.
+func (s *Syncer) RemoveClustersFromStatus(clusters []string) error {
 	httpsErr := s.removeClustersFromStatus("https", s.namer.HttpsForwardingRuleName(), clusters)
 	httpErr := s.removeClustersFromStatus("http", s.namer.HttpForwardingRuleName(), clusters)
 	// If both are not found, then return that.
@@ -232,7 +239,7 @@ func canIgnoreStatusUpdateError(err error) bool {
 }
 
 // removeClustersFromStatus removes the given list of clusters from the existing forwarding rule with the given name.
-func (s *ForwardingRuleSyncer) removeClustersFromStatus(httpProtocol, name string, clusters []string) error {
+func (s *Syncer) removeClustersFromStatus(httpProtocol, name string, clusters []string) error {
 	fmt.Println("Removing clusters", clusters, "from", httpProtocol, "forwarding rule")
 	existingFR, err := s.frp.GetGlobalForwardingRule(name)
 	if err != nil {
@@ -254,7 +261,7 @@ func (s *ForwardingRuleSyncer) removeClustersFromStatus(httpProtocol, name strin
 	return s.updateForwardingRule(existingFR, desiredFR)
 }
 
-func (s *ForwardingRuleSyncer) updateForwardingRule(existingFR, desiredFR *compute.ForwardingRule) error {
+func (s *Syncer) updateForwardingRule(existingFR, desiredFR *compute.ForwardingRule) error {
 	name := desiredFR.Name
 	fmt.Println("Updating existing forwarding rule", name, "to match the desired state")
 	// We do not have an UpdateForwardingRule method.
@@ -279,7 +286,7 @@ func (s *ForwardingRuleSyncer) updateForwardingRule(existingFR, desiredFR *compu
 	return nil
 }
 
-func (s *ForwardingRuleSyncer) createForwardingRule(desiredFR *compute.ForwardingRule) error {
+func (s *Syncer) createForwardingRule(desiredFR *compute.ForwardingRule) error {
 	name := desiredFR.Name
 	fmt.Println("Creating forwarding rule", name)
 	glog.V(5).Infof("Creating forwarding rule %v", desiredFR)
@@ -308,7 +315,7 @@ func forwardingRuleMatches(desiredFR, existingFR *compute.ForwardingRule) bool {
 	return equal
 }
 
-func (s *ForwardingRuleSyncer) desiredForwardingRule(lbName, ipAddress, targetProxyLink, portRange, httpProtocol, name string) (*compute.ForwardingRule, error) {
+func (s *Syncer) desiredForwardingRule(lbName, ipAddress, targetProxyLink, portRange, httpProtocol, name string) (*compute.ForwardingRule, error) {
 	// Compute the desired forwarding rule.
 	return &compute.ForwardingRule{
 		Name:                name,
@@ -321,7 +328,7 @@ func (s *ForwardingRuleSyncer) desiredForwardingRule(lbName, ipAddress, targetPr
 	}, nil
 }
 
-func (s *ForwardingRuleSyncer) desiredForwardingRuleWithoutClusters(existingFR *compute.ForwardingRule, clustersToRemove []string) (*compute.ForwardingRule, error) {
+func (s *Syncer) desiredForwardingRuleWithoutClusters(existingFR *compute.ForwardingRule, clustersToRemove []string) (*compute.ForwardingRule, error) {
 	existingStatusStr := existingFR.Description
 	newStatusStr, err := status.RemoveClusters(existingStatusStr, clustersToRemove)
 	if err != nil {

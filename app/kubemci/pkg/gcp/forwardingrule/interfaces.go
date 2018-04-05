@@ -18,16 +18,16 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/status"
 )
 
-// ForwardingRuleSyncerInterface is an interface to manage GCP forwarding rules.
-type ForwardingRuleSyncerInterface interface {
-	// EnsureHttpForwardingRule ensures that the required http forwarding rule exists.
+// SyncerInterface is an interface to manage GCP forwarding rules.
+type SyncerInterface interface {
+	// EnsureHTTPForwardingRule ensures that the required http forwarding rule exists.
 	// Will only change an existing rule if forceUpdate = True.
-	EnsureHttpForwardingRule(lbName, ipAddress, targetProxyLink string, forceUpdate bool) error
-	// EnsureHttpsForwardingRule ensures that the required https forwarding rule exists.
+	EnsureHTTPForwardingRule(lbName, ipAddress, targetProxyLink string, forceUpdate bool) error
+	// EnsureHTTPSForwardingRule ensures that the required https forwarding rule exists.
 	// Will only change an existing rule if forceUpdate = True.
-	EnsureHttpsForwardingRule(lbName, ipAddress, targetProxyLink string, forceUpdate bool) error
+	EnsureHTTPSForwardingRule(lbName, ipAddress, targetProxyLink string, forceUpdate bool) error
 	// DeleteForwardingRules deletes the forwarding rules that
-	// EnsureHttpForwardingRule and EnsureHttpsForwardingRule would have created.
+	// EnsureHTTPForwardingRule and EnsureHTTPSForwardingRule would have created.
 	DeleteForwardingRules() error
 
 	// GetLoadBalancerStatus returns the status of the given load balancer if it is stored on the forwarding rule.

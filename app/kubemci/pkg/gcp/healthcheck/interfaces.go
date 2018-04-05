@@ -15,7 +15,7 @@
 package healthcheck
 
 import (
-	"google.golang.org/api/compute/v1"
+	compute "google.golang.org/api/compute/v1"
 	"k8s.io/client-go/kubernetes"
 	ingressbe "k8s.io/ingress-gce/pkg/backends"
 )
@@ -23,8 +23,8 @@ import (
 // HealthChecksMap is a map of port number to the health check for that port.
 type HealthChecksMap map[int64]*compute.HealthCheck
 
-// HealthCheckSyncerInterface is an interface to manage GCP health checks.
-type HealthCheckSyncerInterface interface {
+// SyncerInterface is an interface to manage GCP health checks.
+type SyncerInterface interface {
 	// EnsureHealthCheck ensures that the required health checks exist.
 	// Returns a map of port number to the health check for that port. The map contains all the ports for which  it was successfully able to ensure a health check.
 	// In case of no error, the map will contain all the ports from the given array of ports.

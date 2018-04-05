@@ -14,21 +14,21 @@
 
 package targetproxy
 
-// TargetProxySyncerInterface is an interface to manage GCP target proxies.
-type TargetProxySyncerInterface interface {
-	// EnsureHttpTargetProxy ensures that the required http target proxy
+// SyncerInterface is an interface to manage GCP target proxies.
+type SyncerInterface interface {
+	// EnsureHTTPTargetProxy ensures that the required http target proxy
 	// exists for the given load balancer and url map link. Will only
 	// overwrite an existing and different http target proxy if forceUpdate
 	// is true.
 	// Returns the self link for the ensured proxy.
-	EnsureHttpTargetProxy(lbName, urlMapLink string, forceUpdate bool) (string, error)
-	// EnsureHttpsTargetProxy ensures that the required https target proxy
+	EnsureHTTPTargetProxy(lbName, urlMapLink string, forceUpdate bool) (string, error)
+	// EnsureHTTPSTargetProxy ensures that the required https target proxy
 	// exists for the given load balancer and url map link. Will only
 	// overwrite an existing and different http target proxy if forceUpdate
 	// is true.
 	// Returns the self link for the ensured proxy.
-	EnsureHttpsTargetProxy(lbName, urlMapLink, certLink string, forceUpdate bool) (string, error)
-	// DeleteTargetProxies deletes the target proxies that EnsureHttpTargetProxy
-	// and EnsureHttpsTargetProxy would have created.
+	EnsureHTTPSTargetProxy(lbName, urlMapLink, certLink string, forceUpdate bool) (string, error)
+	// DeleteTargetProxies deletes the target proxies that EnsureHTTPTargetProxy
+	// and EnsureHTTPSTargetProxy would have created.
 	DeleteTargetProxies() error
 }

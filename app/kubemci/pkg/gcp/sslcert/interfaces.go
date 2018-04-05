@@ -20,8 +20,8 @@ import (
 	kubeclient "k8s.io/client-go/kubernetes"
 )
 
-// SSLCertSyncerInterface is an interface to manage GCP ssl certs.
-type SSLCertSyncerInterface interface {
+// SyncerInterface is an interface to manage GCP ssl certs.
+type SyncerInterface interface {
 	// EnsureSSLCert ensures that the required ssl cert exists for the given ingress.
 	// Will only change an existing SSL cert if forceUpdate=True.
 	// Returns the self link for the ensured ssl cert.

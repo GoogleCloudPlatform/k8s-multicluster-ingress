@@ -27,8 +27,8 @@ type NamedPortsMap map[int64]*compute.NamedPort
 // BackendServicesMap is a map from the kubernetes service name to the corresponding GCE backend service.
 type BackendServicesMap map[string]*compute.BackendService
 
-// BackendServiceSyncerInterface is an interface to manage GCP backend services.
-type BackendServiceSyncerInterface interface {
+// SyncerInterface is an interface to manage GCP backend services.
+type SyncerInterface interface {
 	// EnsureBackendService ensures that the required backend services
 	// exist. forceUpdate must be true in order to modify an existing
 	// BackendService.
