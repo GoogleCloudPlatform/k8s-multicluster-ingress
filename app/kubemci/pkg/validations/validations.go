@@ -27,8 +27,22 @@ import (
 	"k8s.io/api/extensions/v1beta1"
 )
 
+// Validator is a concrete implementation of ValidatorInterface.
+type Validator struct {
+}
+
+var _ ValidatorInterface = &Validator{}
+
+// NewValidator returns a new Validator.
+func NewValidator() ValidatorInterface {
+	return &Validator{}
+}
+
 // Validate performs pre-flight checks on the clusters and services.
-func Validate(clients map[string]kubeclient.Interface, ing *v1beta1.Ingress) error {
+func (v *Validator) Validate(clients map[string]kubeclient.Interface, ing *v1beta1.Ingress) error {
+	if err := serverVersionsNewEnough(clients); err != nil {
+		return err
+	}
 	return servicesNodePortsSame(clients, ing)
 }
 
@@ -95,7 +109,7 @@ func nodePortSameInAllClusters(backend v1beta1.IngressBackend, namespace string,
 }
 
 // ServerVersionsNewEnough returns an error if the version of any cluster is not supported.
-func ServerVersionsNewEnough(clients map[string]kubeclient.Interface) error {
+func serverVersionsNewEnough(clients map[string]kubeclient.Interface) error {
 	for key := range clients {
 		glog.Infof("Checking client %s", key)
 		discoveryClient := clients[key].Discovery()

@@ -47,7 +47,7 @@ func addServiceReactor(client *fake.Clientset, nodePort int64) {
 	})
 }
 
-func TestServicesNodePortsSameFails(t *testing.T) {
+func TestServicesNodePortsSame(t *testing.T) {
 	ing := v1beta1.Ingress{}
 	if err := ingress.UnmarshallAndApplyDefaults("../../../../testdata/ingress.yaml", "" /*namespace*/, &ing); err != nil {
 		t.Fatalf("%s", err)
@@ -182,7 +182,7 @@ func TestVersionsAcrossClusters(t *testing.T) {
 		verInfo.GitVersion = tt.version
 		fakeclientDiscovery.FakedServerVersion = &verInfo
 
-		err := ServerVersionsNewEnough(clients)
+		err := serverVersionsNewEnough(clients)
 		if tt.isErr != (err != nil) {
 			t.Errorf("error testing version. Expected err? %v Err:%v", tt.isErr, err)
 		}
