@@ -44,26 +44,28 @@ const (
 	hostRulePrefix = "host"
 )
 
-// URLMapSyncer manages GCP url maps for multicluster GCP L7 load balancers.
-type URLMapSyncer struct {
+// Syncer manages GCP url maps for multicluster GCP L7 load balancers.
+type Syncer struct {
 	namer *utilsnamer.Namer
 	// Instance of URLMapProvider interface for calling GCE URLMap APIs.
 	// There is no separate URLMapProvider interface, so we use the bigger LoadBalancers interface here.
 	ump ingresslb.LoadBalancers
 }
 
-func NewURLMapSyncer(namer *utilsnamer.Namer, ump ingresslb.LoadBalancers) URLMapSyncerInterface {
-	return &URLMapSyncer{
+// NewURLMapSyncer returns a new instance of syncer.
+func NewURLMapSyncer(namer *utilsnamer.Namer, ump ingresslb.LoadBalancers) SyncerInterface {
+	return &Syncer{
 		namer: namer,
 		ump:   ump,
 	}
 }
 
-// Ensure this implements URLMapSyncerInterface.
-var _ URLMapSyncerInterface = &URLMapSyncer{}
+// Ensure this implements SyncerInterface.
+var _ SyncerInterface = &Syncer{}
 
-// See interfaces.go comment.
-func (s *URLMapSyncer) EnsureURLMap(lbName, ipAddress string, clusters []string, ing *v1beta1.Ingress, beMap backendservice.BackendServicesMap, forceUpdate bool) (string, error) {
+// EnsureURLMap ensures that the required url map exists for the given ingress.
+// See the interface for more details.
+func (s *Syncer) EnsureURLMap(lbName, ipAddress string, clusters []string, ing *v1beta1.Ingress, beMap backendservice.BackendServicesMap, forceUpdate bool) (string, error) {
 	fmt.Println("Ensuring url map")
 	var err error
 	desiredUM, err := s.desiredURLMap(lbName, ipAddress, clusters, ing, beMap)
@@ -91,10 +93,9 @@ func (s *URLMapSyncer) EnsureURLMap(lbName, ipAddress string, clusters []string,
 		}
 		if forceUpdate {
 			return s.updateURLMap(desiredUM)
-		} else {
-			fmt.Println("Will not overwrite this differing URL Map without the --force flag.")
-			return "", fmt.Errorf("will not overwrite URL Map without --force")
 		}
+		fmt.Println("Will not overwrite this differing URL Map without the --force flag.")
+		return "", fmt.Errorf("will not overwrite URL Map without --force")
 	}
 	glog.V(5).Infof("Got error %s while trying to get existing url map %s. Will try to create new one", err, name)
 	// TODO: Handle non NotFound errors. We should create only if the error is NotFound.
@@ -102,7 +103,9 @@ func (s *URLMapSyncer) EnsureURLMap(lbName, ipAddress string, clusters []string,
 	return s.createURLMap(desiredUM)
 }
 
-func (s *URLMapSyncer) DeleteURLMap() error {
+// DeleteURLMap deletes the url map that EnsureURLMap would have created.
+// See the interface for more details.
+func (s *Syncer) DeleteURLMap() error {
 	name := s.namer.URLMapName()
 	fmt.Println("Deleting url map", name)
 	err := s.ump.DeleteUrlMap(name)
@@ -110,17 +113,17 @@ func (s *URLMapSyncer) DeleteURLMap() error {
 		if utils.IsHTTPErrorCode(err, http.StatusNotFound) {
 			fmt.Println("URL map", name, "does not exist. Nothing to delete")
 			return nil
-		} else {
-			fmt.Println("Error", err, "in deleting URL map", name)
-			return err
 		}
-	} else {
-		fmt.Println("URL map", name, "deleted successfully")
-		return nil
+		fmt.Println("Error", err, "in deleting URL map", name)
+		return err
 	}
+	fmt.Println("URL map", name, "deleted successfully")
+	return nil
 }
 
-func (s *URLMapSyncer) GetLoadBalancerStatus(lbName string) (*status.LoadBalancerStatus, error) {
+// GetLoadBalancerStatus returns the status of the given load balancer if it is stored on the url map.
+// See the interface for more details.
+func (s *Syncer) GetLoadBalancerStatus(lbName string) (*status.LoadBalancerStatus, error) {
 	// Fetch the url map.
 	name := s.namer.URLMapName()
 	um, err := s.ump.GetUrlMap(name)
@@ -137,7 +140,7 @@ func (s *URLMapSyncer) GetLoadBalancerStatus(lbName string) (*status.LoadBalance
 func getStatus(um *compute.UrlMap) (*status.LoadBalancerStatus, error) {
 	status, err := status.FromString(um.Description)
 	if err != nil {
-		return nil, fmt.Errorf("error in parsing url map description %s. Cannot determine status without it.", err)
+		return nil, fmt.Errorf("error in parsing url map description %s. Cannot determine status without it", err)
 	}
 	return status, nil
 }
@@ -145,7 +148,8 @@ func getStatus(um *compute.UrlMap) (*status.LoadBalancerStatus, error) {
 // ListLoadBalancerStatuses returns a list of load balancer status from load balancers that have the status stored on their url maps.
 // It ignores the load balancers that dont have status on their url map.
 // Returns an error if listing url maps fails.
-func (s *URLMapSyncer) ListLoadBalancerStatuses() ([]status.LoadBalancerStatus, error) {
+// See the interface for more details.
+func (s *Syncer) ListLoadBalancerStatuses() ([]status.LoadBalancerStatus, error) {
 	var maps []*compute.UrlMap
 	var err error
 	result := []status.LoadBalancerStatus{}
@@ -169,8 +173,9 @@ func (s *URLMapSyncer) ListLoadBalancerStatuses() ([]status.LoadBalancerStatus, 
 	return result, nil
 }
 
-// See interface for comment.
-func (s *URLMapSyncer) RemoveClustersFromStatus(clusters []string) error {
+// RemoveClustersFromStatus removes the given clusters from the LoadBalancerStatus.
+// See the interface for more details.
+func (s *Syncer) RemoveClustersFromStatus(clusters []string) error {
 	fmt.Println("Removing clusters", clusters, "from url map")
 	name := s.namer.URLMapName()
 	existingUM, err := s.ump.GetUrlMap(name)
@@ -185,7 +190,7 @@ func (s *URLMapSyncer) RemoveClustersFromStatus(clusters []string) error {
 		return err
 	}
 	// Remove clusters from the urlmap.
-	desiredUM, err := s.desiredUrlMapWithoutClusters(existingUM, clusters)
+	desiredUM, err := s.desiredURLMapWithoutClusters(existingUM, clusters)
 	if err != nil {
 		fmt.Println("Error getting desired url map:", err)
 		return err
@@ -195,7 +200,7 @@ func (s *URLMapSyncer) RemoveClustersFromStatus(clusters []string) error {
 	return err
 }
 
-func (s *URLMapSyncer) updateURLMap(desiredUM *compute.UrlMap) (string, error) {
+func (s *Syncer) updateURLMap(desiredUM *compute.UrlMap) (string, error) {
 	name := desiredUM.Name
 	fmt.Println("Updating existing url map", name, "to match the desired state")
 	err := s.ump.UpdateUrlMap(desiredUM)
@@ -210,7 +215,7 @@ func (s *URLMapSyncer) updateURLMap(desiredUM *compute.UrlMap) (string, error) {
 	return um.SelfLink, nil
 }
 
-func (s *URLMapSyncer) createURLMap(desiredUM *compute.UrlMap) (string, error) {
+func (s *Syncer) createURLMap(desiredUM *compute.UrlMap) (string, error) {
 	name := desiredUM.Name
 	fmt.Println("Creating url map", name)
 	glog.V(5).Infof("Creating url map %v", desiredUM)
@@ -244,7 +249,7 @@ func urlMapMatches(desiredUM, existingUM compute.UrlMap) bool {
 	return equal
 }
 
-func (s *URLMapSyncer) desiredURLMap(lbName, ipAddress string, clusters []string, ing *v1beta1.Ingress, beMap backendservice.BackendServicesMap) (*compute.UrlMap, error) {
+func (s *Syncer) desiredURLMap(lbName, ipAddress string, clusters []string, ing *v1beta1.Ingress, beMap backendservice.BackendServicesMap) (*compute.UrlMap, error) {
 	desc, err := desiredStatusString(lbName, "URL map", ipAddress, clusters)
 	if err != nil {
 		return nil, err
@@ -312,8 +317,8 @@ func desiredStatusString(lbName, resourceName, ipAddress string, clusters []stri
 	return desc, nil
 }
 
-// desiredUrlMapWithoutClusters returns a desired url map based on the given existing map such that the given list of clusters is removed from the status.
-func (s *URLMapSyncer) desiredUrlMapWithoutClusters(existingUM *compute.UrlMap, clustersToRemove []string) (*compute.UrlMap, error) {
+// desiredURLMapWithoutClusters returns a desired url map based on the given existing map such that the given list of clusters is removed from the status.
+func (s *Syncer) desiredURLMapWithoutClusters(existingUM *compute.UrlMap, clustersToRemove []string) (*compute.UrlMap, error) {
 	existingStatusStr := existingUM.Description
 	newStatusStr, err := status.RemoveClusters(existingStatusStr, clustersToRemove)
 	if err != nil {
@@ -328,7 +333,7 @@ func (s *URLMapSyncer) desiredUrlMapWithoutClusters(existingUM *compute.UrlMap, 
 // ingToURLMap converts an ingress to GCEURLMap (nested map of subdomain: url-regex: gce backend).
 // TODO: Copied from kubernetes/ingress-gce with minor changes to print errors
 // instead of generating events. Refactor it to make it reusable.
-func (s *URLMapSyncer) ingToURLMap(ing *v1beta1.Ingress, beMap backendservice.BackendServicesMap) (utils.GCEURLMap, error) {
+func (s *Syncer) ingToURLMap(ing *v1beta1.Ingress, beMap backendservice.BackendServicesMap) (utils.GCEURLMap, error) {
 	hostPathBackend := utils.GCEURLMap{}
 	var err error
 	for _, rule := range ing.Spec.Rules {

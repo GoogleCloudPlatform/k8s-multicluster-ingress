@@ -250,7 +250,7 @@ func TestListLoadBalancerStatuses(t *testing.T) {
 		for _, um := range c.urlMaps {
 			namer := utilsnamer.NewNamer("mci1", um.lbName)
 			ums := NewURLMapSyncer(namer, frp)
-			typedUMS := ums.(*URLMapSyncer)
+			typedUMS := ums.(*Syncer)
 			if _, err := ums.EnsureURLMap(um.lbName, um.ipAddr, um.clusters, ing, beMap, false /*force*/); err != nil {
 				t.Errorf("expected no error in ensuring url map, actual: %v", err)
 			}
@@ -316,7 +316,7 @@ func TestGetLoadBalancerStatus(t *testing.T) {
 	frp := ingresslb.NewFakeLoadBalancers("" /*name*/, nil /*namer*/)
 	namer := utilsnamer.NewNamer("mci1", lbName)
 	ums := NewURLMapSyncer(namer, frp)
-	typedUMS := ums.(*URLMapSyncer)
+	typedUMS := ums.(*Syncer)
 
 	// Should return http.StatusNotFound when the url map does not exist.
 	status, err := ums.GetLoadBalancerStatus(lbName)
@@ -397,7 +397,7 @@ func TestRemoveClustersFromStatus(t *testing.T) {
 	verifyClustersInStatus(ums, lbName, expectedClusters)
 
 	// Should run without error when url map does not have a status (old url map)
-	typedUMS := ums.(*URLMapSyncer)
+	typedUMS := ums.(*Syncer)
 	if err := removeStatus(typedUMS); err != nil {
 		t.Errorf("unexpected error in removing status from url map: %s", err)
 	}
@@ -409,7 +409,7 @@ func TestRemoveClustersFromStatus(t *testing.T) {
 }
 
 // removeStatus updates the existing url map of the given name to remove load balancer status.
-func removeStatus(ums *URLMapSyncer) error {
+func removeStatus(ums *Syncer) error {
 	// Update the forwarding rule to not have a status to simulate old url maps that do not have the a status.
 	name := ums.namer.URLMapName()
 	um, err := ums.ump.GetUrlMap(name)
@@ -425,7 +425,7 @@ func removeStatus(ums *URLMapSyncer) error {
 	return nil
 }
 
-func verifyClustersInStatus(ums URLMapSyncerInterface, lbName string, expectedClusters []string) error {
+func verifyClustersInStatus(ums SyncerInterface, lbName string, expectedClusters []string) error {
 	status, err := ums.GetLoadBalancerStatus(lbName)
 	if err != nil {
 		return fmt.Errorf("unexpected error in getting status description for load balancer %s, err: %s", lbName, err)

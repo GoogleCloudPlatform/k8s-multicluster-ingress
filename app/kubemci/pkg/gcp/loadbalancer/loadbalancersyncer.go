@@ -64,7 +64,7 @@ type LoadBalancerSyncer struct {
 	// Backend service syncer to sync the required backend services.
 	bss backendservice.BackendServiceSyncerInterface
 	// URL map syncer to sync the required URL map.
-	ums urlmap.URLMapSyncerInterface
+	ums urlmap.SyncerInterface
 	// Target proxy syncer to sync the required target proxy.
 	tps targetproxy.TargetProxySyncerInterface
 	// Forwarding rule syncer to sync the required forwarding rule.

@@ -21,8 +21,8 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/status"
 )
 
-// URLMapSyncerInterface is an interface to manage GCP url maps.
-type URLMapSyncerInterface interface {
+// SyncerInterface is an interface to manage GCP url maps.
+type SyncerInterface interface {
 	// EnsureURLMap ensures that the required url map exists for the given ingress.
 	// Uses beMap to extract the backend services to link to in the url map.
 	// clusters is the list of clusters across which the load balancer is spread.

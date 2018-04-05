@@ -167,8 +167,8 @@ func TestCreateLoadBalancer(t *testing.T) {
 		t.Fatalf("unexpected number of target proxies. expected: %d, got: %d", 1, len(ftp.EnsuredTargetProxies))
 	}
 	tp := ftp.EnsuredTargetProxies[0]
-	if tp.UmLink != urlmap.FakeUrlSelfLink {
-		t.Errorf("unexpected url map link in target proxy. expected: %s, got: %s", urlmap.FakeUrlSelfLink, tp.UmLink)
+	if tp.UmLink != urlmap.FakeURLSelfLink {
+		t.Errorf("unexpected url map link in target proxy. expected: %s, got: %s", urlmap.FakeURLSelfLink, tp.UmLink)
 	}
 	// Verify that the expected forwarding rule was created.
 	ffr := lbc.frs.(*forwardingrule.FakeForwardingRuleSyncer)

@@ -25,10 +25,11 @@ import (
 )
 
 const (
-	FakeUrlSelfLink = "url/map/self/link"
+	// FakeURLSelfLink is a fake self link used for url maps.
+	FakeURLSelfLink = "url/map/self/link"
 )
 
-type FakeURLMap struct {
+type fakeURLMap struct {
 	LBName    string
 	IPAddress string
 	Clusters  []string
@@ -37,21 +38,24 @@ type FakeURLMap struct {
 	HasStatus bool
 }
 
+// FakeURLMapSyncer is a fake implementation of SyncerInterface to be used in tests.
 type FakeURLMapSyncer struct {
 	// List of url maps that this has been asked to ensure.
-	EnsuredURLMaps []FakeURLMap
+	EnsuredURLMaps []fakeURLMap
 }
 
-// Fake url map syncer to be used for tests.
-func NewFakeURLMapSyncer() URLMapSyncerInterface {
+// NewFakeURLMapSyncer returns a new instance of the fake syncer.
+func NewFakeURLMapSyncer() SyncerInterface {
 	return &FakeURLMapSyncer{}
 }
 
-// Ensure this implements URLMapSyncerInterface.
-var _ URLMapSyncerInterface = &FakeURLMapSyncer{}
+// Ensure this implements SyncerInterface.
+var _ SyncerInterface = &FakeURLMapSyncer{}
 
+// EnsureURLMap ensures that the required url map exists for the given ingress.
+// See the interface for more details.
 func (f *FakeURLMapSyncer) EnsureURLMap(lbName, ipAddress string, clusters []string, ing *v1beta1.Ingress, beMap backendservice.BackendServicesMap, forceUpdate bool) (string, error) {
-	f.EnsuredURLMaps = append(f.EnsuredURLMaps, FakeURLMap{
+	f.EnsuredURLMaps = append(f.EnsuredURLMaps, fakeURLMap{
 		LBName:    lbName,
 		IPAddress: ipAddress,
 		Clusters:  clusters,
@@ -60,14 +64,18 @@ func (f *FakeURLMapSyncer) EnsureURLMap(lbName, ipAddress string, clusters []str
 		// URL map has status by default.
 		HasStatus: true,
 	})
-	return FakeUrlSelfLink, nil
+	return FakeURLSelfLink, nil
 }
 
+// DeleteURLMap deletes the url map that EnsureURLMap would have created.
+// See the interface for more details.
 func (f *FakeURLMapSyncer) DeleteURLMap() error {
 	f.EnsuredURLMaps = nil
 	return nil
 }
 
+// GetLoadBalancerStatus returns the status of the given load balancer.
+// See the interface for more details.
 func (f *FakeURLMapSyncer) GetLoadBalancerStatus(lbName string) (*status.LoadBalancerStatus, error) {
 	for _, fr := range f.EnsuredURLMaps {
 		if fr.LBName == lbName {
@@ -84,6 +92,8 @@ func (f *FakeURLMapSyncer) GetLoadBalancerStatus(lbName string) (*status.LoadBal
 	return nil, fmt.Errorf("load balancer %s does not exist", lbName)
 }
 
+// ListLoadBalancerStatuses lists all the load balancers.
+// See the interface for more details.
 func (f *FakeURLMapSyncer) ListLoadBalancerStatuses() ([]status.LoadBalancerStatus, error) {
 	var ret []status.LoadBalancerStatus
 	for _, fr := range f.EnsuredURLMaps {
@@ -100,6 +110,8 @@ func (f *FakeURLMapSyncer) ListLoadBalancerStatuses() ([]status.LoadBalancerStat
 	return ret, nil
 }
 
+// RemoveClustersFromStatus removes the given clusters from the LoadBalancerStatus.
+// See the interface for more details.
 func (f *FakeURLMapSyncer) RemoveClustersFromStatus(clusters []string) error {
 	clustersToRemove := goutils.MapFromSlice(clusters)
 	for i, fr := range f.EnsuredURLMaps {
@@ -117,6 +129,7 @@ func (f *FakeURLMapSyncer) RemoveClustersFromStatus(clusters []string) error {
 	return nil
 }
 
+// AddStatus adds a status to the url map corresponding to the given load balancer.
 func (f *FakeURLMapSyncer) AddStatus(lbName string) {
 	for i, um := range f.EnsuredURLMaps {
 		if um.LBName == lbName {
@@ -125,6 +138,7 @@ func (f *FakeURLMapSyncer) AddStatus(lbName string) {
 	}
 }
 
+// RemoveStatus removes the status for the given load balancer.
 func (f *FakeURLMapSyncer) RemoveStatus(lbName string) {
 	for i, um := range f.EnsuredURLMaps {
 		if um.LBName == lbName {
