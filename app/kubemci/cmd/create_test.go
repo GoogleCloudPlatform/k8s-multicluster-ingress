@@ -25,13 +25,13 @@ import (
 // This tests all flags except `--gcp-project`, which is tested by the next test.
 func TestValidateCreateArgs(t *testing.T) {
 	// validateCreateArgs should return an error with empty options.
-	options := CreateOptions{}
+	options := createOptions{}
 	if err := validateCreateArgs(&options, []string{}); err == nil {
 		t.Errorf("Expected error for emtpy options")
 	}
 
 	// validateCreateArgs should return an error with missing load balancer name.
-	options = CreateOptions{
+	options = createOptions{
 		IngressFilename:    "ingress.yaml",
 		GCPProject:         "gcp-project",
 		KubeconfigFilename: "kubeconfig",
@@ -41,7 +41,7 @@ func TestValidateCreateArgs(t *testing.T) {
 	}
 
 	// validateCreateArgs should return an error with missing ingress.
-	options = CreateOptions{
+	options = createOptions{
 		GCPProject:         "gcp-project",
 		KubeconfigFilename: "kubeconfig",
 	}
@@ -50,7 +50,7 @@ func TestValidateCreateArgs(t *testing.T) {
 	}
 
 	// validateCreateArgs should return an error with missing kubeconfig.
-	options = CreateOptions{
+	options = createOptions{
 		IngressFilename: "ingress.yaml",
 		GCPProject:      "gcp-project",
 	}
@@ -59,7 +59,7 @@ func TestValidateCreateArgs(t *testing.T) {
 	}
 
 	// validateCreateArgs should succeed when all arguments are passed as expected.
-	options = CreateOptions{
+	options = createOptions{
 		IngressFilename:    "ingress.yaml",
 		GCPProject:         "gcp-project",
 		KubeconfigFilename: "kubeconfig",
@@ -81,7 +81,7 @@ func TestValidateCreateWithGCPProject(t *testing.T) {
 	}
 
 	// validateCreateArgs should return an error with missing gcp project.
-	options := CreateOptions{
+	options := createOptions{
 		IngressFilename:    "ingress.yaml",
 		KubeconfigFilename: "kubeconfig",
 	}
@@ -90,7 +90,7 @@ func TestValidateCreateWithGCPProject(t *testing.T) {
 	}
 
 	// validateCreateArgs should succeed when all arguments are passed as expected.
-	options = CreateOptions{
+	options = createOptions{
 		IngressFilename:    "ingress.yaml",
 		GCPProject:         "gcp-project",
 		KubeconfigFilename: "kubeconfig",
@@ -101,7 +101,7 @@ func TestValidateCreateWithGCPProject(t *testing.T) {
 
 	// validateCreateArgs should succeed when gcp project is passed via gcloud.
 	mockProject = "mock-project"
-	options = CreateOptions{
+	options = createOptions{
 		IngressFilename:    "ingress.yaml",
 		KubeconfigFilename: "kubeconfig",
 	}

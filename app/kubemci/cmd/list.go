@@ -77,7 +77,7 @@ func validateListArgs(options *listOptions, args []string) error {
 		options.GCPProject = project
 	}
 	if len(args) != 0 {
-		return fmt.Errorf("unexpected args: %v. Expected 0 arguments.", args)
+		return fmt.Errorf("unexpected args: %v. Expected 0 arguments", args)
 	}
 	return nil
 }

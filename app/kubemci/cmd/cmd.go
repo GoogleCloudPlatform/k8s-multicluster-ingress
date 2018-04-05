@@ -27,6 +27,7 @@ var (
 It assumes that there is a working gcloud and kubectl in PATH.`
 )
 
+// NewCommand instantiates a new cobra command instance for kubemci commands.
 func NewCommand(in io.Reader, out, err io.Writer) *cobra.Command {
 	// Parent command to which all subcommands are added.
 	rootCmd := &cobra.Command{
@@ -35,10 +36,10 @@ func NewCommand(in io.Reader, out, err io.Writer) *cobra.Command {
 		Long:  longDescription,
 	}
 	rootCmd.AddCommand(
-		NewCmdCreate(out, err),
-		NewCmdDelete(out, err),
-		NewCmdGetStatus(out, err),
-		NewCmdGetVersion(out, err),
+		newCmdCreate(out, err),
+		newCmdDelete(out, err),
+		newCmdGetStatus(out, err),
+		newCmdGetVersion(out, err),
 		newCmdList(out, err),
 		newCmdRemoveClusters(out, err),
 	)

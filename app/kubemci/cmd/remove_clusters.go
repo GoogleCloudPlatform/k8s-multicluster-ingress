@@ -97,11 +97,11 @@ func addRemoveClustersFlags(cmd *cobra.Command, options *removeClustersOptions) 
 
 func validateRemoveClustersArgs(options *removeClustersOptions, args []string) error {
 	if len(args) != 1 {
-		return fmt.Errorf("unexpected args: %v. Expected one arg as name of load balancer.", args)
+		return fmt.Errorf("unexpected args: %v. Expected one arg as name of load balancer", args)
 	}
 	// Verify that the required options are not missing.
 	if options.IngressFilename == "" {
-		return fmt.Errorf("unexpected missing argument ingress.")
+		return fmt.Errorf("unexpected missing argument ingress")
 	}
 	if options.GCPProject == "" {
 		project, err := gcputils.GetProjectFromGCloud()
@@ -111,7 +111,7 @@ func validateRemoveClustersArgs(options *removeClustersOptions, args []string) e
 		options.GCPProject = project
 	}
 	if options.KubeconfigFilename == "" {
-		return fmt.Errorf("unexpected missing argument kubeconfig.")
+		return fmt.Errorf("unexpected missing argument kubeconfig")
 	}
 	return nil
 }

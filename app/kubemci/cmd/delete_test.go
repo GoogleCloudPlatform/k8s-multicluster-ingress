@@ -25,13 +25,13 @@ import (
 // This tests all flags except `--gcp-project`, which is tested by the next test.
 func TestValidateDeleteArgs(t *testing.T) {
 	// validateDeleteArgs should return an error with empty options.
-	options := DeleteOptions{}
+	options := deleteOptions{}
 	if err := validateDeleteArgs(&options, []string{}); err == nil {
 		t.Errorf("Expected error for emtpy options")
 	}
 
 	// validateDeleteArgs should return an error with missing load balancer name.
-	options = DeleteOptions{
+	options = deleteOptions{
 		IngressFilename:    "ingress.yaml",
 		GCPProject:         "gcp-project",
 		KubeconfigFilename: "kubeconfig",
@@ -41,7 +41,7 @@ func TestValidateDeleteArgs(t *testing.T) {
 	}
 
 	// validateDeleteArgs should return an error with missing ingress.
-	options = DeleteOptions{
+	options = deleteOptions{
 		GCPProject:         "gcp-project",
 		KubeconfigFilename: "kubeconfig",
 	}
@@ -50,7 +50,7 @@ func TestValidateDeleteArgs(t *testing.T) {
 	}
 
 	// validateDeleteArgs should return an error with missing kubeconfig.
-	options = DeleteOptions{
+	options = deleteOptions{
 		IngressFilename: "ingress.yaml",
 		GCPProject:      "gcp-project",
 	}
@@ -59,7 +59,7 @@ func TestValidateDeleteArgs(t *testing.T) {
 	}
 
 	// validateDeleteArgs should succeed when all arguments are passed as expected.
-	options = DeleteOptions{
+	options = deleteOptions{
 		IngressFilename:    "ingress.yaml",
 		GCPProject:         "gcp-project",
 		KubeconfigFilename: "kubeconfig",
@@ -81,7 +81,7 @@ func TestValidateDeleteWithGCPProject(t *testing.T) {
 	}
 
 	// validateDeleteArgs should return an error with missing gcp project.
-	options := DeleteOptions{
+	options := deleteOptions{
 		IngressFilename:    "ingress.yaml",
 		KubeconfigFilename: "kubeconfig",
 	}
@@ -90,7 +90,7 @@ func TestValidateDeleteWithGCPProject(t *testing.T) {
 	}
 
 	// validateDeleteArgs should succeed when all arguments are passed as expected.
-	options = DeleteOptions{
+	options = deleteOptions{
 		IngressFilename:    "ingress.yaml",
 		GCPProject:         "gcp-project",
 		KubeconfigFilename: "kubeconfig",
@@ -101,7 +101,7 @@ func TestValidateDeleteWithGCPProject(t *testing.T) {
 
 	// validateDeleteArgs should succeed when gcp project is passed via gcloud.
 	mockProject = "mock-project"
-	options = DeleteOptions{
+	options = deleteOptions{
 		IngressFilename:    "ingress.yaml",
 		KubeconfigFilename: "kubeconfig",
 	}
