@@ -47,7 +47,6 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/urlmap"
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/utils"
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/kubeutils"
-	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/validations"
 )
 
 const (
@@ -112,16 +111,6 @@ func (l *Syncer) CreateLoadBalancer(ing *v1beta1.Ingress, forceUpdate, validate 
 	if cErr != nil {
 		// No point in continuing without a client.
 		return cErr
-	}
-
-	if validate {
-		// TODO(G-Harmon): Move this earlier to create.go and consolidate with the other validation there.
-		if err := validations.Validate(l.clients, ing); err != nil {
-			return fmt.Errorf("validation failed: %s", err)
-		}
-		glog.Infof("Validation passed.")
-	} else {
-		fmt.Println("Validation skipped. (Set --validate to enable.)")
 	}
 
 	ports := l.ingToNodePorts(ing, client)

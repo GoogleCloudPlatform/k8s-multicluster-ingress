@@ -20,6 +20,8 @@ import (
 
 	"github.com/spf13/cobra"
 	"k8s.io/api/extensions/v1beta1"
+	kubeclient "k8s.io/client-go/kubernetes"
+	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce"
 	// gcp is needed for GKE cluster auth to work.
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 
@@ -149,8 +151,12 @@ func runCreate(options *createOptions, args []string) error {
 		return err
 	}
 
+	return createIngressAndLoadBalancer(ing, clients, options, cloudInterface, validations.NewValidator())
+}
+
+func createIngressAndLoadBalancer(ing v1beta1.Ingress, clients map[string]kubeclient.Interface, options *createOptions, cloudInterface *gce.GCECloud, validator validations.ValidatorInterface) error {
 	if options.Validate {
-		if err := validations.ServerVersionsNewEnough(clients); err != nil {
+		if err := validator.Validate(clients, &ing); err != nil {
 			return err
 		}
 	}

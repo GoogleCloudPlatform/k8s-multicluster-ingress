@@ -92,16 +92,13 @@ func TestCreateLoadBalancer(t *testing.T) {
 	for k, v := range lbc.clients {
 		client := v.(*fake.Clientset)
 		actions := client.Actions()
-		// Validation (same for each cluster):
-		//   1x GET-Service for path=/foo.
-		//   1x GET-Service for default backend.
-		// Start of setup (using a random cluster's client):
+		// Setup (using a random cluster's client):
 		//   1x GET-Service for default backend.
 		//   1x GET-Service for path=/foo.
 		// The last action should always be GET-Ingress, once for each cluster.
-		// This is how we get 3 actions for 1 cluster and 5 actions for the other.
-		fetchedSvc = fetchedSvc || len(actions) == 5
-		if !(len(actions) == 3 || len(actions) == 5) {
+		// This is how we get 3 actions for 1 cluster and 1 action for the other.
+		fetchedSvc = fetchedSvc || len(actions) == 3
+		if !(len(actions) == 1 || len(actions) == 3) {
 			t.Errorf("Bad number of actions for cluster '%s'. Expected 3 or 5. Got %d: %v", k, len(actions), actions)
 		} else {
 			for i := 0; i < len(actions)-1; i++ {
@@ -196,43 +193,6 @@ func TestCreateLoadBalancer(t *testing.T) {
 	fw := ffw.EnsuredFirewallRules[0]
 	if fw.LBName != lbName {
 		t.Errorf("unexpected lbname in forwarding rule. expected: %s, got: %s", lbName, fw.LBName)
-	}
-}
-
-func TestCreateLoadBalancerBadNodePortsValidate(t *testing.T) {
-	lbName := "lb-name"
-	igName := "my-fake-ig"
-	igZone := "my-fake-zone"
-	zoneLink := fmt.Sprintf("https://www.googleapis.com/compute/v1/projects/fake-project/zones/%s", igZone)
-	clusters := []string{"cluster1", "cluster2"}
-	lbc := newSyncer(lbName)
-	ipAddress := &compute.Address{
-		Name:    "ipAddressName",
-		Address: "1.2.3.4",
-	}
-	// Reserve a global address. User is supposed to do this before calling CreateLoadBalancer.
-	lbc.ipp.ReserveGlobalAddress(ipAddress)
-	ing, err := setupLBCForCreateIng(lbc, -1 /*nodePort*/, true /*randNodePort*/, igName, igZone, zoneLink, ipAddress)
-	if err != nil {
-		t.Fatalf("%s", err)
-	}
-	if err := lbc.CreateLoadBalancer(ing, true /*forceUpdate*/, true /*validate*/, clusters); err == nil {
-		t.Errorf("want: a validation error while creating load balancer: got: nil")
-	}
-	// Verify client actions.
-	for k, v := range lbc.clients {
-		client := v.(*fake.Clientset)
-		actions := client.Actions()
-		if len(actions) != 2 {
-			t.Errorf("Bad number of actions for cluster '%s'. Expected 1. Got %d: %+v", k, len(actions), actions)
-		} else {
-			for _, action := range actions {
-				getSvcName := action.(core.GetAction).GetName()
-				if getSvcName != "my-svc" {
-					t.Errorf("unexpected GET for '%s', expected: my-svc", getSvcName)
-				}
-			}
-		}
 	}
 }
 
