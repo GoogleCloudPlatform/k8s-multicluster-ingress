@@ -550,8 +550,8 @@ func getIGsForCluster(ing *v1beta1.Ingress, client kubeclient.Interface, cluster
 	return nil, nil
 }
 
-func (l *LoadBalancerSyncer) getNamedPortsForIG(igUrl string) (backendservice.NamedPortsMap, error) {
-	zone, name, err := utils.GetZoneAndNameFromIGUrl(igUrl)
+func (l *LoadBalancerSyncer) getNamedPortsForIG(igURL string) (backendservice.NamedPortsMap, error) {
+	zone, name, err := utils.GetZoneAndNameFromIGURL(igURL)
 	if err != nil {
 		return nil, err
 	}

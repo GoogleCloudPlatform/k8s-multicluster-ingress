@@ -18,35 +18,35 @@ import (
 	"testing"
 )
 
-func TestGetZoneAndNameFromIGUrl(t *testing.T) {
+func TestGetZoneAndNameFromIGURL(t *testing.T) {
 	testCases := []struct {
-		igUrl string
+		igURL string
 		name  string
 		zone  string
 		err   bool
 	}{
 		{
 			// Parses as expected.
-			igUrl: "https://www.googleapis.com/compute/v1/projects/fake-project/zones/zone1/instanceGroups/ig1",
+			igURL: "https://www.googleapis.com/compute/v1/projects/fake-project/zones/zone1/instanceGroups/ig1",
 			name:  "ig1",
 			zone:  "zone1",
 			err:   false,
 		},
 		{
 			// Can parse partial urls
-			igUrl: "projects/fake-project/zones/zone1/instanceGroups/ig1",
+			igURL: "projects/fake-project/zones/zone1/instanceGroups/ig1",
 			name:  "ig1",
 			zone:  "zone1",
 			err:   false,
 		},
 		{
 			// Generates an error on invalid urls.
-			igUrl: "zone1/ig1",
+			igURL: "zone1/ig1",
 			err:   true,
 		},
 	}
 	for i, c := range testCases {
-		zone, name, err := GetZoneAndNameFromIGUrl(c.igUrl)
+		zone, name, err := GetZoneAndNameFromIGURL(c.igURL)
 		if (err != nil) != c.err {
 			t.Fatalf("test %d: expected err: %v, got: %s", i, c.err, err)
 		}
@@ -62,7 +62,7 @@ func TestGetZoneAndNameFromIGUrl(t *testing.T) {
 	}
 }
 
-func TestGetZoneAndNameFromInstanceUrl(t *testing.T) {
+func TestGetZoneAndNameFromInstanceURL(t *testing.T) {
 	testCases := []struct {
 		url  string
 		name string
@@ -90,7 +90,7 @@ func TestGetZoneAndNameFromInstanceUrl(t *testing.T) {
 		},
 	}
 	for i, c := range testCases {
-		zone, name, err := GetZoneAndNameFromInstanceUrl(c.url)
+		zone, name, err := GetZoneAndNameFromInstanceURL(c.url)
 		if (err != nil) != c.err {
 			t.Fatalf("test %d: expected err: %v, got: %s", i, c.err, err)
 		}
@@ -131,7 +131,7 @@ func TestGetNameFromUrl(t *testing.T) {
 		},
 	}
 	for i, c := range testCases {
-		name, err := GetNameFromUrl(c.url)
+		name, err := getNameFromURL(c.url)
 		if (err != nil) != c.err {
 			t.Fatalf("test %d: expected err: %v, got: %s", i, c.err, err)
 		}

@@ -21,50 +21,49 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/kubeutils"
 )
 
-// Returns the zone and name of the instance group from a GCP instance group URL.
-func GetZoneAndNameFromIGUrl(igUrl string) (string, string, error) {
+// GetZoneAndNameFromIGURL returns the zone and name of the instance group from a GCP instance group URL.
+func GetZoneAndNameFromIGURL(igURL string) (string, string, error) {
 	// Split the string by "/instanceGroups/".
-	components := strings.Split(igUrl, "/instanceGroups/")
+	components := strings.Split(igURL, "/instanceGroups/")
 	if len(components) != 2 {
-		return "", "", fmt.Errorf("error in parsing instance groups URL: %s, expected it to contain /instanceGroups", igUrl)
+		return "", "", fmt.Errorf("error in parsing instance groups URL: %s, expected it to contain /instanceGroups", igURL)
 	}
-	zoneUrl := components[0]
+	zoneURL := components[0]
 	name := components[1]
-	zone, err := GetNameFromUrl(zoneUrl)
+	zone, err := getNameFromURL(zoneURL)
 	if err != nil {
 		return "", "", fmt.Errorf("error in parsing zone name from its url: %s", err)
 	}
 	return zone, name, nil
 }
 
-// Returns the zone and name of the instance from a GCP instance URL.
-func GetZoneAndNameFromInstanceUrl(instanceUrl string) (string, string, error) {
+// GetZoneAndNameFromInstanceURL returns the zone and name of the instance from a GCP instance URL.
+func GetZoneAndNameFromInstanceURL(instanceURL string) (string, string, error) {
 	// Split the string by "/instances/".
-	components := strings.Split(instanceUrl, "/instances/")
+	components := strings.Split(instanceURL, "/instances/")
 	if len(components) != 2 {
-		return "", "", fmt.Errorf("error in parsing instance URL: %s, expected it to contain /instances", instanceUrl)
+		return "", "", fmt.Errorf("error in parsing instance URL: %s, expected it to contain /instances", instanceURL)
 	}
-	zoneUrl := components[0]
+	zoneURL := components[0]
 	name := components[1]
-	zone, err := GetNameFromUrl(zoneUrl)
+	zone, err := getNameFromURL(zoneURL)
 	if err != nil {
 		return "", "", fmt.Errorf("error in parsing zone name from its url: %s", err)
 	}
 	return zone, name, nil
 }
 
-// Returns the zone and name of the instance from a GCP instance URL.
-func GetNameFromUrl(url string) (string, error) {
+// getNameFromURL returns the zone and name of the instance from a GCP instance URL.
+func getNameFromURL(url string) (string, error) {
 	// To get name of a resource from its Url, split the string by "/" and use the last element.
 	components := strings.Split(url, "/")
 	if len(components) < 2 {
 		return "", fmt.Errorf("error in parsing URL: %s, expected it to contain /", url)
 	}
 	return components[len(components)-1], nil
-
 }
 
-// getProjectFromGCloud return the default project as configured with gcloud.
+// GetProjectFromGCloud returns the default project as configured with gcloud.
 func GetProjectFromGCloud() (string, error) {
 	// Try to get the default project from gcloud.
 	args := []string{"gcloud", "config", "get-value", "project"}
