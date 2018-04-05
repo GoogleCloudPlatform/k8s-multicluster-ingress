@@ -36,8 +36,8 @@ import (
 // Src ranges from which the GCE L7 performs health checks.
 var l7SrcRanges = []string{"130.211.0.0/22", "35.191.0.0/16"}
 
-// FirewallRuleSyncer manages GCP firewall rules for multicluster GCP L7 load balancers.
-type FirewallRuleSyncer struct {
+// Syncer manages GCP firewall rules for multicluster GCP L7 load balancers.
+type Syncer struct {
 	namer *utilsnamer.Namer
 	// Firewall rules provider to call GCE APIs to manipulate firewall rules.
 	fwp ingressfw.Firewall
@@ -45,20 +45,22 @@ type FirewallRuleSyncer struct {
 	ig instances.InstanceGetterInterface
 }
 
-func NewFirewallRuleSyncer(namer *utilsnamer.Namer, fwp ingressfw.Firewall, ig instances.InstanceGetterInterface) FirewallRuleSyncerInterface {
-	return &FirewallRuleSyncer{
+// NewFirewallRuleSyncer returns a new instance of the syncer.
+func NewFirewallRuleSyncer(namer *utilsnamer.Namer, fwp ingressfw.Firewall, ig instances.InstanceGetterInterface) SyncerInterface {
+	return &Syncer{
 		namer: namer,
 		fwp:   fwp,
 		ig:    ig,
 	}
 }
 
-// Ensure this implements FirewallRuleSyncerInterface.
-var _ FirewallRuleSyncerInterface = &FirewallRuleSyncer{}
+// Ensure this implements SyncerInterface.
+var _ SyncerInterface = &Syncer{}
 
 // EnsureFirewallRule ensures that the required firewall rules exist for the given ports.
 // Does nothing if they exist already, else creates new ones.
-func (s *FirewallRuleSyncer) EnsureFirewallRule(lbName string, ports []ingressbe.ServicePort, igLinks map[string][]string, forceUpdate bool) error {
+// See the interface for more details.
+func (s *Syncer) EnsureFirewallRule(lbName string, ports []ingressbe.ServicePort, igLinks map[string][]string, forceUpdate bool) error {
 	fmt.Println("Ensuring firewall rule")
 	glog.V(5).Infof("Received ports: %v", ports)
 	glog.V(5).Infof("Received instance groups: %v", igLinks)
@@ -69,7 +71,9 @@ func (s *FirewallRuleSyncer) EnsureFirewallRule(lbName string, ports []ingressbe
 	return nil
 }
 
-func (s *FirewallRuleSyncer) DeleteFirewallRules() error {
+// DeleteFirewallRules deletes the firewall rules that EnsureFirewallRule would have created.
+// See the interface for more details.
+func (s *Syncer) DeleteFirewallRules() error {
 	name := s.namer.FirewallRuleName()
 	fmt.Println("Deleting firewall rule", name)
 	err := s.fwp.DeleteFirewall(name)
@@ -77,18 +81,17 @@ func (s *FirewallRuleSyncer) DeleteFirewallRules() error {
 		if utils.IsHTTPErrorCode(err, http.StatusNotFound) {
 			fmt.Println("Firewall rule", name, "does not exist. Nothing to delete")
 			return nil
-		} else {
-			fmt.Printf("Error in deleting firewall rule %s: %s", name, err)
-			return err
 		}
-	} else {
-		fmt.Println("Firewall rule", name, "deleted successfully")
-		return nil
+		fmt.Printf("Error in deleting firewall rule %s: %s", name, err)
+		return err
 	}
+	fmt.Println("Firewall rule", name, "deleted successfully")
+	return nil
 }
 
-// See interface comment.
-func (s *FirewallRuleSyncer) RemoveFromClusters(lbName string, removeIGLinks map[string][]string) error {
+// RemoveFromClusters removes the clusters corresponding to the given instance groups from the firewall rule.
+// See the interface for more details.
+func (s *Syncer) RemoveFromClusters(lbName string, removeIGLinks map[string][]string) error {
 	fmt.Println("Removing clusters from firewall rule")
 	glog.V(5).Infof("Received instance groups: %v", removeIGLinks)
 	err := s.removeFromClusters(lbName, removeIGLinks)
@@ -98,7 +101,7 @@ func (s *FirewallRuleSyncer) RemoveFromClusters(lbName string, removeIGLinks map
 	return nil
 }
 
-func (s *FirewallRuleSyncer) removeFromClusters(lbName string, removeIGLinks map[string][]string) error {
+func (s *Syncer) removeFromClusters(lbName string, removeIGLinks map[string][]string) error {
 	name := s.namer.FirewallRuleName()
 	existingFW, err := s.fwp.GetFirewall(name)
 	if err != nil {
@@ -117,7 +120,7 @@ func (s *FirewallRuleSyncer) removeFromClusters(lbName string, removeIGLinks map
 
 // ensureFirewallRule ensures that the required firewall rule exists for the given ports.
 // Does nothing if it exists already, else creates a new one.
-func (s *FirewallRuleSyncer) ensureFirewallRule(lbName string, ports []ingressbe.ServicePort, igLinks map[string][]string, forceUpdate bool) error {
+func (s *Syncer) ensureFirewallRule(lbName string, ports []ingressbe.ServicePort, igLinks map[string][]string, forceUpdate bool) error {
 	desiredFW, err := s.desiredFirewallRule(lbName, ports, igLinks)
 	if err != nil {
 		return err
@@ -138,10 +141,9 @@ func (s *FirewallRuleSyncer) ensureFirewallRule(lbName string, ports []ingressbe
 		}
 		if forceUpdate {
 			return s.updateFirewallRule(desiredFW)
-		} else {
-			fmt.Println("Will not overwrite a differing firewall rule without the --force flag.")
-			return fmt.Errorf("will not overwrite firewall rule without --force")
 		}
+		fmt.Println("Will not overwrite a differing firewall rule without the --force flag.")
+		return fmt.Errorf("will not overwrite firewall rule without --force")
 	}
 	glog.V(5).Infof("Got error %s while trying to get existing firewall rule %s", err, name)
 	// TODO(nikhiljindal): Handle non NotFound errors. We should create only if the error is NotFound.
@@ -150,7 +152,7 @@ func (s *FirewallRuleSyncer) ensureFirewallRule(lbName string, ports []ingressbe
 }
 
 // updateFirewallRule updates the firewall rule and returns the updated firewall rule.
-func (s *FirewallRuleSyncer) updateFirewallRule(desiredFR *compute.Firewall) error {
+func (s *Syncer) updateFirewallRule(desiredFR *compute.Firewall) error {
 	name := desiredFR.Name
 	fmt.Println("Updating existing firewall rule", name, "to match the desired state")
 	err := s.fwp.UpdateFirewall(desiredFR)
@@ -163,7 +165,7 @@ func (s *FirewallRuleSyncer) updateFirewallRule(desiredFR *compute.Firewall) err
 }
 
 // createFirewallRule creates the firewall rule and returns the created firewall rule.
-func (s *FirewallRuleSyncer) createFirewallRule(desiredFR *compute.Firewall) error {
+func (s *Syncer) createFirewallRule(desiredFR *compute.Firewall) error {
 	name := desiredFR.Name
 	fmt.Println("Creating firewall rule", name)
 	glog.V(5).Infof("Creating firewall rule %v", desiredFR)
@@ -205,7 +207,7 @@ func firewallRuleMatches(desiredFR, existingFR *compute.Firewall) bool {
 	return equal
 }
 
-func (s *FirewallRuleSyncer) desiredFirewallRule(lbName string, ports []ingressbe.ServicePort, igLinks map[string][]string) (*compute.Firewall, error) {
+func (s *Syncer) desiredFirewallRule(lbName string, ports []ingressbe.ServicePort, igLinks map[string][]string) (*compute.Firewall, error) {
 	// Compute the desired firewall rule.
 	instances, err := s.getInstances(igLinks)
 	if err != nil {
@@ -243,7 +245,7 @@ func (s *FirewallRuleSyncer) desiredFirewallRule(lbName string, ports []ingressb
 	}, nil
 }
 
-func (s *FirewallRuleSyncer) desiredFirewallRuleWithoutClusters(existingFW *compute.Firewall, removeIGLinks map[string][]string) (*compute.Firewall, error) {
+func (s *Syncer) desiredFirewallRuleWithoutClusters(existingFW *compute.Firewall, removeIGLinks map[string][]string) (*compute.Firewall, error) {
 	// Compute the target tags that need to be removed for the given instance groups.
 	instances, err := s.getInstances(removeIGLinks)
 	if err != nil {
@@ -284,7 +286,7 @@ func (s *FirewallRuleSyncer) desiredFirewallRuleWithoutClusters(existingFW *comp
 }
 
 // Returns an array of instances, with an instance from each cluster.
-func (s *FirewallRuleSyncer) getInstances(igLinks map[string][]string) ([]*compute.Instance, error) {
+func (s *Syncer) getInstances(igLinks map[string][]string) ([]*compute.Instance, error) {
 	var instances []*compute.Instance
 	for _, v := range igLinks {
 		// Return an instance from the first instance group of each cluster.
@@ -300,7 +302,7 @@ func (s *FirewallRuleSyncer) getInstances(igLinks map[string][]string) ([]*compu
 
 // getTargetTags returns the required network tags to target all instances.
 // It assumes that the input contains an instance from each cluster.
-func (s *FirewallRuleSyncer) getTargetTags(instances []*compute.Instance) ([]string, error) {
+func (s *Syncer) getTargetTags(instances []*compute.Instance) ([]string, error) {
 	// We assume that all instances in a cluster have the same target tags.
 	// This is true for default GKE and GCE clusters (brought up using kube-up).
 	// So we return the first target tag from an instance in each cluster.
@@ -317,7 +319,7 @@ func (s *FirewallRuleSyncer) getTargetTags(instances []*compute.Instance) ([]str
 
 // getNetworkName returns the full network URL of the given instance.
 // Example network URL: https://www.googleapis.com/compute/v1/projects/myproject/global/networks/my-network
-func (s *FirewallRuleSyncer) getNetworkName(instance *compute.Instance) string {
+func (s *Syncer) getNetworkName(instance *compute.Instance) string {
 	if len(instance.NetworkInterfaces) > 0 {
 		return instance.NetworkInterfaces[0].Network
 	}

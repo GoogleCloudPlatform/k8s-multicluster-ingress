@@ -20,28 +20,31 @@ import (
 	ingressbe "k8s.io/ingress-gce/pkg/backends"
 )
 
-type FakeHealthCheck struct {
+type fakeHealthCheck struct {
 	LBName string
 	Port   ingressbe.ServicePort
 }
 
+// FakeHealthCheckSyncer is a fake implementation of SyncerInterface to be used in tests.
 type FakeHealthCheckSyncer struct {
 	// List of health checks that this has been asked to ensure.
-	EnsuredHealthChecks []FakeHealthCheck
+	EnsuredHealthChecks []fakeHealthCheck
 }
 
-// Fake health check syncer to be used for tests.
-func NewFakeHealthCheckSyncer() HealthCheckSyncerInterface {
+// NewFakeHealthCheckSyncer returns a new instance of the fake syncer.
+func NewFakeHealthCheckSyncer() SyncerInterface {
 	return &FakeHealthCheckSyncer{}
 }
 
 // Ensure this implements HealthCheckSyncerInterface.
-var _ HealthCheckSyncerInterface = &FakeHealthCheckSyncer{}
+var _ SyncerInterface = &FakeHealthCheckSyncer{}
 
+// EnsureHealthCheck ensures that the required health checks exist for the given load balancer.
+// See interface for more details.
 func (f *FakeHealthCheckSyncer) EnsureHealthCheck(lbName string, ports []ingressbe.ServicePort, clients map[string]kubernetes.Interface, force bool) (HealthChecksMap, error) {
 	hcMap := HealthChecksMap{}
 	for _, p := range ports {
-		f.EnsuredHealthChecks = append(f.EnsuredHealthChecks, FakeHealthCheck{
+		f.EnsuredHealthChecks = append(f.EnsuredHealthChecks, fakeHealthCheck{
 			LBName: lbName,
 			Port:   p,
 		})
@@ -50,6 +53,8 @@ func (f *FakeHealthCheckSyncer) EnsureHealthCheck(lbName string, ports []ingress
 	return hcMap, nil
 }
 
+// DeleteHealthChecks deletes the health checks that EnsureHealthCheck would have created.
+// See interface for more details.
 func (f *FakeHealthCheckSyncer) DeleteHealthChecks(ports []ingressbe.ServicePort) error {
 	f.EnsuredHealthChecks = nil
 	return nil

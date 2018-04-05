@@ -18,8 +18,8 @@ import (
 	ingressbe "k8s.io/ingress-gce/pkg/backends"
 )
 
-// FirewallRuleSyncerInterface is an interface to manage GCP firewall rules.
-type FirewallRuleSyncerInterface interface {
+// SyncerInterface is an interface to manage GCP firewall rules.
+type SyncerInterface interface {
 	// EnsureFirewallRule ensures that the required firewall rules exist.
 	// If a firewall rule already exists and differs, it will not be updated unless forceUpdate is true.
 	EnsureFirewallRule(lbName string, ports []ingressbe.ServicePort, igLinks map[string][]string, forceUpdate bool) error

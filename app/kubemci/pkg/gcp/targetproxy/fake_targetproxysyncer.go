@@ -15,39 +15,45 @@
 package targetproxy
 
 const (
+	// FakeTargetProxySelfLink is a fake self link for target proxies.
 	FakeTargetProxySelfLink = "target/proxy/self/link"
 )
 
-type FakeTargetProxy struct {
+type fakeTargetProxy struct {
 	LBName string
 	UmLink string
 	// Link to the SSL certificate. This is present only for HTTPS target proxies.
 	CertLink string
 }
 
+// FakeTargetProxySyncer is a fake implementation of SyncerInterface to be used in tests.
 type FakeTargetProxySyncer struct {
 	// List of target proxies that this has been asked to ensure.
-	EnsuredTargetProxies []FakeTargetProxy
+	EnsuredTargetProxies []fakeTargetProxy
 }
 
-// Fake target proxy syncer to be used for tests.
-func NewFakeTargetProxySyncer() TargetProxySyncerInterface {
+// NewFakeTargetProxySyncer returns a new instance of the fake syncer.
+func NewFakeTargetProxySyncer() SyncerInterface {
 	return &FakeTargetProxySyncer{}
 }
 
-// Ensure this implements TargetProxySyncerInterface.
-var _ TargetProxySyncerInterface = &FakeTargetProxySyncer{}
+// Ensure this implements SyncerInterface.
+var _ SyncerInterface = &FakeTargetProxySyncer{}
 
-func (f *FakeTargetProxySyncer) EnsureHttpTargetProxy(lbName, umLink string, forceUpdate bool) (string, error) {
-	f.EnsuredTargetProxies = append(f.EnsuredTargetProxies, FakeTargetProxy{
+// EnsureHTTPTargetProxy ensures that a http target proxy exists for the given load balancer.
+// See interface comments for details.
+func (f *FakeTargetProxySyncer) EnsureHTTPTargetProxy(lbName, umLink string, forceUpdate bool) (string, error) {
+	f.EnsuredTargetProxies = append(f.EnsuredTargetProxies, fakeTargetProxy{
 		LBName: lbName,
 		UmLink: umLink,
 	})
 	return FakeTargetProxySelfLink, nil
 }
 
-func (f *FakeTargetProxySyncer) EnsureHttpsTargetProxy(lbName, umLink, certLink string, forceUpdate bool) (string, error) {
-	f.EnsuredTargetProxies = append(f.EnsuredTargetProxies, FakeTargetProxy{
+// EnsureHTTPSTargetProxy ensures that a https target proxy exists for the given load balancer.
+// See interface comments for details.
+func (f *FakeTargetProxySyncer) EnsureHTTPSTargetProxy(lbName, umLink, certLink string, forceUpdate bool) (string, error) {
+	f.EnsuredTargetProxies = append(f.EnsuredTargetProxies, fakeTargetProxy{
 		LBName:   lbName,
 		UmLink:   umLink,
 		CertLink: certLink,
@@ -55,6 +61,8 @@ func (f *FakeTargetProxySyncer) EnsureHttpsTargetProxy(lbName, umLink, certLink 
 	return FakeTargetProxySelfLink, nil
 }
 
+// DeleteTargetProxies deletes the target proxies that EnsureHTTPTargetProxy and EnsureHTTPSTargetProxy would have created.
+// See interface comments for details.
 func (f *FakeTargetProxySyncer) DeleteTargetProxies() error {
 	f.EnsuredTargetProxies = nil
 	return nil

@@ -21,7 +21,7 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/goutils"
 )
 
-type FakeForwardingRule struct {
+type fakeForwardingRule struct {
 	LBName    string
 	IPAddress string
 	TPLink    string
@@ -29,21 +29,24 @@ type FakeForwardingRule struct {
 	Status    *status.LoadBalancerStatus
 }
 
+// FakeForwardingRuleSyncer is a fake implementation of SyncerInterface to be used in tests.
 type FakeForwardingRuleSyncer struct {
 	// List of forwarding rules that this has been asked to ensure.
-	EnsuredForwardingRules []FakeForwardingRule
+	EnsuredForwardingRules []fakeForwardingRule
 }
 
-// Fake forwarding rule syncer to be used for tests.
-func NewFakeForwardingRuleSyncer() ForwardingRuleSyncerInterface {
+// NewFakeForwardingRuleSyncer returns a new instance of fake syncer.
+func NewFakeForwardingRuleSyncer() SyncerInterface {
 	return &FakeForwardingRuleSyncer{}
 }
 
-// Ensure this implements ForwardingRuleSyncerInterface.
-var _ ForwardingRuleSyncerInterface = &FakeForwardingRuleSyncer{}
+// Ensure this implements SyncerInterface.
+var _ SyncerInterface = &FakeForwardingRuleSyncer{}
 
-func (f *FakeForwardingRuleSyncer) EnsureHttpForwardingRule(lbName, ipAddress, targetProxyLink string, forceUpdate bool) error {
-	f.EnsuredForwardingRules = append(f.EnsuredForwardingRules, FakeForwardingRule{
+// EnsureHTTPForwardingRule ensures that a http forwarding rule exists for the given load balancer.
+// See interface for more details.
+func (f *FakeForwardingRuleSyncer) EnsureHTTPForwardingRule(lbName, ipAddress, targetProxyLink string, forceUpdate bool) error {
+	f.EnsuredForwardingRules = append(f.EnsuredForwardingRules, fakeForwardingRule{
 		LBName:    lbName,
 		IPAddress: ipAddress,
 		TPLink:    targetProxyLink,
@@ -51,8 +54,10 @@ func (f *FakeForwardingRuleSyncer) EnsureHttpForwardingRule(lbName, ipAddress, t
 	return nil
 }
 
-func (f *FakeForwardingRuleSyncer) EnsureHttpsForwardingRule(lbName, ipAddress, targetProxyLink string, forceUpdate bool) error {
-	f.EnsuredForwardingRules = append(f.EnsuredForwardingRules, FakeForwardingRule{
+// EnsureHTTPSForwardingRule ensures that a https forwarding rule exists for the given load balancer.
+// See interface for more details.
+func (f *FakeForwardingRuleSyncer) EnsureHTTPSForwardingRule(lbName, ipAddress, targetProxyLink string, forceUpdate bool) error {
+	f.EnsuredForwardingRules = append(f.EnsuredForwardingRules, fakeForwardingRule{
 		LBName:    lbName,
 		IPAddress: ipAddress,
 		TPLink:    targetProxyLink,
@@ -61,11 +66,15 @@ func (f *FakeForwardingRuleSyncer) EnsureHttpsForwardingRule(lbName, ipAddress, 
 	return nil
 }
 
+// DeleteForwardingRules deletes the forwarding rules that EnsureHTTPForwardingRule and EnsureHTTPSForwardingRule would have created.
+// See interface for more details.
 func (f *FakeForwardingRuleSyncer) DeleteForwardingRules() error {
 	f.EnsuredForwardingRules = nil
 	return nil
 }
 
+// GetLoadBalancerStatus returns the status of the given load balancer.
+// See interface for more details.
 func (f *FakeForwardingRuleSyncer) GetLoadBalancerStatus(lbName string) (*status.LoadBalancerStatus, error) {
 	for _, fr := range f.EnsuredForwardingRules {
 		if fr.LBName == lbName {
@@ -78,6 +87,8 @@ func (f *FakeForwardingRuleSyncer) GetLoadBalancerStatus(lbName string) (*status
 	return nil, fmt.Errorf("load balancer %s does not exist", lbName)
 }
 
+// ListLoadBalancerStatuses returns the list of load balancer statuses.
+// See interface for more details.
 func (f *FakeForwardingRuleSyncer) ListLoadBalancerStatuses() ([]status.LoadBalancerStatus, error) {
 	var ret []status.LoadBalancerStatus
 	for _, fr := range f.EnsuredForwardingRules {
@@ -88,6 +99,8 @@ func (f *FakeForwardingRuleSyncer) ListLoadBalancerStatuses() ([]status.LoadBala
 	return ret, nil
 }
 
+// RemoveClustersFromStatus removes the given clusters from forwarding rules.
+// See interface for more details.
 func (f *FakeForwardingRuleSyncer) RemoveClustersFromStatus(clusters []string) error {
 	clustersToRemove := goutils.MapFromSlice(clusters)
 	for i, fr := range f.EnsuredForwardingRules {
@@ -105,6 +118,7 @@ func (f *FakeForwardingRuleSyncer) RemoveClustersFromStatus(clusters []string) e
 	return nil
 }
 
+// AddStatus adds the given status to forwarding rule for the given load balancer.
 func (f *FakeForwardingRuleSyncer) AddStatus(lbName string, status *status.LoadBalancerStatus) {
 	for i, fr := range f.EnsuredForwardingRules {
 		if fr.LBName == lbName {
@@ -113,6 +127,7 @@ func (f *FakeForwardingRuleSyncer) AddStatus(lbName string, status *status.LoadB
 	}
 }
 
+// RemoveStatus removes status of the given load balancer.
 func (f *FakeForwardingRuleSyncer) RemoveStatus(lbName string) {
 	for i, fr := range f.EnsuredForwardingRules {
 		if fr.LBName == lbName {

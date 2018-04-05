@@ -51,28 +51,28 @@ import (
 )
 
 const (
-	// Prefix used by the namer to generate names.
+	// MciPrefix is the prefix used by namer to generate names.
 	// This is used to identify resources created by this code.
 	MciPrefix = "mci1"
 )
 
-// LoadBalancerSyncer manages the GCP resources necessary for an L7 GCP Load balancer.
-type LoadBalancerSyncer struct {
+// Syncer manages the GCP resources necessary for an L7 GCP Load balancer.
+type Syncer struct {
 	lbName string
 	// Health check syncer to sync the required health checks.
-	hcs healthcheck.HealthCheckSyncerInterface
+	hcs healthcheck.SyncerInterface
 	// Backend service syncer to sync the required backend services.
-	bss backendservice.BackendServiceSyncerInterface
+	bss backendservice.SyncerInterface
 	// URL map syncer to sync the required URL map.
 	ums urlmap.SyncerInterface
 	// Target proxy syncer to sync the required target proxy.
-	tps targetproxy.TargetProxySyncerInterface
+	tps targetproxy.SyncerInterface
 	// Forwarding rule syncer to sync the required forwarding rule.
-	frs forwardingrule.ForwardingRuleSyncerInterface
+	frs forwardingrule.SyncerInterface
 	// Firewall rule syncer to sync the required firewall rule.
-	fws firewallrule.FirewallRuleSyncerInterface
+	fws firewallrule.SyncerInterface
 	// SSL Certificates syncer to sync the required ssl certificates.
-	scs sslcert.SSLCertSyncerInterface
+	scs sslcert.SyncerInterface
 	// Kubernetes clients to send requests to kubernetes apiservers.
 	// This is a map from cluster name to the client for that cluster.
 	clients map[string]kubeclient.Interface
@@ -83,14 +83,14 @@ type LoadBalancerSyncer struct {
 	ipp ingresslb.LoadBalancers
 }
 
-func NewLoadBalancerSyncer(lbName string, clients map[string]kubeclient.Interface, cloud *gce.GCECloud, gcpProjectId string) (*LoadBalancerSyncer, error) {
-
+// NewLoadBalancerSyncer returns a new instance of Syncer.
+func NewLoadBalancerSyncer(lbName string, clients map[string]kubeclient.Interface, cloud *gce.GCECloud, gcpProjectID string) (*Syncer, error) {
 	namer := utilsnamer.NewNamer(MciPrefix, lbName)
-	ig, err := instances.NewInstanceGetter(gcpProjectId)
+	ig, err := instances.NewInstanceGetter(gcpProjectID)
 	if err != nil {
 		return nil, err
 	}
-	return &LoadBalancerSyncer{
+	return &Syncer{
 		lbName:  lbName,
 		hcs:     healthcheck.NewHealthCheckSyncer(namer, cloud),
 		bss:     backendservice.NewBackendServiceSyncer(namer, cloud),
@@ -107,7 +107,7 @@ func NewLoadBalancerSyncer(lbName string, clients map[string]kubeclient.Interfac
 
 // CreateLoadBalancer creates the GCP resources necessary for an L7 GCP load balancer corresponding to the given ingress.
 // clusters is the list of clusters that this load balancer is spread to.
-func (l *LoadBalancerSyncer) CreateLoadBalancer(ing *v1beta1.Ingress, forceUpdate, validate bool, clusters []string) error {
+func (l *Syncer) CreateLoadBalancer(ing *v1beta1.Ingress, forceUpdate, validate bool, clusters []string) error {
 	client, cErr := getAnyClient(l.clients)
 	if cErr != nil {
 		// No point in continuing without a client.
@@ -177,14 +177,14 @@ func (l *LoadBalancerSyncer) CreateLoadBalancer(ing *v1beta1.Ingress, forceUpdat
 	ingAnnotations := annotations.FromIngress(ing)
 	// Configure HTTP target proxy and forwarding rule, if required.
 	if ingAnnotations.AllowHTTP() {
-		tpLink, tpErr := l.tps.EnsureHttpTargetProxy(l.lbName, umLink, forceUpdate)
+		tpLink, tpErr := l.tps.EnsureHTTPTargetProxy(l.lbName, umLink, forceUpdate)
 		if tpErr != nil {
 			// Aggregate errors and return all at the end.
 			tpErr = fmt.Errorf("Error ensuring HTTP target proxy: %s", tpErr)
 			fmt.Println(tpErr)
 			err = multierror.Append(err, tpErr)
 		}
-		frErr := l.frs.EnsureHttpForwardingRule(l.lbName, ipAddr, tpLink, forceUpdate)
+		frErr := l.frs.EnsureHTTPForwardingRule(l.lbName, ipAddr, tpLink, forceUpdate)
 		if frErr != nil {
 			// Aggregate errors and return all at the end.
 			frErr = fmt.Errorf("Error ensuring http forwarding rule: %s", frErr)
@@ -204,14 +204,14 @@ func (l *LoadBalancerSyncer) CreateLoadBalancer(ing *v1beta1.Ingress, forceUpdat
 			err = multierror.Append(err, cErr)
 		}
 
-		tpLink, tpErr := l.tps.EnsureHttpsTargetProxy(l.lbName, umLink, certLink, forceUpdate)
+		tpLink, tpErr := l.tps.EnsureHTTPSTargetProxy(l.lbName, umLink, certLink, forceUpdate)
 		if tpErr != nil {
 			// Aggregate errors and return all at the end.
 			tpErr = fmt.Errorf("Error ensuring HTTPS target proxy: %s", tpErr)
 			fmt.Println(tpErr)
 			err = multierror.Append(err, tpErr)
 		}
-		frErr := l.frs.EnsureHttpsForwardingRule(l.lbName, ipAddr, tpLink, forceUpdate)
+		frErr := l.frs.EnsureHTTPSForwardingRule(l.lbName, ipAddr, tpLink, forceUpdate)
 		if frErr != nil {
 			// Aggregate errors and return all at the end.
 			frErr = fmt.Errorf("Error ensuring https forwarding rule: %s", frErr)
@@ -230,7 +230,7 @@ func (l *LoadBalancerSyncer) CreateLoadBalancer(ing *v1beta1.Ingress, forceUpdat
 // DeleteLoadBalancer deletes the GCP resources associated with the L7 GCP load balancer for the given ingress.
 // Continues in case of errors and deletes the resources that it can when forceDelete is set to true.
 // TODO(nikhiljindal): Do not require the ingress yaml from users. Just the name should be enough. We can fetch ingress YAML from one of the clusters.
-func (l *LoadBalancerSyncer) DeleteLoadBalancer(ing *v1beta1.Ingress, forceDelete bool) error {
+func (l *Syncer) DeleteLoadBalancer(ing *v1beta1.Ingress, forceDelete bool) error {
 	var err error
 	client, cErr := getAnyClient(l.clients)
 	if cErr != nil {
@@ -281,7 +281,7 @@ func (l *LoadBalancerSyncer) DeleteLoadBalancer(ing *v1beta1.Ingress, forceDelet
 
 // RemoveFromClusters removes the given ingress from the clusters corresponding to the given clients.
 // TODO(nikhiljindal): Do not require the ingress yaml from users. Just the name should be enough. We can fetch ingress YAML from one of the clusters.
-func (l *LoadBalancerSyncer) RemoveFromClusters(ing *v1beta1.Ingress, removeClients map[string]kubeclient.Interface, forceUpdate bool) error {
+func (l *Syncer) RemoveFromClusters(ing *v1beta1.Ingress, removeClients map[string]kubeclient.Interface, forceUpdate bool) error {
 	// First verify that removing it from the given clusters will not remove it from all clusters.
 	// If yes, then prompt users to use delete instead or use --force.
 	lbStatus, statusErr := l.getLoadBalancerStatus()
@@ -362,7 +362,7 @@ func hasSomeRemainingClusters(clusters []string, clustersToRemove map[string]kub
 // removeClustersFromStatus updates the status of the given load balancer to remove the given list of clusters from it.
 // Since the status could be stored on either the url map or the forwarding rule, it tries updating both and returns an error if that fails.
 // Returns an http.StatusNotFound error if either the url map or the forwarding rule does not exist.
-func (l *LoadBalancerSyncer) removeClustersFromStatus(lbName string, clustersToRemove []string) error {
+func (l *Syncer) removeClustersFromStatus(lbName string, clustersToRemove []string) error {
 	// Try updating status in both url map and forwarding rule.
 	frErr := l.frs.RemoveClustersFromStatus(clustersToRemove)
 	umErr := l.ums.RemoveClustersFromStatus(clustersToRemove)
@@ -379,7 +379,7 @@ func (l *LoadBalancerSyncer) removeClustersFromStatus(lbName string, clustersToR
 }
 
 // PrintStatus prints the current status of the load balancer.
-func (l *LoadBalancerSyncer) PrintStatus() (string, error) {
+func (l *Syncer) PrintStatus() (string, error) {
 	status, err := l.getLoadBalancerStatus()
 	if err != nil {
 		return "", err
@@ -388,7 +388,7 @@ func (l *LoadBalancerSyncer) PrintStatus() (string, error) {
 }
 
 // getLoadBalancerStatus returns the current status of the load balancer.
-func (l *LoadBalancerSyncer) getLoadBalancerStatus() (*status.LoadBalancerStatus, error) {
+func (l *Syncer) getLoadBalancerStatus() (*status.LoadBalancerStatus, error) {
 	// First try to fetch the status from url map.
 	// If that fails, then we fetch it from forwarding rule.
 	// This is because we first used to store the status on forwarding rules and then migrated to url maps.
@@ -433,7 +433,9 @@ func formatLoadBalancersList(balancers []status.LoadBalancerStatus) (string, err
 	return buf.String(), nil
 }
 
-func (l *LoadBalancerSyncer) ListLoadBalancers() (string, error) {
+// ListLoadBalancers lists the existing load balancers.
+// See interface for details.
+func (l *Syncer) ListLoadBalancers() (string, error) {
 	var err error
 	// We fetch the list from both url maps and forwarding rules and then merge them.
 	// This is because we first used to store the status on forwarding rules and then migrated to url maps.
@@ -457,7 +459,7 @@ func (l *LoadBalancerSyncer) ListLoadBalancers() (string, error) {
 	return formatLoadBalancersList(append(umBalancers, frBalancers...))
 }
 
-func (l *LoadBalancerSyncer) getIPAddress(ing *v1beta1.Ingress) (string, error) {
+func (l *Syncer) getIPAddress(ing *v1beta1.Ingress) (string, error) {
 	key := annotations.StaticIPNameKey
 	if ing.ObjectMeta.Annotations == nil || ing.ObjectMeta.Annotations[key] == "" {
 		// TODO(nikhiljindal): Add logic to reserve a new IP address if user has not specified any.
@@ -473,7 +475,7 @@ func (l *LoadBalancerSyncer) getIPAddress(ing *v1beta1.Ingress) (string, error) 
 }
 
 // Returns links to all instance groups corresponding the given ingress for the given clients.
-func (l *LoadBalancerSyncer) getIGs(ing *v1beta1.Ingress, clients map[string]kubeclient.Interface) (map[string][]string, error) {
+func (l *Syncer) getIGs(ing *v1beta1.Ingress, clients map[string]kubeclient.Interface) (map[string][]string, error) {
 	var err error
 	igs := make(map[string][]string, len(l.clients))
 	// Get instance groups from all clusters.
@@ -491,7 +493,7 @@ func (l *LoadBalancerSyncer) getIGs(ing *v1beta1.Ingress, clients map[string]kub
 // Returns named ports on an instance from the given list.
 // Note that it picks an instance group at random and returns the named ports for that instance group, assuming that the named ports are same on all instance groups.
 // Also note that this returns all named ports on the instance group and not just the ones relevant to the given ingress.
-func (l *LoadBalancerSyncer) getNamedPorts(igs map[string][]string) (backendservice.NamedPortsMap, error) {
+func (l *Syncer) getNamedPorts(igs map[string][]string) (backendservice.NamedPortsMap, error) {
 	if len(igs) == 0 {
 		return backendservice.NamedPortsMap{}, fmt.Errorf("Cannot fetch named ports since instance groups list is empty")
 	}
@@ -550,7 +552,7 @@ func getIGsForCluster(ing *v1beta1.Ingress, client kubeclient.Interface, cluster
 	return nil, nil
 }
 
-func (l *LoadBalancerSyncer) getNamedPortsForIG(igURL string) (backendservice.NamedPortsMap, error) {
+func (l *Syncer) getNamedPortsForIG(igURL string) (backendservice.NamedPortsMap, error) {
 	zone, name, err := utils.GetZoneAndNameFromIGURL(igURL)
 	if err != nil {
 		return nil, err
@@ -569,7 +571,7 @@ func (l *LoadBalancerSyncer) getNamedPortsForIG(igURL string) (backendservice.Na
 	fmt.Printf("\n")
 	return namedPorts, nil
 }
-func (l *LoadBalancerSyncer) ingToNodePorts(ing *v1beta1.Ingress, client kubeclient.Interface) []ingressbe.ServicePort {
+func (l *Syncer) ingToNodePorts(ing *v1beta1.Ingress, client kubeclient.Interface) []ingressbe.ServicePort {
 	var knownPorts []ingressbe.ServicePort
 	defaultBackend := ing.Spec.Backend
 	if defaultBackend != nil {
