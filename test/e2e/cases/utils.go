@@ -93,7 +93,7 @@ func createTLSSecrets(kubectlArgs []string, clients map[string]kubeclient.Interf
 	// Generate the crt and key.
 	// TODO(nikhiljindal): Generate valid certs instead of using self signed
 	// certs so that we do not need InsecureSkipVerify.
-	certGenArgs := []string{"openssl", "req", "-x509", "-nodes", "-days", "365", "-newkey", "rsa:2048", "-keyout", "tls.key", "-out", "tls.crt", "-subj", "/CN=nginxsvc/O=nginxsv"}
+	certGenArgs := []string{"openssl", "req", "-x509", "-nodes", "-days", "365", "-newkey", "rsa:2048", "-keyout", "tls.key", "-out", "tls.crt", "-subj", "/CN=zoneprintersvc/O=zoneprintersv"}
 	kubeutils.ExecuteCommand(certGenArgs)
 	// Create the secret in all clusters.
 	for k := range clients {

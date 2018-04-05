@@ -40,23 +40,23 @@ func RunBasicCreateTest() {
 
 func setupBasic(kubectlArgs []string, ipName string, clients map[string]kubeclient.Interface) {
 	// Create the zone-printer app in all contexts.
-	deployApp(kubectlArgs, clients, "examples/zone-printer/app/")
+	deployApp(kubectlArgs, clients, "examples/zone-printer/manifests/")
 	// Update the ingress YAML specs to replace $ZP_KUBEMCI_IP with ip name.
-	replaceVariable("examples/zone-printer/ingress/nginx.yaml", "\\$ZP_KUBEMCI_IP", ipName)
-	replaceVariable("examples/zone-printer/ingress/https-ingress.yaml", "\\$ZP_KUBEMCI_IP", ipName)
+	replaceVariable("examples/zone-printer/ingress/ingress.yaml", "\\$ZP_KUBEMCI_IP", ipName)
+	replaceVariable("examples/zone-printer/ingress/ingress-https.yaml", "\\$ZP_KUBEMCI_IP", ipName)
 }
 
 func cleanupBasic(kubectlArgs []string, lbName, ipName string, clients map[string]kubeclient.Interface) {
 	// Delete the zone-printer app from all contexts.
-	cleanupApp(kubectlArgs, clients, "examples/zone-printer/app/")
+	cleanupApp(kubectlArgs, clients, "examples/zone-printer/manifests/")
 	// Update the ingress YAML spec to put $ZP_KUBEMCI_IP back.
-	replaceVariable("examples/zone-printer/ingress/nginx.yaml", ipName, "\\$ZP_KUBEMCI_IP")
-	replaceVariable("examples/zone-printer/ingress/https-ingress.yaml", ipName, "\\$ZP_KUBEMCI_IP")
+	replaceVariable("examples/zone-printer/ingress/ingress.yaml", ipName, "\\$ZP_KUBEMCI_IP")
+	replaceVariable("examples/zone-printer/ingress/ingress-https.yaml", ipName, "\\$ZP_KUBEMCI_IP")
 }
 
 func testHTTPIngress(project, kubeConfigPath, lbName string) {
 	glog.Infof("Testing HTTP ingress")
-	deleteFn, err := createIngress(project, kubeConfigPath, lbName, "examples/zone-printer/ingress/nginx.yaml")
+	deleteFn, err := createIngress(project, kubeConfigPath, lbName, "examples/zone-printer/ingress/ingress.yaml")
 	if err != nil {
 		glog.Fatalf("error creating ingress: %+v", err)
 	}
@@ -72,7 +72,7 @@ func testHTTPIngress(project, kubeConfigPath, lbName string) {
 	testList(project, ipAddress, lbName)
 
 	// Running create again should not return any error.
-	_, err = createIngress(project, kubeConfigPath, lbName, "examples/zone-printer/ingress/nginx.yaml")
+	_, err = createIngress(project, kubeConfigPath, lbName, "examples/zone-printer/ingress/ingress.yaml")
 	if err != nil {
 		glog.Fatalf("Unexpected error in re-creating ingress: %+v", err)
 	}
@@ -88,7 +88,7 @@ func testHTTPSIngress(project, kubeConfigPath, lbName string, kubectlArgs []stri
 	defer deleteTLSFn()
 
 	// Run kubemci create command.
-	deleteFn, err := createIngress(project, kubeConfigPath, lbName, "examples/zone-printer/ingress/https-ingress.yaml")
+	deleteFn, err := createIngress(project, kubeConfigPath, lbName, "examples/zone-printer/ingress/ingress-https.yaml")
 	if err != nil {
 		glog.Fatalf("error creating ingress: %+v", err)
 	}
@@ -108,7 +108,7 @@ func testHTTPSIngress(project, kubeConfigPath, lbName string, kubectlArgs []stri
 	testList(project, ipAddress, lbName)
 
 	// Running create again should not return any error.
-	_, err = createIngress(project, kubeConfigPath, lbName, "examples/zone-printer/ingress/https-ingress.yaml")
+	_, err = createIngress(project, kubeConfigPath, lbName, "examples/zone-printer/ingress/ingress-https.yaml")
 	if err != nil {
 		glog.Fatalf("Unexpected error in re-creating https ingress: %+v", err)
 	}

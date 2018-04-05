@@ -1,11 +1,11 @@
 apiVersion: extensions/v1beta1
 kind: Ingress
 metadata:
-  name: nginx
+  name: zoneprinter
   annotations:
-    kubernetes.io/ingress.global-static-ip-name: $ZP_KUBEMCI_IP
     kubernetes.io/ingress.class: gce-multi-cluster
+    kubernetes.io/ingress.global-static-ip-name: $ZP_KUBEMCI_IP
 spec:
   backend:
-    serviceName: nginx
+    serviceName: zoneprinter
     servicePort: 80

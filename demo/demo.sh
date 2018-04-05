@@ -39,8 +39,8 @@ desc "List all clusters"
 run "${KUBECTL} config get-contexts -o name"
 
 desc "Create the zone printer app in both clusters"
-run "${KUBECTLus} create -f ../examples/zone-printer/app/"
-run "${KUBECTLeu} create -f ../examples/zone-printer/app/"
+run "${KUBECTLus} create -f ../examples/zone-printer/manifests/"
+run "${KUBECTLeu} create -f ../examples/zone-printer/manifests/"
 
 desc "Look at kubemci help"
 run "${KUBEMCI} -h"
@@ -49,7 +49,7 @@ desc "Look at kubemci create help"
 run "${KUBEMCI} create -h"
 
 desc "Create a multicluster load balancer named zoneprinter-lb"
-run "${KUBEMCI} create zoneprinter-lb --ingress=../examples/zone-printer/ingress/nginx.yaml --gcp-project=$PROJECT --kubeconfig=$KUBE_CONFIG"
+run "${KUBEMCI} create zoneprinter-lb --ingress=../examples/zone-printer/ingress/ingress.yaml --gcp-project=$PROJECT --kubeconfig=$KUBE_CONFIG"
 
 desc "Get status of the load balancer"
 run "${KUBEMCI} get-status zoneprinter-lb --gcp-project=$PROJECT"
@@ -65,14 +65,14 @@ desc "Hit the IP address from EU cluster"
 run "${KUBECTLeu} run -i --tty busybox --image=busybox --restart=Never --rm -- wget -qO- http://$IP/"
 
 desc "Delete the app from EU cluster"
-run "${KUBECTLeu} delete -f ../examples/zone-printer/app/"
+run "${KUBECTLeu} delete -f ../examples/zone-printer/manifests/"
 
 desc "Hit the IP address again from EU cluster"
 run "${KUBECTLeu} run -i --tty busybox2 --image=busybox --restart=Never --rm -- wget -qO- http://$IP/"
 
 desc "Delete multicluster load balancer"
-run "${KUBEMCI} delete zoneprinter-lb --ingress=../examples/zone-printer/ingress/nginx.yaml --gcp-project=$PROJECT --kubeconfig=$KUBE_CONFIG"
+run "${KUBEMCI} delete zoneprinter-lb --ingress=../examples/zone-printer/ingress/ingress.yaml --gcp-project=$PROJECT --kubeconfig=$KUBE_CONFIG"
 
 desc "Delete the zone printer app from both clusters"
-run "${KUBECTLus} delete -f ../examples/zone-printer/app/"
-run "${KUBECTLeu} delete -f ../examples/zone-printer/app/"
+run "${KUBECTLus} delete -f ../examples/zone-printer/manifests/"
+run "${KUBECTLeu} delete -f ../examples/zone-printer/manifests/"
