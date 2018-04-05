@@ -24,13 +24,13 @@ import (
 
 func TestValidateGetStatusArgs(t *testing.T) {
 	// validateGetStatusArgs should return an error with empty options.
-	options := GetStatusOptions{}
+	options := getStatusOptions{}
 	if err := validateGetStatusArgs(&options, []string{}); err == nil {
 		t.Errorf("Expected error for emtpy options")
 	}
 
 	// validateGetStatusArgs should return an error with missing load balancer name.
-	options = GetStatusOptions{
+	options = getStatusOptions{
 		GCPProject: "gcp-project",
 	}
 	if err := validateGetStatusArgs(&options, []string{}); err == nil {
@@ -38,7 +38,7 @@ func TestValidateGetStatusArgs(t *testing.T) {
 	}
 
 	// validateGetStatusArgs should succeed when all arguments are passed as expected.
-	options = GetStatusOptions{
+	options = getStatusOptions{
 		GCPProject: "gcp-project",
 	}
 	if err := validateGetStatusArgs(&options, []string{"lbname"}); err != nil {
@@ -58,13 +58,13 @@ func TestValidateGetStatusWithGCPProject(t *testing.T) {
 	}
 
 	// 1) no project option or gcloud: error
-	options := GetStatusOptions{}
+	options := getStatusOptions{}
 	if err := validateGetStatusArgs(&options, []string{"lbname"}); err == nil {
 		t.Errorf("expected error. got: nil")
 	}
 
 	// 2) with project option: success
-	options = GetStatusOptions{
+	options = getStatusOptions{
 		GCPProject: "gcp-project",
 	}
 	if err := validateGetStatusArgs(&options, []string{"lbname"}); err != nil {
@@ -73,7 +73,7 @@ func TestValidateGetStatusWithGCPProject(t *testing.T) {
 
 	// 3) project from gcloud: success
 	mockProject = "mock-project"
-	options = GetStatusOptions{}
+	options = getStatusOptions{}
 	if err := validateGetStatusArgs(&options, []string{"lbname"}); err != nil {
 		t.Errorf("expected no error. got: %s", err)
 	}

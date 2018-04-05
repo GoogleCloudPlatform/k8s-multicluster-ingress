@@ -36,7 +36,7 @@ const (
 	clientVersion = "0.3.0"
 )
 
-func NewCmdGetVersion(out, err io.Writer) *cobra.Command {
+func newCmdGetVersion(out, err io.Writer) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "version",
 		Short: versionShortDescription,
@@ -57,7 +57,7 @@ func NewCmdGetVersion(out, err io.Writer) *cobra.Command {
 
 func validateVersionArgs(args []string) error {
 	if len(args) != 0 {
-		return fmt.Errorf("unexpected args: %v. Expected no arguments.", args)
+		return fmt.Errorf("unexpected args: %v. Expected no arguments", args)
 	}
 	return nil
 }

@@ -39,7 +39,7 @@ var (
 	`
 )
 
-type CreateOptions struct {
+type createOptions struct {
 	// Name of the YAML file containing ingress spec.
 	IngressFilename string
 	// Path to kubeconfig file.
@@ -67,8 +67,8 @@ type CreateOptions struct {
 	StaticIPName string
 }
 
-func NewCmdCreate(out, err io.Writer) *cobra.Command {
-	var options CreateOptions
+func newCmdCreate(out, err io.Writer) *cobra.Command {
+	var options createOptions
 	options.Validate = true
 
 	cmd := &cobra.Command{
@@ -92,7 +92,7 @@ func NewCmdCreate(out, err io.Writer) *cobra.Command {
 	return cmd
 }
 
-func addCreateFlags(cmd *cobra.Command, options *CreateOptions) error {
+func addCreateFlags(cmd *cobra.Command, options *createOptions) error {
 	cmd.Flags().StringVarP(&options.IngressFilename, "ingress", "i", options.IngressFilename, "[required] filename containing ingress spec")
 	cmd.Flags().StringVarP(&options.KubeconfigFilename, "kubeconfig", "k", options.KubeconfigFilename, "[required] path to kubeconfig file")
 	cmd.Flags().StringSliceVar(&options.KubeContexts, "kubecontexts", options.KubeContexts, "[optional] contexts in the kubeconfig file to install the ingress into")
@@ -105,13 +105,13 @@ func addCreateFlags(cmd *cobra.Command, options *CreateOptions) error {
 	return nil
 }
 
-func validateCreateArgs(options *CreateOptions, args []string) error {
+func validateCreateArgs(options *createOptions, args []string) error {
 	if len(args) != 1 {
-		return fmt.Errorf("unexpected args: %v. Expected one arg as name of load balancer.", args)
+		return fmt.Errorf("unexpected args: %v. Expected one arg as name of load balancer", args)
 	}
 	// Verify that the required params are not missing.
 	if options.IngressFilename == "" {
-		return fmt.Errorf("unexpected missing argument ingress.")
+		return fmt.Errorf("unexpected missing argument ingress")
 	}
 	if options.GCPProject == "" {
 		project, err := gcputils.GetProjectFromGCloud()
@@ -121,12 +121,12 @@ func validateCreateArgs(options *CreateOptions, args []string) error {
 		options.GCPProject = project
 	}
 	if options.KubeconfigFilename == "" {
-		return fmt.Errorf("unexpected missing argument kubeconfig.")
+		return fmt.Errorf("unexpected missing argument kubeconfig")
 	}
 	return nil
 }
 
-func runCreate(options *CreateOptions, args []string) error {
+func runCreate(options *createOptions, args []string) error {
 	options.LBName = args[0]
 
 	// Unmarshal the YAML into ingress struct.

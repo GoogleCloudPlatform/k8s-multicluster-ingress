@@ -39,7 +39,7 @@ var (
 	`
 )
 
-type DeleteOptions struct {
+type deleteOptions struct {
 	// Name of the YAML file containing ingress spec.
 	IngressFilename string
 	// Path to kubeconfig file.
@@ -60,8 +60,8 @@ type DeleteOptions struct {
 	Namespace string
 }
 
-func NewCmdDelete(out, err io.Writer) *cobra.Command {
-	var options DeleteOptions
+func newCmdDelete(out, err io.Writer) *cobra.Command {
+	var options deleteOptions
 
 	cmd := &cobra.Command{
 		Use:   "delete [lbname]",
@@ -82,7 +82,7 @@ func NewCmdDelete(out, err io.Writer) *cobra.Command {
 	return cmd
 }
 
-func addDeleteFlags(cmd *cobra.Command, options *DeleteOptions) error {
+func addDeleteFlags(cmd *cobra.Command, options *deleteOptions) error {
 	cmd.Flags().StringVarP(&options.IngressFilename, "ingress", "i", options.IngressFilename, "[required] filename containing ingress spec")
 	cmd.Flags().StringVarP(&options.KubeconfigFilename, "kubeconfig", "k", options.KubeconfigFilename, "[required] path to kubeconfig file")
 	cmd.Flags().StringSliceVar(&options.KubeContexts, "kubecontexts", options.KubeContexts, "[optional] contexts in the kubeconfig file to delete the ingress from")
@@ -94,13 +94,13 @@ func addDeleteFlags(cmd *cobra.Command, options *DeleteOptions) error {
 	return nil
 }
 
-func validateDeleteArgs(options *DeleteOptions, args []string) error {
+func validateDeleteArgs(options *deleteOptions, args []string) error {
 	if len(args) != 1 {
-		return fmt.Errorf("unexpected args: %v. Expected one arg as name of load balancer.", args)
+		return fmt.Errorf("unexpected args: %v. Expected one arg as name of load balancer", args)
 	}
 	// Verify that the required params are not missing.
 	if options.IngressFilename == "" {
-		return fmt.Errorf("unexpected missing argument ingress.")
+		return fmt.Errorf("unexpected missing argument ingress")
 	}
 	if options.GCPProject == "" {
 		project, err := gcputils.GetProjectFromGCloud()
@@ -110,12 +110,12 @@ func validateDeleteArgs(options *DeleteOptions, args []string) error {
 		options.GCPProject = project
 	}
 	if options.KubeconfigFilename == "" {
-		return fmt.Errorf("unexpected missing argument kubeconfig.")
+		return fmt.Errorf("unexpected missing argument kubeconfig")
 	}
 	return nil
 }
 
-func runDelete(options *DeleteOptions, args []string) error {
+func runDelete(options *deleteOptions, args []string) error {
 	options.LBName = args[0]
 	var err error
 

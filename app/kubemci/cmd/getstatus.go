@@ -34,7 +34,7 @@ var (
 	`
 )
 
-type GetStatusOptions struct {
+type getStatusOptions struct {
 	// Name of the load balancer.
 	// Required.
 	LBName string
@@ -44,8 +44,8 @@ type GetStatusOptions struct {
 	GCPProject string
 }
 
-func NewCmdGetStatus(out, err io.Writer) *cobra.Command {
-	var options GetStatusOptions
+func newCmdGetStatus(out, err io.Writer) *cobra.Command {
+	var options getStatusOptions
 
 	cmd := &cobra.Command{
 		Use:   "get-status [lbname]",
@@ -66,16 +66,16 @@ func NewCmdGetStatus(out, err io.Writer) *cobra.Command {
 	return cmd
 }
 
-func addGetStatusFlags(cmd *cobra.Command, options *GetStatusOptions) error {
+func addGetStatusFlags(cmd *cobra.Command, options *getStatusOptions) error {
 	// TODO(nikhiljindal): Add a short flag "-p" if it seems useful.
 	cmd.Flags().StringVarP(&options.GCPProject, "gcp-project", "", options.GCPProject, "[optional] name of the gcp project. Is fetched using gcloud config get-value project if unset here")
 	// TODO Add a verbose flag that turns on glog logging.
 	return nil
 }
 
-func validateGetStatusArgs(options *GetStatusOptions, args []string) error {
+func validateGetStatusArgs(options *getStatusOptions, args []string) error {
 	if len(args) != 1 {
-		return fmt.Errorf("unexpected args: %v. Expected one arg as name of load balancer.", args)
+		return fmt.Errorf("unexpected args: %v. Expected one arg as name of load balancer", args)
 	}
 	// Verify that the project is available somewhere.
 	if options.GCPProject == "" {
@@ -89,7 +89,7 @@ func validateGetStatusArgs(options *GetStatusOptions, args []string) error {
 	return nil
 }
 
-func runGetStatus(options *GetStatusOptions, args []string) error {
+func runGetStatus(options *getStatusOptions, args []string) error {
 	options.LBName = args[0]
 
 	cloudInterface, err := cloudinterface.NewGCECloudInterface(options.GCPProject)
