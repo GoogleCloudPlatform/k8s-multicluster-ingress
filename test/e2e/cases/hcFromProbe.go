@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	svcNodePort = 30061
+	svcNodePort    = 30061
 	expectedHcPath = "/healthz"
 )
 
