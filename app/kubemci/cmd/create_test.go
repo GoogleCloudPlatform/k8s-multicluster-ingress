@@ -18,7 +18,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/ingress"
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/kubeutils"
+	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/validations"
+	"k8s.io/api/extensions/v1beta1"
+	kubeclient "k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/kubernetes/fake"
 )
 
 // Test to verify validate.
@@ -107,5 +112,34 @@ func TestValidateCreateWithGCPProject(t *testing.T) {
 	}
 	if err := validateCreateArgs(&options, []string{"lbname"}); err != nil {
 		t.Errorf("unexpected error from validateCreateArgs: %s", err)
+	}
+}
+
+func TestCreateIngressAndLoadBalancer(t *testing.T) {
+	options := createOptions{
+		Validate: true,
+	}
+	client := &fake.Clientset{}
+	clients := map[string]kubeclient.Interface{
+		"cluster1": client,
+	}
+	var originalIngress v1beta1.Ingress
+	if err := ingress.UnmarshallAndApplyDefaults("../../../testdata/ingress.yaml", "" /*namespace*/, &originalIngress); err != nil {
+		t.Fatalf("%s", err)
+	}
+	validator := validations.NewFakeValidator()
+
+	// TODO(G-Harmon): Verify that validation errors are propagated back.
+	createIngressAndLoadBalancer(originalIngress, clients, &options, nil /*cloudInterface*/, validator)
+	// Make sure validation was run properly:
+	fv := validator.(*validations.FakeValidator)
+	if len(fv.ValidatedClusterSets) != 1 {
+		t.Fatalf("wrong number of validation calls. expected:1 got:%d", len(fv.ValidatedClusterSets))
+	}
+	if len(fv.ValidatedClusterSets[0]) != 1 {
+		t.Errorf("Wrong number of clusters. expected:1 got:%d", len(fv.ValidatedClusterSets[0]))
+	}
+	if fv.ValidatedClusterSets[0]["cluster1"] != client {
+		t.Errorf("wrong cluster. expected:%v got:%v.", client, fv.ValidatedClusterSets[0]["cluster1"])
 	}
 }
