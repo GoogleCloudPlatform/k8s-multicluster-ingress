@@ -25,7 +25,7 @@ fmt:
 lint:
 	@echo "+ $@"
 	@go get -u golang.org/x/lint/golint
-	@go list -f '{{if len .TestGoFiles}}"golint {{.Dir}}/..."{{end}}' $(shell go list ${PKG}/... | grep -v vendor) | xargs -L 1 sh -c
+	@./scripts/check-golint.sh
 
 vet:
 	@echo "+ $@"
