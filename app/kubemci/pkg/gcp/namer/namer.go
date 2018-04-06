@@ -22,8 +22,8 @@ const (
 	hcPrefix                  = "hc"
 	backendPrefix             = "be"
 	urlMapPrefix              = "um"
-	targetHttpProxyPrefix     = "tp"
-	targetHttpsProxyPrefix    = "tps"
+	targetHTTPProxyPrefix     = "tp"
+	targetHTTPSProxyPrefix    = "tps"
 	httpForwardingRulePrefix  = "fw"
 	httpsForwardingRulePrefix = "fws"
 	firewallRulePrefix        = "fr"
@@ -42,11 +42,13 @@ const (
 	nameLenLimit = 62
 )
 
+// Namer provides a naming schema for GCP resources
 type Namer struct {
 	prefix string
 	lbName string
 }
 
+// NewNamer returns a new namer using the given prefix and load balancer name.
 func NewNamer(prefix, lbName string) *Namer {
 	return &Namer{
 		prefix: prefix,
@@ -54,45 +56,54 @@ func NewNamer(prefix, lbName string) *Namer {
 	}
 }
 
+// HealthCheckName returns the name for a health check on the given port.
 func (n *Namer) HealthCheckName(port int64) string {
 	return n.decorateName(fmt.Sprintf("%v-%v-%d", n.prefix, hcPrefix, port))
 }
 
+// BeServiceName returns the name for the backend service on the given port.
 func (n *Namer) BeServiceName(port int64) string {
 	// We append the load balancer name to the backend service name and
-	// hence we dont share a backend service even if same kube service is
+	// hence we don't share a backend service even if same kube service is
 	// backing multiple load balancers across the same set of clusters.
 	// This is different than single cluster ingress, where we reuse backend services.
-	// This is difficult in multi cluster ingres since we will need to keep track
+	// This is difficult in multi-cluster ingress since we will need to keep track
 	// of the set of clusters the load balancer is spread to and stop/start sharing
 	// anytime that set changes.
 	return n.decorateName(fmt.Sprintf("%v-%v-%d", n.prefix, backendPrefix, port))
 }
 
+// URLMapName returns the name for a url map.
 func (n *Namer) URLMapName() string {
 	return n.decorateName(fmt.Sprintf("%v-%v", n.prefix, urlMapPrefix))
 }
 
-func (n *Namer) TargetHttpProxyName() string {
-	return n.decorateName(fmt.Sprintf("%v-%v", n.prefix, targetHttpProxyPrefix))
+// TargetHTTPProxyName returns a name for the http proxy.
+func (n *Namer) TargetHTTPProxyName() string {
+	return n.decorateName(fmt.Sprintf("%v-%v", n.prefix, targetHTTPProxyPrefix))
 }
 
-func (n *Namer) TargetHttpsProxyName() string {
-	return n.decorateName(fmt.Sprintf("%v-%v", n.prefix, targetHttpsProxyPrefix))
+// TargetHTTPSProxyName returns a name for the https proxy.
+func (n *Namer) TargetHTTPSProxyName() string {
+	return n.decorateName(fmt.Sprintf("%v-%v", n.prefix, targetHTTPSProxyPrefix))
 }
 
-func (n *Namer) HttpsForwardingRuleName() string {
+// HTTPSForwardingRuleName returns the forwarding rule name.
+func (n *Namer) HTTPSForwardingRuleName() string {
 	return n.decorateName(fmt.Sprintf("%v-%v", n.prefix, httpsForwardingRulePrefix))
 }
 
-func (n *Namer) HttpForwardingRuleName() string {
+// HTTPForwardingRuleName returns the forwarding rule name.
+func (n *Namer) HTTPForwardingRuleName() string {
 	return n.decorateName(fmt.Sprintf("%v-%v", n.prefix, httpForwardingRulePrefix))
 }
 
+// FirewallRuleName returns a name for a firewall.
 func (n *Namer) FirewallRuleName() string {
 	return n.decorateName(fmt.Sprintf("%v-%v", n.prefix, firewallRulePrefix))
 }
 
+// SSLCertName returns a name for SSL certificates.
 func (n *Namer) SSLCertName() string {
 	return n.decorateName(fmt.Sprintf("%v-%v", n.prefix, sslCertPrefix))
 }

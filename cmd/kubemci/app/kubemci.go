@@ -20,6 +20,7 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/cmd"
 )
 
+// Run runs the whole kubemci command.
 func Run() error {
 	kubemci := cmd.NewCommand(os.Stdin, os.Stdout, os.Stderr)
 	return kubemci.Execute()

@@ -16,6 +16,7 @@ const (
 	expectedHcPath = "/healthz"
 )
 
+// RunHCFromProbeTest tests health checks.
 func RunHCFromProbeTest() {
 	project, kubeConfigPath, lbName, ipName, clients := initDeps()
 	kubectlArgs := []string{"kubectl", fmt.Sprintf("--kubeconfig=%s", kubeConfigPath)}
@@ -47,7 +48,7 @@ func testHCFromProbe(project, kubeConfigPath, lbName string) {
 	defer deleteFn()
 
 	// Tests
-	ipAddress := getIpAddress(project, lbName)
+	ipAddress := getIPAddress(project, lbName)
 	// Ensure that the IP address eventually returns 200 (on health check path, since the service used returns 404 on /)
 	if err := waitForIngress("http", ipAddress, expectedHcPath); err != nil {
 		glog.Errorf("error in waiting for ingress: %s", err)

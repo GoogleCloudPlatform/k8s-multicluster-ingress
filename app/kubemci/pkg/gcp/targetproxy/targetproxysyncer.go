@@ -78,7 +78,7 @@ func (s *Syncer) EnsureHTTPSTargetProxy(lbName, umLink, certLink string, forceUp
 // See interface comments for details.
 func (s *Syncer) DeleteTargetProxies() error {
 	var err error
-	httpName := s.namer.TargetHttpProxyName()
+	httpName := s.namer.TargetHTTPProxyName()
 	fmt.Println("Deleting target HTTP proxy", httpName)
 	httpErr := s.tpp.DeleteTargetHttpProxy(httpName)
 	if httpErr != nil {
@@ -93,7 +93,7 @@ func (s *Syncer) DeleteTargetProxies() error {
 		fmt.Println("Target HTTP proxy", httpName, "deleted successfully")
 	}
 
-	httpsName := s.namer.TargetHttpsProxyName()
+	httpsName := s.namer.TargetHTTPSProxyName()
 	fmt.Println("Deleting target HTTPS proxy", httpsName)
 	httpsErr := s.tpp.DeleteTargetHttpsProxy(httpsName)
 	if httpsErr != nil {
@@ -202,7 +202,7 @@ func targetHTTPProxyMatches(desiredHTTPProxy, existingHTTPProxy compute.TargetHt
 func (s *Syncer) desiredHTTPTargetProxy(lbName, umLink string) *compute.TargetHttpProxy {
 	// Compute the desired target http proxy.
 	return &compute.TargetHttpProxy{
-		Name:        s.namer.TargetHttpProxyName(),
+		Name:        s.namer.TargetHTTPProxyName(),
 		Description: fmt.Sprintf("Target http proxy for kubernetes multicluster loadbalancer %s", lbName),
 		UrlMap:      umLink,
 	}
@@ -295,7 +295,7 @@ func targetHTTPSProxyMatches(desiredHTTPSProxy, existingHTTPSProxy compute.Targe
 func (s *Syncer) desiredHTTPSTargetProxy(lbName, umLink, certLink string) *compute.TargetHttpsProxy {
 	// Compute the desired target https proxy.
 	return &compute.TargetHttpsProxy{
-		Name:            s.namer.TargetHttpsProxyName(),
+		Name:            s.namer.TargetHTTPSProxyName(),
 		Description:     fmt.Sprintf("Target https proxy for kubernetes multicluster loadbalancer %s", lbName),
 		UrlMap:          umLink,
 		SslCertificates: []string{certLink},

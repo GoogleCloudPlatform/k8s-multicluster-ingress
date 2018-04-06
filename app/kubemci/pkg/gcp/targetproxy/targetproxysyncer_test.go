@@ -28,7 +28,7 @@ func TestEnsureTargetHttpProxy(t *testing.T) {
 	// Should create the target proxy as expected.
 	tpp := ingresslb.NewFakeLoadBalancers("" /*name*/, nil /*namer*/)
 	namer := utilsnamer.NewNamer("mci1", lbName)
-	tpName := namer.TargetHttpProxyName()
+	tpName := namer.TargetHTTPProxyName()
 	tps := NewTargetProxySyncer(namer, tpp)
 	// GET should return NotFound.
 	if _, err := tpp.GetTargetHttpProxy(tpName); err == nil {
@@ -97,7 +97,7 @@ func TestEnsureTargetHttpsProxy(t *testing.T) {
 	// Should create the target proxy as expected.
 	tpp := ingresslb.NewFakeLoadBalancers("" /*name*/, nil /*namer*/)
 	namer := utilsnamer.NewNamer("mci1", lbName)
-	tpName := namer.TargetHttpsProxyName()
+	tpName := namer.TargetHTTPSProxyName()
 	tps := NewTargetProxySyncer(namer, tpp)
 	// GET should return NotFound.
 	if _, err := tpp.GetTargetHttpProxy(tpName); err == nil {
@@ -175,8 +175,8 @@ func TestDeleteTargetProxies(t *testing.T) {
 	certLink := "certSelfLink"
 	tpp := ingresslb.NewFakeLoadBalancers("" /*name*/, nil /*namer*/)
 	namer := utilsnamer.NewNamer("mci1", lbName)
-	httpTpName := namer.TargetHttpProxyName()
-	httpsTpName := namer.TargetHttpsProxyName()
+	httpTpName := namer.TargetHTTPProxyName()
+	httpsTpName := namer.TargetHTTPSProxyName()
 	tps := NewTargetProxySyncer(namer, tpp)
 	// Verify that trying to delete when no proxy exists does not return any error.
 	if err := tps.DeleteTargetProxies(); err != nil {
