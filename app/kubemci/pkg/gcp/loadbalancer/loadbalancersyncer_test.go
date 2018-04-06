@@ -616,10 +616,7 @@ func verifyRemoveClustersResult(lbc *Syncer, expectedClusters, expectedIGlinks [
 		return fmt.Errorf("unexpected IG links on firewall rule, expected: %v, got: %v", expectedFWIGLinks, fw.IGLinks)
 	}
 	// Verify that the load balancer is spread to both clusters.
-	if err := verifyClusters(lbc, expectedClusters); err != nil {
-		return err
-	}
-	return nil
+	return verifyClusters(lbc, expectedClusters)
 }
 
 func verifyBackendService(be backendservice.FakeBackendService, expectedIGlinks []string) error {

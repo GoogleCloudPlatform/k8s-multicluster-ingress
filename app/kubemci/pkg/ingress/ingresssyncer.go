@@ -163,8 +163,5 @@ func unmarshall(filename string, ing *v1beta1.Ingress) error {
 		return err
 	}
 	// Unmarshall into ingress struct.
-	if err := yaml.Unmarshal(bytes, ing); err != nil {
-		return err
-	}
-	return nil
+	return yaml.Unmarshal(bytes, ing)
 }
