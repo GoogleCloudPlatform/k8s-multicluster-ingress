@@ -32,10 +32,14 @@ import (
 )
 
 const (
+	// Letters is the letters of the alphabet.
 	Letters = "abcdefghijklmnopqrstuvwxyz"
 
-	// On average it takes ~6 minutes for a single backend to come online in GCE.
-	LoadBalancerPollTimeout  = 12 * time.Minute
+	// LoadBalancerPollTimeout is how long we wait for a the LB to be
+	// ready. On average it takes ~6 minutes for a single backend to come
+	// online in GCE.
+	LoadBalancerPollTimeout = 12 * time.Minute
+	// LoadBalancerPollInterval is the time between checking for the LB to be ready.
 	LoadBalancerPollInterval = 10 * time.Second
 
 	// IngressReqTimeout is the timeout on a single http request.
@@ -112,8 +116,8 @@ func createTLSSecrets(kubectlArgs []string, clients map[string]kubeclient.Interf
 	return deleteFn
 }
 
-// getIpAddress gets the allocated IP address from a loadbalancer
-func getIpAddress(project, lbName string) string {
+// getIPAddress gets the allocated IP address from a loadbalancer
+func getIPAddress(project, lbName string) string {
 	// TODO(nikhiljindal): Figure out why is sleep required? get-status should work immediately after create is successful.
 	time.Sleep(5 * time.Second)
 	// Ensure that get-status returns the expected output.
@@ -158,7 +162,7 @@ func pollURL(route, host string, timeout time.Duration, interval time.Duration, 
 		return !expectUnreachable, nil
 	})
 	if pollErr != nil {
-		return fmt.Errorf("Failed to execute a successful GET within %v, Last response body for %v, host %v:\n%v\n\n%v\n",
+		return fmt.Errorf("failed to execute a successful GET within %v, Last response body for %v, host %v:\n%v\n\n%v",
 			timeout, route, host, lastBody, pollErr)
 	}
 	return nil

@@ -18,6 +18,7 @@ import (
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce"
 )
 
+// NewGCECloudInterface returns a new GCECloud.
 func NewGCECloudInterface(projectID string) (*gce.GCECloud, error) {
 	config := getCloudConfig(projectID)
 	return gce.CreateGCECloud(&config)

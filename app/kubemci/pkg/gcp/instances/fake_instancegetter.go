@@ -18,16 +18,17 @@ import (
 	compute "google.golang.org/api/compute/v1"
 )
 
-func newInstance(igUrl string) *compute.Instance {
+func newInstance(igURL string) *compute.Instance {
 	return &compute.Instance{
-		Name: igUrl,
-		Zone: igUrl,
+		Name: igURL,
+		Zone: igURL,
 		Tags: &compute.Tags{
-			Items: []string{igUrl},
+			Items: []string{igURL},
 		},
 	}
 }
 
+// NewFakeInstanceGetter returns a new fake.
 func NewFakeInstanceGetter() InstanceGetterInterface {
 	return &FakeInstanceGetter{}
 }
@@ -39,6 +40,7 @@ type FakeInstanceGetter struct {
 // Ensure this implements InstanceGetterInterface
 var _ InstanceGetterInterface = &FakeInstanceGetter{}
 
-func (g *FakeInstanceGetter) GetInstance(igUrl string) (*compute.Instance, error) {
-	return newInstance(igUrl), nil
+// GetInstance retuns a new instance.
+func (g *FakeInstanceGetter) GetInstance(igURL string) (*compute.Instance, error) {
+	return newInstance(igURL), nil
 }

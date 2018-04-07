@@ -61,15 +61,15 @@ var _ SyncerInterface = &Syncer{}
 // Does nothing if it exists already, else creates a new one.
 // See interface for more details.
 func (s *Syncer) EnsureHTTPForwardingRule(lbName, ipAddress, targetProxyLink string, forceUpdate bool) error {
-	s.namer.HttpForwardingRuleName()
-	return s.ensureForwardingRule(lbName, ipAddress, targetProxyLink, httpDefaultPortRange, "http", s.namer.HttpForwardingRuleName(), forceUpdate)
+	s.namer.HTTPForwardingRuleName()
+	return s.ensureForwardingRule(lbName, ipAddress, targetProxyLink, httpDefaultPortRange, "http", s.namer.HTTPForwardingRuleName(), forceUpdate)
 }
 
 // EnsureHTTPSForwardingRule ensures that the required https forwarding rule exists.
 // Does nothing if it exists already, else creates a new one.
 // See interface for more details.
 func (s *Syncer) EnsureHTTPSForwardingRule(lbName, ipAddress, targetProxyLink string, forceUpdate bool) error {
-	return s.ensureForwardingRule(lbName, ipAddress, targetProxyLink, httpsDefaultPortRange, "https", s.namer.HttpsForwardingRuleName(), forceUpdate)
+	return s.ensureForwardingRule(lbName, ipAddress, targetProxyLink, httpsDefaultPortRange, "https", s.namer.HTTPSForwardingRuleName(), forceUpdate)
 }
 
 // ensureForwardingRule ensures a forwarding rule exists as per the given input parameters.
@@ -107,7 +107,7 @@ func (s *Syncer) ensureForwardingRule(lbName, ipAddress, targetProxyLink, portRa
 // See interface for more details.
 func (s *Syncer) DeleteForwardingRules() error {
 	var err error
-	name := s.namer.HttpForwardingRuleName()
+	name := s.namer.HTTPForwardingRuleName()
 	fmt.Println("Deleting HTTP forwarding rule", name)
 	httpErr := s.frp.DeleteGlobalForwardingRule(name)
 	if httpErr != nil {
@@ -121,7 +121,7 @@ func (s *Syncer) DeleteForwardingRules() error {
 	} else {
 		fmt.Println("HTTP forwarding rule", name, "deleted successfully")
 	}
-	name = s.namer.HttpsForwardingRuleName()
+	name = s.namer.HTTPSForwardingRuleName()
 	fmt.Println("Deleting HTTPS forwarding rule", name)
 	httpsErr := s.frp.DeleteGlobalForwardingRule(name)
 	if httpsErr != nil {
@@ -142,14 +142,14 @@ func (s *Syncer) DeleteForwardingRules() error {
 // See interface for more details.
 func (s *Syncer) GetLoadBalancerStatus(lbName string) (*status.LoadBalancerStatus, error) {
 	// Fetch the http forwarding rule.
-	httpName := s.namer.HttpForwardingRuleName()
+	httpName := s.namer.HTTPForwardingRuleName()
 	httpFr, httpErr := s.frp.GetGlobalForwardingRule(httpName)
 	if httpErr == nil {
 		return getStatus(httpFr)
 	}
 	// Try fetching https forwarding rule.
 	// Ingresses with http-only annotation will not have a http forwarding rule.
-	httpsName := s.namer.HttpsForwardingRuleName()
+	httpsName := s.namer.HTTPSForwardingRuleName()
 	httpsFr, httpsErr := s.frp.GetGlobalForwardingRule(httpsName)
 	if httpsErr == nil {
 		return getStatus(httpsFr)
@@ -213,8 +213,8 @@ func (s *Syncer) ListLoadBalancerStatuses() ([]status.LoadBalancerStatus, error)
 // RemoveClustersFromStatus removes the given clusters from the forwarding rule.
 // See interface for more details.
 func (s *Syncer) RemoveClustersFromStatus(clusters []string) error {
-	httpsErr := s.removeClustersFromStatus("https", s.namer.HttpsForwardingRuleName(), clusters)
-	httpErr := s.removeClustersFromStatus("http", s.namer.HttpForwardingRuleName(), clusters)
+	httpsErr := s.removeClustersFromStatus("https", s.namer.HTTPSForwardingRuleName(), clusters)
+	httpErr := s.removeClustersFromStatus("http", s.namer.HTTPForwardingRuleName(), clusters)
 	// If both are not found, then return that.
 	if utils.IsHTTPErrorCode(httpErr, http.StatusNotFound) && utils.IsHTTPErrorCode(httpsErr, http.StatusNotFound) {
 		return httpErr

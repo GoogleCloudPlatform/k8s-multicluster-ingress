@@ -11,18 +11,18 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
+
 package instances
 
 import (
 	compute "google.golang.org/api/compute/v1"
 )
 
-// Interface to fetch GCE instances.
+// InstanceGetterInterface is an interface to fetch GCE instances.
 // TODO(nikhiljindal): Move this logic to gce cloudprovider in kubernetes/kubernetes.
 type InstanceGetterInterface interface {
-	// Returns an instance in the given instance group.
+	// GetIntance returns an instance in the given instance group.
 	// There is no guarantee regarding which instance is returned.
 	// Calling this multiple times for the same instance group can return different instances.
-	GetInstance(igUrl string) (*compute.Instance, error)
+	GetInstance(igURL string) (*compute.Instance, error)
 }

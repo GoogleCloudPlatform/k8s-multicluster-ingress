@@ -25,6 +25,7 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/gcp/utils"
 )
 
+// NewInstanceGetter returns an InstanceGetter implementation.
 func NewInstanceGetter(projectID string) (InstanceGetterInterface, error) {
 	ctx := context.Background()
 	client, err := google.DefaultClient(ctx, compute.CloudPlatformScope)
@@ -37,6 +38,7 @@ func NewInstanceGetter(projectID string) (InstanceGetterInterface, error) {
 	}, nil
 }
 
+// InstanceGetter is an implementation of InstanceGetterInterface.
 type InstanceGetter struct {
 	gcpProjectID string
 	client       *http.Client
@@ -45,6 +47,7 @@ type InstanceGetter struct {
 // Ensure this implements InstanceGetterInterface
 var _ InstanceGetterInterface = &InstanceGetter{}
 
+// GetInstance gets an instance in the given instance group.
 func (g *InstanceGetter) GetInstance(igURL string) (*compute.Instance, error) {
 	service, err := compute.New(g.client)
 	if err != nil {

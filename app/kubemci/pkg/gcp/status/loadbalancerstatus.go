@@ -7,7 +7,7 @@ import (
 	"github.com/golang/glog"
 )
 
-// Struct to describe a multi cluster load balancer.
+// LoadBalancerStatus describes a multi-cluster load balancer.
 type LoadBalancerStatus struct {
 	// Human readable description for this status.
 	// If we are using the description field of a GCP resource to store this status,
@@ -22,6 +22,7 @@ type LoadBalancerStatus struct {
 	// TODO: Store errors that were generated during creating and deleting this load balancer.
 }
 
+// ToString converts a LoadBalancerStatus to a string.
 func (s LoadBalancerStatus) ToString() (string, error) {
 	jsonValue, err := json.Marshal(s)
 	if err != nil {
@@ -30,6 +31,7 @@ func (s LoadBalancerStatus) ToString() (string, error) {
 	return string(jsonValue), nil
 }
 
+// FromString reads in a string param and converts it to a LoadBalancerStatus.
 func FromString(str string) (*LoadBalancerStatus, error) {
 	var s LoadBalancerStatus
 	if err := json.Unmarshal([]byte(str), &s); err != nil {

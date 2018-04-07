@@ -21,10 +21,11 @@ import (
 	"github.com/GoogleCloudPlatform/k8s-multicluster-ingress/app/kubemci/pkg/kubeutils"
 	"github.com/golang/glog"
 	kubeclient "k8s.io/client-go/kubernetes"
+	// Needed for authenticating gcp clusters
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 )
 
-// Creates a basic multicluster ingress and verifies that it works as expected.
+// RunBasicCreateTest creates a basic multicluster ingress and verifies that it works as expected.
 // TODO(nikhiljindal): Use ginkgo and gomega and possibly reuse k/k e2e framework.
 func RunBasicCreateTest() {
 	project, kubeConfigPath, lbName, ipName, clients := initDeps()
@@ -63,7 +64,7 @@ func testHTTPIngress(project, kubeConfigPath, lbName string) {
 	defer deleteFn()
 
 	// Tests
-	ipAddress := getIpAddress(project, lbName)
+	ipAddress := getIPAddress(project, lbName)
 	// Ensure that the IP address eventually returns 202.
 	if err := waitForIngress("http", ipAddress, "/"); err != nil {
 		glog.Errorf("error in waiting for ingress: %s", err)
@@ -95,7 +96,7 @@ func testHTTPSIngress(project, kubeConfigPath, lbName string, kubectlArgs []stri
 	defer deleteFn()
 
 	// Tests
-	ipAddress := getIpAddress(project, lbName)
+	ipAddress := getIPAddress(project, lbName)
 	// Ensure that the IP address eventually returns 202.
 	if err := waitForIngress("http", ipAddress, "/"); err != nil {
 		glog.Errorf("error in GET %s: %s", ipAddress, err)

@@ -32,7 +32,7 @@ import (
 func TestEnsureHTTPForwardingRule(t *testing.T) {
 	lbName := "lb-name"
 	namer := utilsnamer.NewNamer("mci1", lbName)
-	frName := namer.HttpForwardingRuleName()
+	frName := namer.HTTPForwardingRuleName()
 	frp := ingresslb.NewFakeLoadBalancers("" /*name*/, nil /*namer*/)
 	// GET should return NotFound.
 	if _, err := frp.GetGlobalForwardingRule(frName); err == nil {
@@ -116,7 +116,7 @@ func TestEnsureHTTPForwardingRule(t *testing.T) {
 func TestEnsureHTTPSForwardingRule(t *testing.T) {
 	lbName := "lb-name"
 	namer := utilsnamer.NewNamer("mci1", lbName)
-	frName := namer.HttpsForwardingRuleName()
+	frName := namer.HTTPSForwardingRuleName()
 	frp := ingresslb.NewFakeLoadBalancers("" /*name*/, nil /*namer*/)
 	// GET should return NotFound.
 	if _, err := frp.GetGlobalForwardingRule(frName); err == nil {
@@ -353,7 +353,7 @@ func TestListLoadBalancerStatuses(t *testing.T) {
 				}
 				if fr.hasStatus {
 					typedFRS := frs.(*Syncer)
-					name := typedFRS.namer.HttpsForwardingRuleName()
+					name := typedFRS.namer.HTTPSForwardingRuleName()
 					if err := addStatus(typedFRS, fr.lbName, name, ipAddr, clusters); err != nil {
 						t.Errorf("unexpected error in adding status to forwarding rule: %s. Moving to next test case", err)
 						continue
@@ -366,7 +366,7 @@ func TestListLoadBalancerStatuses(t *testing.T) {
 				}
 				if fr.hasStatus {
 					typedFRS := frs.(*Syncer)
-					name := typedFRS.namer.HttpForwardingRuleName()
+					name := typedFRS.namer.HTTPForwardingRuleName()
 					if err := addStatus(typedFRS, fr.lbName, name, ipAddr, clusters); err != nil {
 						t.Errorf("unexpected error in adding status to forwarding rule: %s. Moving to next test case", err)
 						continue
@@ -420,7 +420,7 @@ func TestListLoadBalancersWithSkippedRules(t *testing.T) {
 		t.Fatalf("expected no error in ensuring forwarding rule, actual: %v", err)
 	}
 	typedFRS := frs.(*Syncer)
-	name := typedFRS.namer.HttpForwardingRuleName()
+	name := typedFRS.namer.HTTPForwardingRuleName()
 	if err := addStatus(typedFRS, lbName, name, ipAddr, clusters); err != nil {
 		t.Fatalf("unexpected error in adding status: %s", err)
 	}
@@ -458,8 +458,8 @@ func TestDeleteForwardingRule(t *testing.T) {
 	tpLink := "fakeLink"
 	frp := ingresslb.NewFakeLoadBalancers("" /*name*/, nil /*namer*/)
 	namer := utilsnamer.NewNamer("mci1", lbName)
-	httpFrName := namer.HttpForwardingRuleName()
-	httpsFrName := namer.HttpsForwardingRuleName()
+	httpFrName := namer.HTTPForwardingRuleName()
+	httpsFrName := namer.HTTPSForwardingRuleName()
 	frs := NewForwardingRuleSyncer(namer, frp)
 	// Verify that trying to delete when no rule exists does not return any error.
 	if err := frs.DeleteForwardingRules(); err != nil {
@@ -518,7 +518,7 @@ func TestGetLoadBalancerStatus(t *testing.T) {
 
 	// Update the forwarding rule to have a status to simulate old forwarding rules that have the right status.
 	typedFRS := frs.(*Syncer)
-	name := typedFRS.namer.HttpForwardingRuleName()
+	name := typedFRS.namer.HTTPForwardingRuleName()
 	if err := addStatus(typedFRS, lbName, name, ipAddr, clusters); err != nil {
 		t.Fatalf("%s", err)
 	}
@@ -616,7 +616,7 @@ func TestRemoveClustersFromStatusWithStatus(t *testing.T) {
 			if err := frs.EnsureHTTPForwardingRule(lbName, ipAddr, tpLink, false /*force*/); err != nil {
 				t.Errorf("expected no error in ensuring http forwarding rule, actual: %v", err)
 			}
-			name := typedFRS.namer.HttpForwardingRuleName()
+			name := typedFRS.namer.HTTPForwardingRuleName()
 			// Add status to the forwarding rule to simulate old forwarding rule which has status.
 			if err := addStatus(typedFRS, lbName, name, ipAddr, clusters); err != nil {
 				t.Errorf("%s", err)
@@ -627,7 +627,7 @@ func TestRemoveClustersFromStatusWithStatus(t *testing.T) {
 			if err := frs.EnsureHTTPSForwardingRule(lbName, ipAddr, tpLink, false /*force*/); err != nil {
 				t.Errorf("expected no error in ensuring https forwarding rule, actual: %v", err)
 			}
-			name := typedFRS.namer.HttpsForwardingRuleName()
+			name := typedFRS.namer.HTTPSForwardingRuleName()
 			// Add status to the forwarding rule to simulate old forwarding rule which has status.
 			// TODO: This should not be required once lbc.RemoveFromClusters can update url map status:
 			// https://github.com/GoogleCloudPlatform/k8s-multicluster-ingress/pull/151
@@ -704,7 +704,7 @@ func TestRemoveClustersFromStatus(t *testing.T) {
 			}
 		}
 		if c.hasStatus {
-			name := typedFRS.namer.HttpForwardingRuleName()
+			name := typedFRS.namer.HTTPForwardingRuleName()
 			// Add status to the forwarding rule to simulate old forwarding rule which has status.
 			if err := addStatus(typedFRS, lbName, name, ipAddr, clusters); err != nil {
 				t.Errorf("%s", err)
