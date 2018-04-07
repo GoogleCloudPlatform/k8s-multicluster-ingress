@@ -2,3 +2,6 @@ package: github.com/GoogleCloudPlatform/k8s-multicluster-ingress
 import:
 - package: github.com/spf13/cobra
 - package: github.com/spf13/pflag
+- package: golang.org/x/lint
+  subpackages:
+  - golint

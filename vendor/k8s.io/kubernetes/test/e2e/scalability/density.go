@@ -45,6 +45,7 @@ import (
 	"k8s.io/kubernetes/test/e2e/framework"
 	"k8s.io/kubernetes/test/e2e/framework/timer"
 	testutils "k8s.io/kubernetes/test/utils"
+	imageutils "k8s.io/kubernetes/test/utils/image"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -386,7 +387,6 @@ var _ = SIGDescribe("Density", func() {
 		framework.ExpectNoError(err)
 		if err == nil {
 			summaries = append(summaries, metrics)
-			Expect(highLatencyRequests).NotTo(BeNumerically(">", 0), "There should be no high-latency requests")
 		}
 
 		// Verify scheduler metrics.
@@ -401,6 +401,8 @@ var _ = SIGDescribe("Density", func() {
 
 		framework.PrintSummaries(summaries, testCaseBaseName)
 
+		// Fail if there were some high-latency requests.
+		Expect(highLatencyRequests).NotTo(BeNumerically(">", 0), "There should be no high-latency requests")
 		// Fail if more than the allowed threshold of measurements were missing in the latencyTest.
 		Expect(missingMeasurements <= MaxMissingPodStartupMeasurements).To(Equal(true))
 	})
@@ -585,7 +587,7 @@ var _ = SIGDescribe("Density", func() {
 					Client:               clients[i],
 					InternalClient:       internalClients[i],
 					ScalesGetter:         scalesClients[i],
-					Image:                framework.GetPauseImageName(f.ClientSet),
+					Image:                imageutils.GetPauseImageName(),
 					Name:                 name,
 					Namespace:            nsName,
 					Labels:               map[string]string{"type": "densityPod"},
@@ -743,7 +745,7 @@ var _ = SIGDescribe("Density", func() {
 					name := additionalPodsPrefix + "-" + strconv.Itoa(i)
 					nsName := namespaces[i%len(namespaces)].Name
 					rcNameToNsMap[name] = nsName
-					go createRunningPodFromRC(&wg, c, name, nsName, framework.GetPauseImageName(f.ClientSet), additionalPodsPrefix, cpuRequest, memRequest)
+					go createRunningPodFromRC(&wg, c, name, nsName, imageutils.GetPauseImageName(), additionalPodsPrefix, cpuRequest, memRequest)
 					time.Sleep(200 * time.Millisecond)
 				}
 				wg.Wait()

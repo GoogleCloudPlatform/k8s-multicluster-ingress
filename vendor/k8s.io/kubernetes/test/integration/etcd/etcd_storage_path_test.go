@@ -735,19 +735,23 @@ func startRealMasterOrDie(t *testing.T, certDir string) (*allClient, clientv3.KV
 		kubeAPIServerOptions.ServiceClusterIPRange = *defaultServiceClusterIPRange
 		kubeAPIServerOptions.Authorization.Modes = []string{"RBAC"}
 		kubeAPIServerOptions.Admission.GenericAdmission.DisablePlugins = []string{"ServiceAccount"}
-
-		tunneler, proxyTransport, err := app.CreateNodeDialer(kubeAPIServerOptions)
+		completedOptions, err := app.Complete(kubeAPIServerOptions)
 		if err != nil {
 			t.Fatal(err)
 		}
-		kubeAPIServerConfig, sharedInformers, versionedInformers, _, _, err := app.CreateKubeAPIServerConfig(kubeAPIServerOptions, tunneler, proxyTransport)
+
+		tunneler, proxyTransport, err := app.CreateNodeDialer(completedOptions)
+		if err != nil {
+			t.Fatal(err)
+		}
+		kubeAPIServerConfig, sharedInformers, versionedInformers, _, _, _, err := app.CreateKubeAPIServerConfig(completedOptions, tunneler, proxyTransport)
 		if err != nil {
 			t.Fatal(err)
 		}
 
 		kubeAPIServerConfig.ExtraConfig.APIResourceConfigSource = &allResourceSource{} // force enable all resources
 
-		kubeAPIServer, err := app.CreateKubeAPIServer(kubeAPIServerConfig, genericapiserver.EmptyDelegate, sharedInformers, versionedInformers)
+		kubeAPIServer, err := app.CreateKubeAPIServer(kubeAPIServerConfig, genericapiserver.NewEmptyDelegate(), sharedInformers, versionedInformers)
 		if err != nil {
 			t.Fatal(err)
 		}

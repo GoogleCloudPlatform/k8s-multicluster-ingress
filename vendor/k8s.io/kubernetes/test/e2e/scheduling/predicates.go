@@ -32,6 +32,7 @@ import (
 	"k8s.io/kubernetes/test/e2e/common"
 	"k8s.io/kubernetes/test/e2e/framework"
 	testutils "k8s.io/kubernetes/test/utils"
+	imageutils "k8s.io/kubernetes/test/utils/image"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
@@ -147,7 +148,7 @@ var _ = SIGDescribe("SchedulerPredicates [Serial]", func() {
 		WaitForSchedulerAfterAction(f, createPausePodAction(f, pausePodConfig{
 			Name:   podName,
 			Labels: map[string]string{"name": "additional"},
-		}), podName, false)
+		}), ns, podName, false)
 		verifyResult(cs, podsNeededForSaturation, 1, ns)
 	})
 
@@ -222,7 +223,7 @@ var _ = SIGDescribe("SchedulerPredicates [Serial]", func() {
 				},
 			},
 		}
-		WaitForSchedulerAfterAction(f, createPausePodAction(f, conf), podName, false)
+		WaitForSchedulerAfterAction(f, createPausePodAction(f, conf), ns, podName, false)
 		verifyResult(cs, podsNeededForSaturation, 1, ns)
 	})
 
@@ -337,7 +338,7 @@ var _ = SIGDescribe("SchedulerPredicates [Serial]", func() {
 				},
 			},
 		}
-		WaitForSchedulerAfterAction(f, createPausePodAction(f, conf), podName, false)
+		WaitForSchedulerAfterAction(f, createPausePodAction(f, conf), ns, podName, false)
 		verifyResult(cs, len(fillerPods), 1, ns)
 	})
 
@@ -362,7 +363,7 @@ var _ = SIGDescribe("SchedulerPredicates [Serial]", func() {
 			},
 		}
 
-		WaitForSchedulerAfterAction(f, createPausePodAction(f, conf), podName, false)
+		WaitForSchedulerAfterAction(f, createPausePodAction(f, conf), ns, podName, false)
 		verifyResult(cs, 0, 1, ns)
 	})
 
@@ -461,7 +462,7 @@ var _ = SIGDescribe("SchedulerPredicates [Serial]", func() {
 			},
 			Labels: map[string]string{"name": "restricted"},
 		}
-		WaitForSchedulerAfterAction(f, createPausePodAction(f, conf), podName, false)
+		WaitForSchedulerAfterAction(f, createPausePodAction(f, conf), ns, podName, false)
 		verifyResult(cs, 0, 1, ns)
 	})
 
@@ -585,11 +586,11 @@ var _ = SIGDescribe("SchedulerPredicates [Serial]", func() {
 			NodeSelector: map[string]string{labelKey: labelValue},
 		}
 
-		WaitForSchedulerAfterAction(f, createPausePodAction(f, conf), podNameNoTolerations, false)
+		WaitForSchedulerAfterAction(f, createPausePodAction(f, conf), ns, podNameNoTolerations, false)
 		verifyResult(cs, 0, 1, ns)
 
 		By("Removing taint off the node")
-		WaitForSchedulerAfterAction(f, removeTaintFromNodeAction(cs, nodeName, testTaint), podNameNoTolerations, true)
+		WaitForSchedulerAfterAction(f, removeTaintFromNodeAction(cs, nodeName, testTaint), ns, podNameNoTolerations, true)
 		verifyResult(cs, 1, 0, ns)
 	})
 
@@ -658,7 +659,7 @@ func initPausePod(f *framework.Framework, conf pausePodConfig) *v1.Pod {
 			Containers: []v1.Container{
 				{
 					Name:  conf.Name,
-					Image: framework.GetPauseImageName(f.ClientSet),
+					Image: imageutils.GetPauseImageName(),
 					Ports: conf.Ports,
 				},
 			},
@@ -736,10 +737,10 @@ func createPausePodAction(f *framework.Framework, conf pausePodConfig) common.Ac
 
 // WaitForSchedulerAfterAction performs the provided action and then waits for
 // scheduler to act on the given pod.
-func WaitForSchedulerAfterAction(f *framework.Framework, action common.Action, podName string, expectSuccess bool) {
+func WaitForSchedulerAfterAction(f *framework.Framework, action common.Action, ns, podName string, expectSuccess bool) {
 	predicate := scheduleFailureEvent(podName)
 	if expectSuccess {
-		predicate = scheduleSuccessEvent(podName, "" /* any node */)
+		predicate = scheduleSuccessEvent(ns, podName, "" /* any node */)
 	}
 	success, err := common.ObserveEventAfterAction(f, predicate, action)
 	Expect(err).NotTo(HaveOccurred())
@@ -823,7 +824,7 @@ func CreateHostPortPods(f *framework.Framework, id string, replicas int, expectR
 		Name:           id,
 		Namespace:      f.Namespace.Name,
 		Timeout:        defaultTimeout,
-		Image:          framework.GetPauseImageName(f.ClientSet),
+		Image:          imageutils.GetPauseImageName(),
 		Replicas:       replicas,
 		HostPorts:      map[string]int{"port1": 4321},
 	}

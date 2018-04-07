@@ -2076,15 +2076,27 @@ func AssertCleanup(ns string, selectors ...string) {
 	if ns != "" {
 		nsArg = fmt.Sprintf("--namespace=%s", ns)
 	}
-	for _, selector := range selectors {
-		resources := RunKubectlOrDie("get", "rc,svc", "-l", selector, "--no-headers", nsArg)
-		if resources != "" {
-			Failf("Resources left running after stop:\n%s", resources)
+
+	var e error
+	verifyCleanupFunc := func() (bool, error) {
+		e = nil
+		for _, selector := range selectors {
+			resources := RunKubectlOrDie("get", "rc,svc", "-l", selector, "--no-headers", nsArg)
+			if resources != "" {
+				e = fmt.Errorf("Resources left running after stop:\n%s", resources)
+				return false, nil
+			}
+			pods := RunKubectlOrDie("get", "pods", "-l", selector, nsArg, "-o", "go-template={{ range .items }}{{ if not .metadata.deletionTimestamp }}{{ .metadata.name }}{{ \"\\n\" }}{{ end }}{{ end }}")
+			if pods != "" {
+				e = fmt.Errorf("Pods left unterminated after stop:\n%s", pods)
+				return false, nil
+			}
 		}
-		pods := RunKubectlOrDie("get", "pods", "-l", selector, nsArg, "-o", "go-template={{ range .items }}{{ if not .metadata.deletionTimestamp }}{{ .metadata.name }}{{ \"\\n\" }}{{ end }}{{ end }}")
-		if pods != "" {
-			Failf("Pods left unterminated after stop:\n%s", pods)
-		}
+		return true, nil
+	}
+	err := wait.PollImmediate(500*time.Millisecond, 1*time.Minute, verifyCleanupFunc)
+	if err != nil {
+		Failf(e.Error())
 	}
 }
 
@@ -2234,17 +2246,17 @@ func RunKubectlOrDieInput(data string, args ...string) string {
 	return NewKubectlCommand(args...).WithStdinData(data).ExecOrDie()
 }
 
-// runKubemciWithKubeconfig is a convenience wrapper over runKubemciCmd
-func runKubemciWithKubeconfig(args ...string) (string, error) {
+// RunKubemciWithKubeconfig is a convenience wrapper over RunKubemciCmd
+func RunKubemciWithKubeconfig(args ...string) (string, error) {
 	if TestContext.KubeConfig != "" {
 		args = append(args, "--"+clientcmd.RecommendedConfigPathFlag+"="+TestContext.KubeConfig)
 	}
-	return runKubemciCmd(args...)
+	return RunKubemciCmd(args...)
 }
 
-// runKubemciCmd is a convenience wrapper over kubectlBuilder to run kubemci.
+// RunKubemciCmd is a convenience wrapper over kubectlBuilder to run kubemci.
 // It assumes that kubemci exists in PATH.
-func runKubemciCmd(args ...string) (string, error) {
+func RunKubemciCmd(args ...string) (string, error) {
 	// kubemci is assumed to be in PATH.
 	kubemci := "kubemci"
 	b := new(kubectlBuilder)
@@ -2489,8 +2501,8 @@ func getNodeEvents(c clientset.Interface, nodeName string) []v1.Event {
 	return events.Items
 }
 
-// waitListSchedulableNodesOrDie is a wrapper around listing nodes supporting retries.
-func waitListSchedulableNodesOrDie(c clientset.Interface) *v1.NodeList {
+// waitListSchedulableNodes is a wrapper around listing nodes supporting retries.
+func waitListSchedulableNodes(c clientset.Interface) (*v1.NodeList, error) {
 	var nodes *v1.NodeList
 	var err error
 	if wait.PollImmediate(Poll, SingleCallTimeout, func() (bool, error) {
@@ -2505,6 +2517,15 @@ func waitListSchedulableNodesOrDie(c clientset.Interface) *v1.NodeList {
 		}
 		return true, nil
 	}) != nil {
+		return nodes, err
+	}
+	return nodes, nil
+}
+
+// waitListSchedulableNodesOrDie is a wrapper around listing nodes supporting retries.
+func waitListSchedulableNodesOrDie(c clientset.Interface) *v1.NodeList {
+	nodes, err := waitListSchedulableNodes(c)
+	if err != nil {
 		ExpectNoError(err, "Non-retryable failure or timed out while listing nodes for e2e cluster.")
 	}
 	return nodes
@@ -2782,7 +2803,6 @@ func RemoveAvoidPodsOffNode(c clientset.Interface, nodeName string) {
 
 func ScaleResource(
 	clientset clientset.Interface,
-	internalClientset internalclientset.Interface,
 	scalesGetter scaleclient.ScalesGetter,
 	ns, name string,
 	size uint,
@@ -2791,8 +2811,8 @@ func ScaleResource(
 	gr schema.GroupResource,
 ) error {
 	By(fmt.Sprintf("Scaling %v %s in namespace %s to %d", kind, name, ns, size))
-	scaler := kubectl.ScalerFor(kind, internalClientset.Batch(), scalesGetter, gr)
-	if err := testutils.ScaleResourceWithRetries(scaler, ns, name, size); err != nil {
+	scaler := kubectl.NewScaler(scalesGetter)
+	if err := testutils.ScaleResourceWithRetries(scaler, ns, name, size, gr); err != nil {
 		return fmt.Errorf("error while scaling RC %s to %d replicas: %v", name, size, err)
 	}
 	if !wait {
@@ -3472,7 +3492,7 @@ func CreatePodOrFail(c clientset.Interface, ns, name string, labels map[string]s
 			Containers: []v1.Container{
 				{
 					Name:  "pause",
-					Image: GetPauseImageName(c),
+					Image: imageutils.GetPauseImageName(),
 					Ports: containerPorts,
 					// Add a dummy environment variable to work around a docker issue.
 					// https://github.com/docker/docker/issues/14203
@@ -4078,11 +4098,19 @@ func CheckForControllerManagerHealthy(duration time.Duration) error {
 	return nil
 }
 
-// Returns number of ready Nodes excluding Master Node.
+// NumberOfRegisteredNodes returns number of registered Nodes excluding Master Node.
+func NumberOfRegisteredNodes(c clientset.Interface) (int, error) {
+	nodes, err := waitListSchedulableNodes(c)
+	if err != nil {
+		Logf("Failed to list nodes: %v", err)
+		return 0, err
+	}
+	return len(nodes.Items), nil
+}
+
+// NumberOfReadyNodes returns number of ready Nodes excluding Master Node.
 func NumberOfReadyNodes(c clientset.Interface) (int, error) {
-	nodes, err := c.CoreV1().Nodes().List(metav1.ListOptions{FieldSelector: fields.Set{
-		"spec.unschedulable": "false",
-	}.AsSelector().String()})
+	nodes, err := waitListSchedulableNodes(c)
 	if err != nil {
 		Logf("Failed to list nodes: %v", err)
 		return 0, err
@@ -4099,9 +4127,7 @@ func NumberOfReadyNodes(c clientset.Interface) (int, error) {
 // By cluster size we mean number of Nodes excluding Master Node.
 func WaitForReadyNodes(c clientset.Interface, size int, timeout time.Duration) error {
 	for start := time.Now(); time.Since(start) < timeout; time.Sleep(20 * time.Second) {
-		nodes, err := c.CoreV1().Nodes().List(metav1.ListOptions{FieldSelector: fields.Set{
-			"spec.unschedulable": "false",
-		}.AsSelector().String()})
+		nodes, err := waitListSchedulableNodes(c)
 		if err != nil {
 			Logf("Failed to list nodes: %v", err)
 			continue

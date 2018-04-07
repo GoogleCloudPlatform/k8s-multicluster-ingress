@@ -679,6 +679,10 @@ ENABLE_CLUSTER_MONITORING: $(yaml-quote ${ENABLE_CLUSTER_MONITORING:-none})
 ENABLE_METRICS_SERVER: $(yaml-quote ${ENABLE_METRICS_SERVER:-false})
 ENABLE_METADATA_AGENT: $(yaml-quote ${ENABLE_METADATA_AGENT:-none})
 METADATA_AGENT_VERSION: $(yaml-quote ${METADATA_AGENT_VERSION:-})
+METADATA_AGENT_CPU_REQUEST: $(yaml-quote ${METADATA_AGENT_CPU_REQUEST:-})
+METADATA_AGENT_MEMORY_REQUEST: $(yaml-quote ${METADATA_AGENT_MEMORY_REQUEST:-})
+METADATA_AGENT_CLUSTER_LEVEL_CPU_REQUEST: $(yaml-quote ${METADATA_AGENT_CLUSTER_LEVEL_CPU_REQUEST:-})
+METADATA_AGENT_CLUSTER_LEVEL_MEMORY_REQUEST: $(yaml-quote ${METADATA_AGENT_CLUSTER_LEVEL_MEMORY_REQUEST:-})
 DOCKER_REGISTRY_MIRROR_URL: $(yaml-quote ${DOCKER_REGISTRY_MIRROR_URL:-})
 ENABLE_L7_LOADBALANCING: $(yaml-quote ${ENABLE_L7_LOADBALANCING:-none})
 ENABLE_CLUSTER_LOGGING: $(yaml-quote ${ENABLE_CLUSTER_LOGGING:-false})
@@ -841,6 +845,7 @@ ETCD_CA_KEY: $(yaml-quote ${ETCD_CA_KEY_BASE64:-})
 ETCD_CA_CERT: $(yaml-quote ${ETCD_CA_CERT_BASE64:-})
 ETCD_PEER_KEY: $(yaml-quote ${ETCD_PEER_KEY_BASE64:-})
 ETCD_PEER_CERT: $(yaml-quote ${ETCD_PEER_CERT_BASE64:-})
+ENCRYPTION_PROVIDER_CONFIG: $(yaml-quote ${ENCRYPTION_PROVIDER_CONFIG:-})
 EOF
     if [[ "${ENABLE_TOKENREQUEST:-}" == "true" ]]; then
       cat >>$file <<EOF
@@ -1639,14 +1644,8 @@ function check-existing() {
   fi
 }
 
-# TODO(#54017): Remove below logics for handling deprecated network mode field.
-# `x_gcloud_mode` was replaced by `x_gcloud_subnet_mode` in gcloud 175.0.0 and
-# the content changed as well. Keeping such logic to make the transition eaiser.
 function check-network-mode() {
   local mode="$(gcloud compute networks list --filter="name=('${NETWORK}')" --project ${NETWORK_PROJECT} --format='value(x_gcloud_subnet_mode)' || true)"
-  if [[ -z "${mode}" ]]; then
-    mode="$(gcloud compute networks list --filter="name=('${NETWORK}')" --project ${NETWORK_PROJECT} --format='value(x_gcloud_mode)' || true)"
-  fi
   # The deprecated field uses lower case. Convert to upper case for consistency.
   echo "$(echo $mode | tr [a-z] [A-Z])"
 }
@@ -1732,12 +1731,6 @@ function create-subnetworks() {
     --region ${REGION} \
     ${IP_ALIAS_SUBNETWORK} 2>/dev/null)
   if [[ -z ${subnet} ]]; then
-    # Only allow auto-creation for default subnets
-    if [[ ${IP_ALIAS_SUBNETWORK} != ${INSTANCE_PREFIX}-subnet-default ]]; then
-      echo "${color_red}Subnetwork ${NETWORK}:${IP_ALIAS_SUBNETWORK} does not exist${color_norm}"
-      exit 1
-    fi
-
     echo "Creating subnet ${NETWORK}:${IP_ALIAS_SUBNETWORK}"
     gcloud beta compute networks subnets create \
       ${IP_ALIAS_SUBNETWORK} \

@@ -177,7 +177,7 @@ func startMasterOrDie(masterConfig *master.Config, incomingServer *httptest.Serv
 	}
 
 	sharedInformers := informers.NewSharedInformerFactory(clientset, masterConfig.GenericConfig.LoopbackClientConfig.Timeout)
-	m, err = masterConfig.Complete(sharedInformers).New(genericapiserver.EmptyDelegate)
+	m, err = masterConfig.Complete(sharedInformers).New(genericapiserver.NewEmptyDelegate())
 	if err != nil {
 		closeFn()
 		glog.Fatalf("error in bringing up the master: %v", err)
@@ -219,7 +219,6 @@ func startMasterOrDie(masterConfig *master.Config, incomingServer *httptest.Serv
 // Returns the master config appropriate for most integration tests.
 func NewIntegrationTestMasterConfig() *master.Config {
 	masterConfig := NewMasterConfig()
-	masterConfig.ExtraConfig.EnableCoreControllers = true
 	masterConfig.GenericConfig.PublicAddress = net.ParseIP("192.168.10.4")
 	masterConfig.ExtraConfig.APIResourceConfigSource = master.DefaultAPIResourceConfigSource()
 	return masterConfig
@@ -298,7 +297,6 @@ func NewMasterConfig() *master.Config {
 		ExtraConfig: master.ExtraConfig{
 			APIResourceConfigSource: master.DefaultAPIResourceConfigSource(),
 			StorageFactory:          storageFactory,
-			EnableCoreControllers:   true,
 			KubeletClientConfig:     kubeletclient.KubeletClientConfig{Port: 10250},
 			APIServerServicePort:    443,
 			MasterCount:             1,
