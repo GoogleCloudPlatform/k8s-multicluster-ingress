@@ -127,10 +127,15 @@ func TestCreateIngressAndLoadBalancer(t *testing.T) {
 	if err := ingress.UnmarshallAndApplyDefaults("../../../testdata/ingress.yaml", "" /*namespace*/, &originalIngress); err != nil {
 		t.Fatalf("%s", err)
 	}
-	validator := validations.NewFakeValidator()
+	validator := validations.NewFakeValidator(true /*validationShouldPass*/)
 
-	// TODO(G-Harmon): Verify that validation errors are propagated back.
-	createIngressAndLoadBalancer(originalIngress, clients, &options, nil /*cloudInterface*/, validator)
+	err := createIngressAndLoadBalancer(originalIngress, clients, &options, nil /*cloudInterface*/, validator)
+
+	// Test for current error, because not all of the resources are faked out:
+	expectedErr := "will not overwrite Ingress resource in cluster 'cluster1' without --force"
+	if !strings.Contains(err.Error(), expectedErr) {
+		t.Errorf("wrong error. Expected: %s. Got: %s.", expectedErr, err)
+	}
 	// Make sure validation was run properly:
 	fv := validator.(*validations.FakeValidator)
 	if len(fv.ValidatedClusterSets) != 1 {
@@ -142,4 +147,29 @@ func TestCreateIngressAndLoadBalancer(t *testing.T) {
 	if fv.ValidatedClusterSets[0]["cluster1"] != client {
 		t.Errorf("wrong cluster. expected:%v got:%v.", client, fv.ValidatedClusterSets[0]["cluster1"])
 	}
+}
+
+func TestCreateIngressAndLoadBalancerFails(t *testing.T) {
+	options := createOptions{
+		Validate: true,
+	}
+	client := &fake.Clientset{}
+	clients := map[string]kubeclient.Interface{
+		"cluster1": client,
+	}
+	var originalIngress v1beta1.Ingress
+	if err := ingress.UnmarshallAndApplyDefaults("../../../testdata/ingress.yaml", "" /*namespace*/, &originalIngress); err != nil {
+		t.Fatalf("%s", err)
+	}
+	validator := validations.NewFakeValidator(false /*validationShouldPass*/)
+
+	err := createIngressAndLoadBalancer(originalIngress, clients, &options, nil /*cloudInterface*/, validator)
+
+	// Make sure validation error was returned:
+	fv := validator.(*validations.FakeValidator)
+	if err != fv.ValidationError {
+		t.Errorf("Wrong error. Expected: %s. Got: %s", fv.ValidationError, err)
+	}
+	// Testing that the right clusters were validated is handled in
+	// TestCreateIngressAndLoadBalancer().
 }

@@ -15,6 +15,8 @@
 package validations
 
 import (
+	"fmt"
+
 	"github.com/golang/glog"
 	"k8s.io/api/extensions/v1beta1"
 	kubeclient "k8s.io/client-go/kubernetes"
@@ -23,11 +25,13 @@ import (
 // FakeValidator is a fake implementation of ValidatorInterface, for tests.
 type FakeValidator struct {
 	ValidatedClusterSets []map[string]kubeclient.Interface
+	validationSucceeds   bool
+	ValidationError      error
 }
 
 // NewFakeValidator returns a new intance of the fake Validator.
-func NewFakeValidator() ValidatorInterface {
-	return &FakeValidator{}
+func NewFakeValidator(validationShouldPass bool) ValidatorInterface {
+	return &FakeValidator{validationSucceeds: validationShouldPass}
 }
 
 // Ensure this implements BackendServiceSyncerInterface.
@@ -35,8 +39,15 @@ var _ ValidatorInterface = &FakeValidator{}
 
 // Validate records the clusters that were validated, so tests can use that information.
 func (v *FakeValidator) Validate(clients map[string]kubeclient.Interface, ing *v1beta1.Ingress) error {
-	return v.serverVersionsNewEnough(clients)
+	if err := v.serverVersionsNewEnough(clients); err != nil {
+		return err
+	}
 	// TODO: Might be useful to also call serviceNodePortsSame.
+	if !v.validationSucceeds {
+		v.ValidationError = fmt.Errorf("test-validation-err")
+		return v.ValidationError
+	}
+	return nil
 }
 
 func (v *FakeValidator) serverVersionsNewEnough(clients map[string]kubeclient.Interface) error {
