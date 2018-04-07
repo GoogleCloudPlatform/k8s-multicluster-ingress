@@ -74,7 +74,7 @@ func TestEnsureIngress(t *testing.T) {
 					action: func(action core.Action) (handled bool, ret runtime.Object, err error) {
 						oldIng := *originalIngress.DeepCopy()
 						// Update an insignificant attribute to make sure we don't compare irrelevant stuff
-						oldIng.Status.LoadBalancer.Ingress = append(oldIng.Status.LoadBalancer.Ingress, core_v1.LoadBalancerIngress{"127.0.0.1", "localhost"})
+						oldIng.Status.LoadBalancer.Ingress = append(oldIng.Status.LoadBalancer.Ingress, core_v1.LoadBalancerIngress{IP: "127.0.0.1", Hostname: "localhost"})
 						return true, &oldIng, nil
 					},
 				},

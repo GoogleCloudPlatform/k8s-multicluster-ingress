@@ -210,10 +210,10 @@ func TestListLoadBalancerStatuses(t *testing.T) {
 			},
 			map[string]status.LoadBalancerStatus{
 				lbName: {
-					"",
-					lbName,
-					clusters,
-					ipAddr,
+					Description:      "",
+					LoadBalancerName: lbName,
+					Clusters:         clusters,
+					IPAddress:        ipAddr,
 				},
 			},
 		},
@@ -235,10 +235,10 @@ func TestListLoadBalancerStatuses(t *testing.T) {
 			},
 			map[string]status.LoadBalancerStatus{
 				lbName + "1": {
-					"",
-					lbName + "1",
-					clusters,
-					ipAddr,
+					Description:      "",
+					LoadBalancerName: lbName + "1",
+					Clusters:         clusters,
+					IPAddress:        ipAddr,
 				},
 			},
 		},
