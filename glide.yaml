@@ -5,3 +5,6 @@ import:
 - package: golang.org/x/lint
   subpackages:
   - golint
+- package: golang.org/x/tools
+  subpackages:
+  - go/ast/astutil

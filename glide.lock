@@ -1,5 +1,5 @@
-hash: d536079ba2a59aaa7719660e4b132337dfd5a14d5fb6a9ce5bf58e94f3625e68
-updated: 2018-04-06T17:39:28.940272332-07:00
+hash: 785eea8f33fd7d364d6aa4542b5f156cff5869cd2b108b90a142b9cfb1c78bce
+updated: 2018-04-06T18:49:06.098893572-07:00
 imports:
 - name: cloud.google.com/go
   version: 3b1ae45394a234c385be014e9a488f2bb6eef821
@@ -135,6 +135,10 @@ imports:
   version: f51c12702a4d776e4c1fa9b0fabab841babae631
   subpackages:
   - rate
+- name: golang.org/x/tools
+  version: ac136b6c2db7c4d43955e4bc7174db36dc0539c0
+  subpackages:
+  - go/ast/astutil
 - name: google.golang.org/api
   version: 7f657476956314fee258816aaf81c0ff65cf8bee
   subpackages:
@@ -449,7 +453,7 @@ imports:
   subpackages:
   - pkg/util/proto
 - name: k8s.io/kubernetes
-  version: ee8c6d99b6064d3e490ad8607d1bfe28d86dd3d9
+  version: 9939f709e4db05dd7c470758624eba495a8dd9ac
   subpackages:
   - pkg/api/legacyscheme
   - pkg/api/service
