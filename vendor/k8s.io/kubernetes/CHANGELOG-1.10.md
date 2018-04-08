@@ -199,6 +199,8 @@ In terms of networking, Kubernetes 1.10 is about control. Users now have beta su
 
 ## Before Upgrading
 
+* If you need to downgrade from 1.10 to 1.9.x, downgrade to v1.9.6 to ensure PV and PVC objects can be deleted properly.
+
 * In-place node upgrades to this release from versions 1.7.14, 1.8.9, and 1.9.4 are not supported if using subpath volumes with PVCs.  Such pods should be drained from the node first.
 
 * The minimum supported version of Docker is now 1.11; if you are using Docker 1.10 or below, be sure to upgrade Docker before upgrading Kubernetes. ([#57845](https://github.com/kubernetes/kubernetes/pull/57845), [@yujuhong](https://github.com/yujuhong))
@@ -289,6 +291,8 @@ kind: KubeProxyConfiguration
 * MountPropagation feature is now beta. As a consequence, all volume mounts in containers are now `rslave` on Linux by default. To make this default work in all Linux environments the entire mount tree should be marked as shareable, e.g. via `mount --make-rshared /`. All Linux distributions that use systemd already have the root directory mounted as rshared and hence they need not do anything. In Linux environments without systemd we recommend running `mount --make-rshared /` during boot before docker is started, ([@jsafrane](https://github.com/jsafrane))
 
 ## Known Issues
+
+* If you need to downgrade from 1.10 to 1.9.x, downgrade to v1.9.6 to ensure PV and PVC objects can be deleted properly.
 
 * Use of subPath module with hostPath volumes can cause issues during reconstruction ([#61446](https://github.com/kubernetes/kubernetes/issues/61446)) and with containerized kubelets ([#61456](https://github.com/kubernetes/kubernetes/issues/61456)). The workaround for this issue is to specify the complete path in the hostPath volume. Use of subPathmounts nested within atomic writer volumes (configmap, secret, downwardAPI, projected) does not work ([#61545](https://github.com/kubernetes/kubernetes/issues/61545)), and socket files cannot be loaded from a subPath ([#62377](https://github.com/kubernetes/kubernetes/issues/61377)). Work on these issues is ongoing.
 
@@ -446,7 +450,7 @@ Accept: application/com.github.proto-openapi.spec.v2@v1.0+protobuf Accept-Encodi
 
 * Added docker-logins config to kubernetes-worker charm. ([#56217](https://github.com/kubernetes/kubernetes/pull/56217), [@Cynerva](https://github.com/Cynerva))
 
-* Add ability to control primary GID of containers through Pod Spec at Pod level and Per Container SecurityContext level. ([#52077](https://github.com/kubernetes/kubernetes/pull/52077))
+* Add ability to control primary GID of containers through Pod Spec at Pod level and Per Container SecurityContext level. ([#52077](https://github.com/kubernetes/kubernetes/pull/52077), [@krmayankk](https://github.com/krmayankk))
 
 ### CLI
 
@@ -570,6 +574,7 @@ And point to the file using the --config flag, as in
   * [stable] [containerd](https://github.com/containerd/containerd): containerd v1.1 natively supports CRI v1alpha2 now, so users can use Kubernetes v1.10 with containerd v1.1 directly, without having to use the intermediate cri-containerd daemon. [All Kubernetes 1.10 tests passed](https://k8s-testgrid.appspot.com/sig-node-containerd). [@Random-Liu]
   * [stable] [cri-o](https://github.com/kubernetes-incubator/cri-o): cri-o v1.10 updated CRI version to v1alpha2 and made several bug and stability fixes. [@mrunalp]
   * [stable] [frakti](https://github.com/kubernetes/frakti): frakti v1.10 implemented GCE Persistent Disk as a high performance volume, fixed several bugs, added ARM64 support, and passed all CRI validation conformance tests and node e2e conformance tests. [@resouer]
+  * [alpha] CRI now supports specifying the GID of the container at both LinuxSandboxSecurityContext and LinuxContainerSecurityContext in addition to specifying the UID. Support is implemented for dockershim. [@krmayankk]
 
 * Fixed race conditions around devicemanager Allocate() and endpoint deletion. ([#60856](https://github.com/kubernetes/kubernetes/pull/60856), [@jiayingz](https://github.com/jiayingz))
 
@@ -1564,8 +1569,8 @@ filename | sha256 hash
 * Add AWS cloud provider option to use an assumed IAM role  ([#59668](https://github.com/kubernetes/kubernetes/pull/59668), [@brycecarman](https://github.com/brycecarman))
 * `kubectl port-forward` now supports specifying a service to port forward to: `kubectl port-forward svc/myservice 8443:443` ([#59809](https://github.com/kubernetes/kubernetes/pull/59809), [@phsiao](https://github.com/phsiao))
 * Fix kubelet PVC stale metrics ([#59170](https://github.com/kubernetes/kubernetes/pull/59170), [@cofyc](https://github.com/cofyc))
-* - Separate current ARM rate limiter into read/write ([#59830](https://github.com/kubernetes/kubernetes/pull/59830), [@khenidak](https://github.com/khenidak))
-    * - Improve control over how ARM rate limiter is used within Azure cloud provider
+* Separate current ARM rate limiter into read/write ([#59830](https://github.com/kubernetes/kubernetes/pull/59830), [@khenidak](https://github.com/khenidak))
+    * Improve control over how ARM rate limiter is used within Azure cloud provider
 * The ConfigOK node condition has been renamed to KubeletConfigOk. ([#59905](https://github.com/kubernetes/kubernetes/pull/59905), [@mtaufen](https://github.com/mtaufen))
 * fluentd-gcp resources can be modified via a ScalingPolicy ([#59657](https://github.com/kubernetes/kubernetes/pull/59657), [@x13n](https://github.com/x13n))
 * Adding pkg/kubelet/apis/deviceplugin/v1beta1 API. ([#59588](https://github.com/kubernetes/kubernetes/pull/59588), [@jiayingz](https://github.com/jiayingz))
@@ -1826,7 +1831,7 @@ filename | sha256 hash
 * Correctly handle transient connection reset errors on GET requests from client library. ([#58520](https://github.com/kubernetes/kubernetes/pull/58520), [@porridge](https://github.com/porridge))
 * Authentication information for OpenStack cloud provider can now be specified as environment variables ([#58300](https://github.com/kubernetes/kubernetes/pull/58300), [@dims](https://github.com/dims))
 * Bump GCE metadata proxy to v0.1.9 to pick up security fixes. ([#58221](https://github.com/kubernetes/kubernetes/pull/58221), [@ihmccreery](https://github.com/ihmccreery))
-* - kubeadm now supports CIDR notations in NO_PROXY environment variable ([#53895](https://github.com/kubernetes/kubernetes/pull/53895), [@kad](https://github.com/kad))
+* kubeadm now supports CIDR notations in NO_PROXY environment variable ([#53895](https://github.com/kubernetes/kubernetes/pull/53895), [@kad](https://github.com/kad))
 * kubeadm now accept `--apiserver-extra-args`, `--controller-manager-extra-args` and `--scheduler-extra-args` to override / specify additional flags for control plane components ([#58080](https://github.com/kubernetes/kubernetes/pull/58080), [@simonferquel](https://github.com/simonferquel))
 * Add `--enable-admission-plugin` `--disable-admission-plugin` flags and deprecate `--admission-control`. ([#58123](https://github.com/kubernetes/kubernetes/pull/58123), [@hzxuzhonghu](https://github.com/hzxuzhonghu))
     * Afterwards, don't care about the orders specified in the flags.

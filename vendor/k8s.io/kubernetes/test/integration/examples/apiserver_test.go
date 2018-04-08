@@ -110,12 +110,16 @@ func TestAggregatedAPIServer(t *testing.T) {
 		kubeAPIServerOptions.Authentication.RequestHeader.ClientCAFile = proxyCACertFile.Name()
 		kubeAPIServerOptions.Authentication.ClientCert.ClientCA = clientCACertFile.Name()
 		kubeAPIServerOptions.Authorization.Modes = []string{"RBAC"}
-
-		tunneler, proxyTransport, err := app.CreateNodeDialer(kubeAPIServerOptions)
+		completedOptions, err := app.Complete(kubeAPIServerOptions)
 		if err != nil {
 			t.Fatal(err)
 		}
-		kubeAPIServerConfig, sharedInformers, versionedInformers, _, _, err := app.CreateKubeAPIServerConfig(kubeAPIServerOptions, tunneler, proxyTransport)
+
+		tunneler, proxyTransport, err := app.CreateNodeDialer(completedOptions)
+		if err != nil {
+			t.Fatal(err)
+		}
+		kubeAPIServerConfig, sharedInformers, versionedInformers, _, _, _, err := app.CreateKubeAPIServerConfig(completedOptions, tunneler, proxyTransport)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -126,7 +130,7 @@ func TestAggregatedAPIServer(t *testing.T) {
 		kubeAPIServerClientConfig.ServerName = ""
 		kubeClientConfigValue.Store(kubeAPIServerClientConfig)
 
-		kubeAPIServer, err := app.CreateKubeAPIServer(kubeAPIServerConfig, genericapiserver.EmptyDelegate, sharedInformers, versionedInformers)
+		kubeAPIServer, err := app.CreateKubeAPIServer(kubeAPIServerConfig, genericapiserver.NewEmptyDelegate(), sharedInformers, versionedInformers)
 		if err != nil {
 			t.Fatal(err)
 		}

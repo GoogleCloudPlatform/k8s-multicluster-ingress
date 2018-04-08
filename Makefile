@@ -24,7 +24,6 @@ fmt:
 
 lint:
 	@echo "+ $@"
-	@go get -u golang.org/x/lint/golint
 	@./scripts/check-golint.sh
 
 vet:

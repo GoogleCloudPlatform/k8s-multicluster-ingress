@@ -17,7 +17,6 @@ limitations under the License.
 package printers
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -32,10 +31,6 @@ import (
 // a resource's fully-qualified Kind.group/name, or a successful
 // message about that resource if an Operation is provided.
 type NamePrintFlags struct {
-	// DryRun indicates whether the "(dry run)" message
-	// should be appended to the finalized "successful"
-	// message printed about an action on an object.
-	DryRun bool
 	// Operation describes the name of the action that
 	// took place on an object, to be included in the
 	// finalized "successful" message.
@@ -46,11 +41,10 @@ type NamePrintFlags struct {
 // handling --output=name printing.
 // Returns false if the specified outputFormat does not match a supported format.
 // Supported format types can be found in pkg/printers/printers.go
-func (f *NamePrintFlags) ToPrinter(outputFormat string) (ResourcePrinter, bool, error) {
+func (f *NamePrintFlags) ToPrinter(outputFormat string) (ResourcePrinter, error) {
 	decoders := []runtime.Decoder{scheme.Codecs.UniversalDecoder(), unstructured.UnstructuredJSONScheme}
 	namePrinter := &NamePrinter{
 		Operation: f.Operation,
-		DryRun:    f.DryRun,
 		Typer:     scheme.Scheme,
 		Decoders:  decoders,
 	}
@@ -58,11 +52,12 @@ func (f *NamePrintFlags) ToPrinter(outputFormat string) (ResourcePrinter, bool, 
 	outputFormat = strings.ToLower(outputFormat)
 	switch outputFormat {
 	case "name":
-		return namePrinter, true, nil
+		namePrinter.ShortOutput = true
+		fallthrough
 	case "":
-		return nil, false, fmt.Errorf("missing output format")
+		return namePrinter, nil
 	default:
-		return nil, false, nil
+		return nil, NoCompatiblePrinterError{f}
 	}
 }
 
@@ -72,9 +67,8 @@ func (f *NamePrintFlags) AddFlags(c *cobra.Command) {}
 
 // NewNamePrintFlags returns flags associated with
 // --name printing, with default values set.
-func NewNamePrintFlags(operation string, dryRun bool) *NamePrintFlags {
+func NewNamePrintFlags(operation string) *NamePrintFlags {
 	return &NamePrintFlags{
 		Operation: operation,
-		DryRun:    dryRun,
 	}
 }

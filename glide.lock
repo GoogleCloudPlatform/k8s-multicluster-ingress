@@ -1,5 +1,5 @@
-hash: 7845ab3f3640d4a97f6291b96c52cfb67ba5dd895263c08108f4c6f09335d62f
-updated: 2018-03-28T18:17:04.783326761-07:00
+hash: 785eea8f33fd7d364d6aa4542b5f156cff5869cd2b108b90a142b9cfb1c78bce
+updated: 2018-04-06T18:49:06.098893572-07:00
 imports:
 - name: cloud.google.com/go
   version: 3b1ae45394a234c385be014e9a488f2bb6eef821
@@ -99,6 +99,10 @@ imports:
   - ed25519
   - ed25519/internal/edwards25519
   - ssh/terminal
+- name: golang.org/x/lint
+  version: 85993ffd0a6cd043291f3f63d45d656d97b165bd
+  subpackages:
+  - golint
 - name: golang.org/x/net
   version: 1c05540f6879653db88113bc4a2b70aec4bd491f
   subpackages:
@@ -131,9 +135,14 @@ imports:
   version: f51c12702a4d776e4c1fa9b0fabab841babae631
   subpackages:
   - rate
+- name: golang.org/x/tools
+  version: ac136b6c2db7c4d43955e4bc7174db36dc0539c0
+  subpackages:
+  - go/ast/astutil
 - name: google.golang.org/api
   version: 7f657476956314fee258816aaf81c0ff65cf8bee
   subpackages:
+  - cloudmonitoring/v2beta2
   - compute/v0.alpha
   - compute/v0.beta
   - compute/v1
@@ -141,9 +150,12 @@ imports:
   - gensupport
   - googleapi
   - googleapi/internal/uritemplates
+  - logging/v2beta1
+  - monitoring/v3
+  - pubsub/v1
   - tpu/v1alpha1
 - name: google.golang.org/appengine
-  version: 138cbf02a83223cf40a1e4b7834cc0a732fb383b
+  version: 0a24098c0ec68416ec050f567f75df563d6b231e
   subpackages:
   - internal
   - internal/app_identity
@@ -206,11 +218,11 @@ imports:
   - storage/v1alpha1
   - storage/v1beta1
 - name: k8s.io/apiextensions-apiserver
-  version: 43047e402215d319c9b1acec99a67cf1a693b0c0
+  version: 14cda5543b166be178192dc77286c32acd1791bb
   subpackages:
   - pkg/features
 - name: k8s.io/apimachinery
-  version: 00b86ef5712a9fafe489160774c254f46c254a30
+  version: 3aa1cc99b23ea45d95fd4e1a648f10cc41a491e1
   subpackages:
   - pkg/api/equality
   - pkg/api/errors
@@ -424,11 +436,12 @@ imports:
   - util/retry
   - util/workqueue
 - name: k8s.io/ingress-gce
-  version: 5911f806cf189cdb8741a819d3d90ce3c0859c51
+  version: 1dc9b18d9ccd18fec4ce1a375e56ec8b752ed915
   subpackages:
   - pkg/annotations
   - pkg/backends
   - pkg/firewalls
+  - pkg/flags
   - pkg/healthchecks
   - pkg/instances
   - pkg/loadbalancers
@@ -440,7 +453,7 @@ imports:
   subpackages:
   - pkg/util/proto
 - name: k8s.io/kubernetes
-  version: 3cb73605aa6679b24a4cefadd41eb2669b06bab9
+  version: 9939f709e4db05dd7c470758624eba495a8dd9ac
   subpackages:
   - pkg/api/legacyscheme
   - pkg/api/service

@@ -18,6 +18,14 @@ set -e
 set -u
 set -o pipefail
 
+# Set a GOBIN to install golint.
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE}")/.." && pwd -P)"
+export GOBIN="${ROOT_DIR}/_output/local/bin"
+PATH="${GOBIN}:${PATH}"
+
+# Install golint from vendor/...
+go install ./vendor/golang.org/x/lint/golint
+
 diff=$(find . -name "*.go"| grep -v "/vendor/" | xargs -L 1 golint)
 if [ -n "${diff}" ]; then
   echo -e "golint failed:\n${diff}"

@@ -34,7 +34,7 @@ func TestEnsureBackendService(t *testing.T) {
 	igLink := "igLink"
 	kubeSvcName := "ingress-svc"
 	// Should create the backend service as expected.
-	bsp := ingressbe.NewFakeBackendServices(func(op int, be *compute.BackendService) error { return nil })
+	bsp := ingressbe.NewFakeBackendServices(func(op int, be *compute.BackendService) error { return nil }, false /*alpha*/)
 	namer := utilsnamer.NewNamer("mci1", lbName)
 	beName := namer.BeServiceName(port)
 	bss := NewBackendServiceSyncer(namer, bsp)
@@ -132,7 +132,7 @@ func TestDeleteBackendService(t *testing.T) {
 	hcLink := "hcLink"
 	kubeSvcName := "ingress-svc"
 	// Should create the backend service as expected.
-	bsp := ingressbe.NewFakeBackendServices(func(op int, be *compute.BackendService) error { return nil })
+	bsp := ingressbe.NewFakeBackendServices(func(op int, be *compute.BackendService) error { return nil }, false /*alpha*/)
 	namer := utilsnamer.NewNamer("mci1", lbName)
 	beName := namer.BeServiceName(port)
 	bss := NewBackendServiceSyncer(namer, bsp)
@@ -180,7 +180,7 @@ func TestRemoveFromClusters(t *testing.T) {
 	hcLink := "hcLink"
 	kubeSvcName := "ingress-svc"
 	// Should create the backend service as expected.
-	bsp := ingressbe.NewFakeBackendServices(func(op int, be *compute.BackendService) error { return nil })
+	bsp := ingressbe.NewFakeBackendServices(func(op int, be *compute.BackendService) error { return nil }, false /*alpha*/)
 	namer := utilsnamer.NewNamer("mci1", lbName)
 	beName := namer.BeServiceName(port)
 	bss := NewBackendServiceSyncer(namer, bsp)
