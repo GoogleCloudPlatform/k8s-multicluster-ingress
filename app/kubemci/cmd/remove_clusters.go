@@ -142,6 +142,10 @@ func runRemoveClusters(options *removeClustersOptions, args []string) error {
 		return err
 	}
 	if delErr := lbs.RemoveFromClusters(&ing, clients, options.ForceUpdate); delErr != nil {
+		if !options.ForceUpdate {
+			return delErr
+		}
+		fmt.Printf("%s. Continuing with force remove\n", delErr)
 		err = multierror.Append(err, delErr)
 	}
 
