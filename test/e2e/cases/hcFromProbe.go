@@ -40,6 +40,8 @@ func cleanupHCFromProbe(kubectlArgs []string, ipName string, clients map[string]
 }
 
 func testHCFromProbe(project, kubeConfigPath, lbName string) {
+	glog.Infof("------- Testing Health Check from Probe ---------")
+
 	deleteFn, err := createIngress(project, kubeConfigPath, lbName, "testdata/e2e/hcFromProbe/ingress.yaml")
 	if err != nil {
 		glog.Fatalf("error creating ingress: %+v", err)
