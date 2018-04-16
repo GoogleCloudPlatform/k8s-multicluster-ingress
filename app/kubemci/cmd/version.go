@@ -33,7 +33,7 @@ var (
 const (
 	// String indicating the client version.
 	// TODO(nikhiljindal): Add more useful information such as build date, git commit, etc similar to kubectl.
-	clientVersion = "0.3.0"
+	clientVersion = "0.4.0"
 )
 
 func newCmdGetVersion(out, err io.Writer) *cobra.Command {
