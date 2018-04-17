@@ -154,7 +154,7 @@ manifests](./manifests/). This could be accomplished by running the following lo
 
 ```shell
 for ctx in $(kubectl config get-contexts -o=name --kubeconfig clusters.yaml); do
-  kubectl --context="${ctx}" create -f manifests/
+  kubectl --kubeconfig clusters.yaml --context="${ctx}" create -f manifests/
 done
 ```
 
