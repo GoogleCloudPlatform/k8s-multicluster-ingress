@@ -56,6 +56,22 @@ used by `kubemci` to provision the multi-cluster Ingress.
     gcloud components install kubectl
     ```
 
+4. Install **`kubemci`**:
+
+    You can install `kubemci` by running:
+
+    ```shell
+    wget https://storage.googleapis.com/kubemci-release/release/latest/bin/linux/amd64/kubemci
+    chmod +x ./kubemci
+   
+    ```
+
+    In google cloud shell you can move this to your local bin to automatically include it in your path
+
+    ```shell
+    mv ./kubemci ~/bin/kubemci
+    ```
+
 ## 1. Create Kubernetes Clusters
 
 `kubemci` requires Kubernetes clusters that are v1.8.1 or newer. (You can check

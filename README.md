@@ -15,7 +15,7 @@ kubemci is a tool to configure Kubernetes ingress to load balance traffic across
 multiple Kubernetes clusters.
 
 This is a Google Cloud Platform [beta](https://cloud.google.com/terms/launch-stages) tool, suitable for limited production use cases:
-https://cloud.google.com/kubernetes-engine/docs/how-to/setup-multi-cluster-ingress
+https://cloud.google.com/kubernetes-engine/docs/how-to/kubemci
 
 ## Getting started
 
