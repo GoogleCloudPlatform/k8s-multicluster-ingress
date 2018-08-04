@@ -1,2 +1,3 @@
 # Ignore GOBIN where we install go tools such as golint.
 /_output
+*.coverprofile
