@@ -44,7 +44,9 @@ coveralls:
 	@echo "+ $@"
 # Make sure goveralls is installed.
 	@go get github.com/mattn/goveralls
-	@CI_NAME="prow" CI_BUILD_NUMBER=${BUILD_ID} CI_BRANCH=${PULL_BASE_REF} CI_PULL_REQUEST=${PULL_NUMBER} goveralls -repotoken $(shell cat /etc/coveralls-token/coveralls.txt)
+	@CI_NAME="prow" CI_BUILD_NUMBER=${BUILD_ID} CI_BRANCH=${PULL_BASE_REF} CI_PULL_REQUEST=${PULL_NUMBER} goveralls \
+		-repotoken $(shell cat /etc/coveralls-token/coveralls.txt) \
+		-service="prow"
 
 build:
 	go build -a -installsuffix cgo ${GOPATH}/src/${PKG}/cmd/kubemci/kubemci.go
