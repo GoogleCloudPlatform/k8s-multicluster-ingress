@@ -39,15 +39,14 @@ test-all: fmt lint vet test
 
 cover:
 	@echo "+ $@"
-	@go list -f '{{if len .TestGoFiles}}"go test -coverprofile={{.Dir}}/.coverprofile {{.ImportPath}}"{{end}}' $(shell go list ${PKG}/... | grep -v vendor) | xargs -L 1 sh -c
-
-coveralls:
-	@echo "+ $@"
-# Generate coverage report
 	@go test \
 		-coverprofile=${COVERPROFILE} \
 		-coverpkg=$(shell go list ${PKG}/... | xargs | sed -e 's/ /,/g') \
 		${PKG}/...
+
+coveralls:
+	@echo "+ $@"
+	@make cover
 # Make sure goveralls is installed.
 	@go get github.com/mattn/goveralls
 # Send coverage report to Goveralls
