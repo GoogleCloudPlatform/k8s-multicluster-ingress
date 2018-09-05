@@ -14,6 +14,7 @@
 
 
 PKG=github.com/GoogleCloudPlatform/k8s-multicluster-ingress
+COVERPROFILE=combined.coverprofile
 
 # So that make test is not confused with the test directory.
 .PHONY: test
@@ -38,13 +39,21 @@ test-all: fmt lint vet test
 
 cover:
 	@echo "+ $@"
-	@go list -f '{{if len .TestGoFiles}}"go test -coverprofile={{.Dir}}/.coverprofile {{.ImportPath}}"{{end}}' $(shell go list ${PKG}/... | grep -v vendor) | xargs -L 1 sh -c
+	@go test \
+		-coverprofile=${COVERPROFILE} \
+		-coverpkg=$(shell go list ${PKG}/... | xargs | sed -e 's/ /,/g') \
+		${PKG}/...
 
 coveralls:
 	@echo "+ $@"
+	@make cover
 # Make sure goveralls is installed.
 	@go get github.com/mattn/goveralls
-	@CI_NAME="prow" CI_BUILD_NUMBER=${BUILD_ID} CI_BRANCH=${PULL_BASE_REF} CI_PULL_REQUEST=${PULL_NUMBER} goveralls -repotoken $(shell cat /etc/coveralls-token/coveralls.txt) -service "prow"
+# Send coverage report to Goveralls
+	@CI_NAME="prow" CI_BUILD_NUMBER=${BUILD_ID} CI_BRANCH=${PULL_BASE_REF} CI_PULL_REQUEST=${PULL_NUMBER} goveralls \
+		-repotoken $(shell cat /etc/coveralls-token/coveralls.txt) \
+		-service="prow" \
+		-coverprofile=${COVERPROFILE}
 
 build:
 	go build -a -installsuffix cgo ${GOPATH}/src/${PKG}/cmd/kubemci/kubemci.go
