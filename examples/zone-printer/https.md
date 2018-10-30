@@ -47,8 +47,8 @@ for more details.
 
 ## Blocking HTTP
 
-While a single cluster ingress also supports blocking HTTP traffic all together,
-kubemci does not support it yet.
+Users can block HTTP traffic by adding an annotation to their Ingress resource.
 
-https://github.com/GoogleCloudPlatform/k8s-multicluster-ingress/issues/142 is
-the feature request issue tracking this.
+Refer to documentation
+[here](https://github.com/kubernetes/ingress-gce/blob/master/README.md#blocking-http)
+for more details.
