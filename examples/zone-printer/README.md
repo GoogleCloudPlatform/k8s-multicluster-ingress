@@ -58,12 +58,24 @@ used by `kubemci` to provision the multi-cluster Ingress.
 
 4. Install **`kubemci`**:
 
-    You can install `kubemci` by running:
+    [kubemci](https://github.com/GoogleCloudPlatform/k8s-multicluster-ingress) is the primary command-line tool used to create and configure a multi-cluster ingress.
+
+    Download one of the binaries and place it in an executable path:
+
+    - [Linux](https://storage.googleapis.com/kubemci-release/release/latest/bin/linux/amd64/kubemci)
+    - [macOS](https://storage.googleapis.com/kubemci-release/release/latest/bin/darwin/amd64/kubemci)
+
+    
+    For example on linux you can install `kubemci` by running:
 
     ```shell
     wget https://storage.googleapis.com/kubemci-release/release/latest/bin/linux/amd64/kubemci
+    ```
+
+    Ensure that the binary is executable. This can be done in the directory of the binary with the following command:
+
+    ```shell
     chmod +x ./kubemci
-   
     ```
 
     In google cloud shell you can move this to your local bin to automatically include it in your path
