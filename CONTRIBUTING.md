@@ -24,10 +24,9 @@ information on using pull requests.
 
 ## Dependency management
 
-This project uses [glide](https://github.com/Masterminds/glide) to manage
+This project uses [Go Modules](https://github.com/golang/go/wiki/Modules) to manage
 project dependencies. All dependencies are checked into the `vendor/` directory.
 
 `vendor/` directory should only be updated by running
-`glide update --strip-vendor`. Running that command will also update
-`glide.lock`. `glide.yaml` can be updated manually to add/ignore any
-dependency.
+`go get -u`. Running that command will also update
+`go.mod` and `go.sum`.
