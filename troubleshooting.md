@@ -1,5 +1,16 @@
 # Troubleshooting
 
+## Debugging
+To provide valuable feedback you can run kubemci with glog flags (like
+`--logtostderr=true --stderrthreshold=INFO --v=10`) to provide (very) verbose
+output. This can contain relevant hints as to why kubemci might fail.
+
+Example:
+
+```bash
+kubemci create my-mci --logtostderr=true --stderrthreshold=INFO --v=10 --ingress=example.yaml --gcp-project=myproj --kubeconf=config.yaml
+```
+
 ## Error: “cannot fetch token: 400 Bad Request”
 
 ```

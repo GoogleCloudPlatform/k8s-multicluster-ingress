@@ -46,6 +46,9 @@ If you are using kubemci, we would love to hear from you! Tell us how you are
 using it and what works and what does not:
 https://github.com/GoogleCloudPlatform/k8s-multicluster-ingress/issues/117
 
+## Troubleshooting
+See [troubleshooting](troubleshooting.md).
+
 ## Caveats
 
 * Users will be need to specify a unique NodePort for their multicluster services (that should be available across all clusters). This is a pretty onerous requirement, required because health checks need to be the same across all clusters.
