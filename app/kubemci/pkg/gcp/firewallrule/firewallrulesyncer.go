@@ -20,6 +20,7 @@ import (
 	"reflect"
 	"sort"
 	"strconv"
+	"strings"
 
 	"github.com/golang/glog"
 	compute "google.golang.org/api/compute/v1"
@@ -251,8 +252,9 @@ func (s *Syncer) desiredFirewallRule(lbName string, ports []ingressbe.ServicePor
 	sort.Strings(targetTags)
 
 	network := s.getNetworkName(instances[0])
+	networkIDPart := network[strings.LastIndex(network, "/")+1:]
 	return &compute.Firewall{
-		Name:         s.namer.FirewallRuleName(network),
+		Name:         s.namer.FirewallRuleName(networkIDPart),
 		Description:  fmt.Sprintf("Firewall rule for kubernetes multicluster loadbalancer %s", lbName),
 		SourceRanges: l7SrcRanges,
 		Allowed: []*compute.FirewallAllowed{
