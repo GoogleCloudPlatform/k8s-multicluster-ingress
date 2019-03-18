@@ -99,8 +99,8 @@ func (n *Namer) HTTPForwardingRuleName() string {
 }
 
 // FirewallRuleName returns a name for a firewall.
-func (n *Namer) FirewallRuleName() string {
-	return n.decorateName(fmt.Sprintf("%v-%v", n.prefix, firewallRulePrefix))
+func (n *Namer) FirewallRuleName(network string) string {
+	return n.decorateName(fmt.Sprintf("%v-%v-%v", n.prefix, firewallRulePrefix, network))
 }
 
 // SSLCertName returns a name for SSL certificates.

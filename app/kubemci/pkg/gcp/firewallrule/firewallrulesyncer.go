@@ -64,9 +64,28 @@ func (s *Syncer) EnsureFirewallRule(lbName string, ports []ingressbe.ServicePort
 	fmt.Println("Ensuring firewall rule")
 	glog.V(5).Infof("Received ports: %v", ports)
 	glog.V(5).Infof("Received instance groups: %v", igLinks)
-	err := s.ensureFirewallRule(lbName, ports, igLinks, forceUpdate)
-	if err != nil {
-		return fmt.Errorf("Error %s in ensuring firewall rule", err)
+
+	// Detect individual networks:
+	instanceNetworks := map[string](map[string][]string){}
+	for cluster, linkValue := range igLinks {
+		instances, err := s.getInstances(map[string][]string{cluster: linkValue})
+		if err != nil {
+			return err
+		}
+		network := s.getNetworkName(instances[0])
+		if _, exists := instanceNetworks[network]; exists {
+			instanceNetworks[network][cluster] = linkValue
+		} else {
+			instanceNetworks[network] = map[string][]string{cluster: linkValue}
+		}
+	}
+
+	// Compute the desired firewall rules:
+	for network, igLinks := range instanceNetworks {
+		err := s.ensureFirewallRule(lbName, ports, igLinks, forceUpdate)
+		if err != nil {
+			return fmt.Errorf("Error %s in ensuring firewall rule (for network %s)", err, network)
+		}
 	}
 	return nil
 }
@@ -102,7 +121,12 @@ func (s *Syncer) RemoveFromClusters(lbName string, removeIGLinks map[string][]st
 }
 
 func (s *Syncer) removeFromClusters(lbName string, removeIGLinks map[string][]string) error {
-	name := s.namer.FirewallRuleName()
+	instances, err := s.getInstances(removeIGLinks)
+	if err != nil {
+		return err
+	}
+	network := s.getNetworkName(instances[0])
+	name := s.namer.FirewallRuleName(network)
 	existingFW, err := s.fwp.GetFirewall(name)
 	if err != nil {
 		err := fmt.Errorf("error in fetching existing firewall rule %s: %s", name, err)
@@ -225,12 +249,9 @@ func (s *Syncer) desiredFirewallRule(lbName string, ports []ingressbe.ServicePor
 	sort.Strings(fwPorts)
 	sort.Strings(targetTags)
 
-	// We assume that all instances are in the same network, so we just fetch the network of the first instance.
-	// TODO(nikhiljindal): Handle the case where different clusters in the same project are in different networks.
 	network := s.getNetworkName(instances[0])
-
 	return &compute.Firewall{
-		Name:         s.namer.FirewallRuleName(),
+		Name:         s.namer.FirewallRuleName(network),
 		Description:  fmt.Sprintf("Firewall rule for kubernetes multicluster loadbalancer %s", lbName),
 		SourceRanges: l7SrcRanges,
 		Allowed: []*compute.FirewallAllowed{
