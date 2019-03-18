@@ -58,10 +58,29 @@ func (b *Syncer) EnsureBackendService(lbName string, ports []ingressbe.ServicePo
 	glog.V(5).Infof("Received health checks map: %v", hcMap)
 	glog.V(5).Infof("Received named ports map: %v", npMap)
 	glog.V(5).Infof("Received instance groups: %v", igLinks)
+
+	// Get existing balancing modes for the current backends
+	balancingModeMap := map[string]string{}
+	bss, beErr := b.bsp.ListGlobalBackendServices()
+	if beErr != nil {
+		return nil, beErr
+	}
+	fmt.Printf("Listing current BalancingModes\n")
+	for _, bs := range bss {
+		for _, backend := range bs.Backends {
+			fmt.Printf("Group %s: mode is %s\n", backend.Group, backend.BalancingMode)
+			if backend.BalancingMode == "RATE" || backend.BalancingMode == "UTILIZATION" {
+				balancingModeMap[backend.Group] = backend.BalancingMode
+				// BalancingMode "CONNECTION" is ignored: that is the same as RATE but for TCP instead of HTTP
+			}
+		}
+	}
+
+	// Create any non-existing backend services
 	var err error
 	ensuredBackendServices := BackendServicesMap{}
 	for _, p := range ports {
-		be, beErr := b.ensureBackendService(lbName, p, hcMap[p.NodePort], npMap[p.NodePort], igLinks, forceUpdate)
+		be, beErr := b.ensureBackendService(lbName, p, hcMap[p.NodePort], npMap[p.NodePort], igLinks, balancingModeMap, forceUpdate)
 		if beErr != nil {
 			beErr = fmt.Errorf("Error %s in ensuring backend service for port %v", beErr, p)
 			fmt.Printf("Error ensuring backend service for port %v: %v. Continuing.\n", p, beErr)
@@ -145,7 +164,7 @@ func (b *Syncer) deleteBackendService(port ingressbe.ServicePort) error {
 // ensureBackendService ensures that the required backend service exists for the given port.
 // If it doesn't exist, creates one. If it already exists and is up to date,
 // does nothing. If it exists, it will only be updated if forceUpdate is true.
-func (b *Syncer) ensureBackendService(lbName string, port ingressbe.ServicePort, hc *compute.HealthCheck, np *compute.NamedPort, igLinks []string, forceUpdate bool) (*compute.BackendService, error) {
+func (b *Syncer) ensureBackendService(lbName string, port ingressbe.ServicePort, hc *compute.HealthCheck, np *compute.NamedPort, igLinks []string, balancingModeMap map[string]string, forceUpdate bool) (*compute.BackendService, error) {
 	fmt.Println("Ensuring backend service for port:", port)
 	if hc == nil {
 		return nil, fmt.Errorf("missing health check probably due to an error in creating health check. Cannot create backend service without health chech link")
@@ -157,7 +176,7 @@ func (b *Syncer) ensureBackendService(lbName string, port ingressbe.ServicePort,
 	if np == nil {
 		return nil, fmt.Errorf("missing corresponding named port on the instance group")
 	}
-	desiredBE := b.desiredBackendService(lbName, port, hc.SelfLink, np.Name, igLinks)
+	desiredBE := b.desiredBackendService(lbName, port, hc.SelfLink, np.Name, igLinks, balancingModeMap)
 	name := desiredBE.Name
 	// Check if backend service already exists.
 	existingBE, err := b.bsp.GetGlobalBackendService(name)
@@ -252,7 +271,7 @@ func backendServiceMatches(desiredBE, existingBE *compute.BackendService) bool {
 	return equal
 }
 
-func (b *Syncer) desiredBackendService(lbName string, port ingressbe.ServicePort, hcLink, portName string, igLinks []string) *compute.BackendService {
+func (b *Syncer) desiredBackendService(lbName string, port ingressbe.ServicePort, hcLink, portName string, igLinks []string, balancingModeMap map[string]string) *compute.BackendService {
 	// Compute the desired backend service.
 	return &compute.BackendService{
 		Name:         b.namer.BeServiceName(port.NodePort),
@@ -261,7 +280,7 @@ func (b *Syncer) desiredBackendService(lbName string, port ingressbe.ServicePort
 		HealthChecks: []string{hcLink},
 		Port:         port.NodePort,
 		PortName:     portName,
-		Backends:     desiredBackends(igLinks),
+		Backends:     desiredBackends(igLinks, balancingModeMap),
 		// We have to fill in these fields so we can properly compare to what's returned to us.
 		// TODO(G-Harmon): We should get these values from existing if it exists and skip them otherwise, rather than hardcoding them here.
 		ConnectionDraining:  &compute.ConnectionDraining{},
@@ -275,7 +294,7 @@ func (b *Syncer) desiredBackendService(lbName string, port ingressbe.ServicePort
 // desiredBackendServiceWithoutClusters returns the desired backend service after removing the given instance groups from the given existing backend service.
 func (b *Syncer) desiredBackendServiceWithoutClusters(existingBE *compute.BackendService, removeIGLinks []string) *compute.BackendService {
 	// Compute the backends to be removed.
-	removeBackends := desiredBackends(removeIGLinks)
+	removeBackends := desiredBackends(removeIGLinks, nil)
 	removeBackendsMap := map[string]bool{}
 	for _, v := range removeBackends {
 		removeBackendsMap[v.Group] = true
@@ -291,23 +310,38 @@ func (b *Syncer) desiredBackendServiceWithoutClusters(existingBE *compute.Backen
 	return desiredBE
 }
 
-func desiredBackends(igLinks []string) []*compute.Backend {
+func desiredBackends(igLinks []string, balancingModeMap map[string]string) []*compute.Backend {
 	// Sort the slice so we get determistic results.
 	sort.Strings(igLinks)
 	var backends []*compute.Backend
 	for _, ig := range igLinks {
-		backends = append(backends, &compute.Backend{
-			Group: ig,
-			// We create the backend service with RATE balancing mode and set max rate
-			// per instance to max value so that all requests in a region are sent to
-			// instances in that region.
-			// Setting rps to 1, for example, would round robin requests amongst all
-			// instances.
-			BalancingMode:      "RATE",
-			MaxRatePerInstance: 1e14,
-			// We have to fill in these fields so we can properly compare to what's returned to us
-			CapacityScaler: 1,
-		})
+		desiredMode, hasMode := balancingModeMap[ig]
+		if !hasMode {
+			desiredMode = "RATE"
+		}
+
+		switch desiredMode {
+		case "UTILIZATION":
+			backends = append(backends, &compute.Backend{
+				Group:          ig,
+				BalancingMode:  "UTILIZATION",
+				MaxUtilization: 1.0,
+				CapacityScaler: 1,
+			})
+		default:
+			backends = append(backends, &compute.Backend{
+				Group: ig,
+				// We create the backend service with RATE balancing mode and set max rate
+				// per instance to max value so that all requests in a region are sent to
+				// instances in that region.
+				// Setting rps to 1, for example, would round robin requests amongst all
+				// instances.
+				BalancingMode:      "RATE",
+				MaxRatePerInstance: 1e14,
+				// We have to fill in these fields so we can properly compare to what's returned to us
+				CapacityScaler: 1,
+			})
+		}
 	}
 	return backends
 }
