@@ -93,8 +93,9 @@ func (s *Syncer) EnsureFirewallRule(lbName string, ports []ingressbe.ServicePort
 // DeleteFirewallRules deletes the firewall rules that EnsureFirewallRule would have created.
 // See the interface for more details.
 func (s *Syncer) DeleteFirewallRules() error {
-	name := s.namer.FirewallRuleName()
-	fmt.Println("Deleting firewall rule", name)
+	// TODO Herman: we do not know the name of the networks used. We should list ALL of the rules, but that is not exposed by kubernetes/ingress-gce
+	name := s.namer.FirewallRuleName("*")
+	fmt.Println("Deleting firewall rules", s.namer.FirewallRuleName("*"))
 	err := s.fwp.DeleteFirewall(name)
 	if err != nil {
 		if utils.IsHTTPErrorCode(err, http.StatusNotFound) {
