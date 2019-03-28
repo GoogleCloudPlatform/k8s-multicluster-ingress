@@ -183,6 +183,6 @@ func parseVersion(version string) (uint64, uint64, uint64, error) {
 	if err != nil {
 		return 0, 0, 0, err
 	}
-	glog.V(2).Infof("Got version: major: %s, minor: %s, patch: %s\n", major, minor, patch)
+	glog.V(2).Infof("Got version: major: %d, minor: %d, patch: %d\n", major, minor, patch)
 	return major, minor, patch, nil
 }
