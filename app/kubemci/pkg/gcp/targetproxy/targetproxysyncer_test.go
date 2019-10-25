@@ -107,7 +107,7 @@ func TestEnsureTargetHttpsProxy(t *testing.T) {
 		desc string
 		// In's
 		umLink      string
-		certLink    string
+		certLinks   []string
 		forceUpdate bool
 		// Out's
 		ensureErr bool
@@ -115,35 +115,47 @@ func TestEnsureTargetHttpsProxy(t *testing.T) {
 		{
 			desc:        "initial write (force=false)",
 			umLink:      "http://google/compute/v1/projects/p/global/urlMaps/map",
-			certLink:    "http://google/compute/v1/projects/p/global/sslCerts/cert",
+			certLinks:   []string{"http://google/compute/v1/projects/p/global/sslCerts/cert"},
 			forceUpdate: false,
 			ensureErr:   false,
 		},
 		{
 			desc:        "write same (force=false)",
 			umLink:      "http://google/compute/v1/projects/p/global/urlMaps/map",
-			certLink:    "http://google/compute/v1/projects/p/global/sslCerts/cert",
+			certLinks:   []string{"http://google/compute/v1/projects/p/global/sslCerts/cert"},
 			forceUpdate: false,
 			ensureErr:   false,
 		},
 		{
 			desc:        "write different (force=false)",
 			umLink:      "http://google/compute/v1/projects/p/global/urlMaps/map2",
-			certLink:    "http://google/compute/v1/projects/p/global/sslCerts/cert",
+			certLinks:   []string{"http://google/compute/v1/projects/p/global/sslCerts/cert"},
 			forceUpdate: false,
 			ensureErr:   true,
 		},
 		{
 			desc:        "write different (force=true)",
 			umLink:      "http://google/compute/v1/projects/p/global/urlMaps/map3",
-			certLink:    "http://google/compute/v1/projects/p/global/sslCerts/cert",
+			certLinks:   []string{"http://google/compute/v1/projects/p/global/sslCerts/cert"},
 			forceUpdate: true,
 			ensureErr:   false,
 		},
+		// https://github.com/GoogleCloudPlatform/k8s-multicluster-ingress/issues/94
+		// {
+		// 	desc:   "changed ssl certs",
+		// 	umLink: "http://google/compute/v1/projects/p/global/urlMaps/map",
+		// 	certLinks: []string{
+		// 		"http://google/compute/v1/projects/p/global/sslCerts/cert1",
+		// 		"http://google/compute/v1/projects/p/global/sslCerts/cert2",
+		// 		"http://google/compute/v1/projects/p/global/sslCerts/cert3",
+		// 	},
+		// 	forceUpdate: false,
+		// 	ensureErr:   false,
+		// },
 	}
 	for _, c := range testCases {
 		glog.Infof("test case:%v", c.desc)
-		tpLink, err := tps.EnsureHTTPSTargetProxy(lbName, c.umLink, c.certLink, c.forceUpdate)
+		tpLink, err := tps.EnsureHTTPSTargetProxy(lbName, c.umLink, c.certLinks, c.forceUpdate)
 		if (err != nil) != c.ensureErr {
 			glog.Errorf("expected_error:%v Got Error:%v", c.ensureErr, err)
 			t.Errorf("in ensuring target proxy, expected error? %v, actual: %v", c.ensureErr, err)
@@ -160,8 +172,13 @@ func TestEnsureTargetHttpsProxy(t *testing.T) {
 		if tp.UrlMap != c.umLink {
 			t.Errorf("unexpected UrlMap link in target proxy. expected: %s, actual: %s", c.umLink, tp.UrlMap)
 		}
-		if len(tp.SslCertificates) != 1 || tp.SslCertificates[0] != c.certLink {
-			t.Errorf("unexpected certificates link in target proxy. expected: %s, actual: %s", c.certLink, tp.SslCertificates)
+		if len(tp.SslCertificates) != len(c.certLinks) {
+			t.Errorf("unexpected number of certificates link in target proxy. expected: %d, actual: %d", len(c.certLinks), len(tp.SslCertificates))
+		}
+		for i, certLink := range c.certLinks {
+			if tp.SslCertificates[i] != certLink {
+				t.Errorf("unexpected certificate link %d in target proxy. expected: %s, actual: %s", i, certLink, tp.SslCertificates[i])
+			}
 		}
 		if tp.SelfLink != tpLink {
 			t.Errorf("unexpected target proxy self link. expected: %s, got: %s", tpLink, tp.SelfLink)
@@ -172,7 +189,7 @@ func TestEnsureTargetHttpsProxy(t *testing.T) {
 func TestDeleteTargetProxies(t *testing.T) {
 	lbName := "lb-name"
 	umLink := "selfLink"
-	certLink := "certSelfLink"
+	certLinks := []string{"certSelfLink1", "certSelfLink2"}
 	tpp := ingresslb.NewFakeLoadBalancers("" /*name*/, nil /*namer*/)
 	namer := utilsnamer.NewNamer("mci1", lbName)
 	httpTpName := namer.TargetHTTPProxyName()
@@ -189,7 +206,7 @@ func TestDeleteTargetProxies(t *testing.T) {
 	if _, err := tpp.GetTargetHttpProxy(httpTpName); err != nil {
 		t.Fatalf("expected nil error, actual: %v", err)
 	}
-	if _, err := tps.EnsureHTTPSTargetProxy(lbName, umLink, certLink, false /*forceUpdate*/); err != nil {
+	if _, err := tps.EnsureHTTPSTargetProxy(lbName, umLink, certLinks, false /*forceUpdate*/); err != nil {
 		t.Fatalf("expected no error in ensuring https target proxy, actual: %v", err)
 	}
 	if _, err := tpp.GetTargetHttpsProxy(httpsTpName); err != nil {

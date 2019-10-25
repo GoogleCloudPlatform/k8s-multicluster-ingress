@@ -23,7 +23,7 @@ type fakeTargetProxy struct {
 	LBName string
 	UmLink string
 	// Link to the SSL certificate. This is present only for HTTPS target proxies.
-	CertLink string
+	CertLinks []string
 }
 
 // FakeTargetProxySyncer is a fake implementation of SyncerInterface to be used in tests.
@@ -52,11 +52,11 @@ func (f *FakeTargetProxySyncer) EnsureHTTPTargetProxy(lbName, umLink string, for
 
 // EnsureHTTPSTargetProxy ensures that a https target proxy exists for the given load balancer.
 // See interface comments for details.
-func (f *FakeTargetProxySyncer) EnsureHTTPSTargetProxy(lbName, umLink, certLink string, forceUpdate bool) (string, error) {
+func (f *FakeTargetProxySyncer) EnsureHTTPSTargetProxy(lbName, umLink string, certLinks []string, forceUpdate bool) (string, error) {
 	f.EnsuredTargetProxies = append(f.EnsuredTargetProxies, fakeTargetProxy{
-		LBName:   lbName,
-		UmLink:   umLink,
-		CertLink: certLink,
+		LBName:    lbName,
+		UmLink:    umLink,
+		CertLinks: certLinks,
 	})
 	return FakeTargetProxySelfLink, nil
 }
