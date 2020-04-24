@@ -14,19 +14,37 @@
 package main
 
 import (
+	"encoding/json"
+	"flag"
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"strings"
+	"sync"
 
 	"cloud.google.com/go/compute/metadata"
 )
 
 var (
+	healthCheckPath = flag.String("health_check_path", "/", "path to serve health checks on")
+	healthCheckPort = flag.Int("health_check_port", 8081, "port to serve health checks on")
+	version         = flag.String("version", "1.0", "denotes the version of this app")
+
+	// GCE zone that this server is deployed in.
 	computeZone string
+
+	// supports toggling of health check return code.
+	killed bool
+	lock   sync.RWMutex
+
+	// port that core traffic is served on.
+	mainPort = 8080
 )
 
 func main() {
+	flag.Parse()
+
 	if !metadata.OnGCE() {
 		log.Println("warn: not running on gce")
 	} else {
@@ -38,13 +56,69 @@ func main() {
 		log.Printf("info: determined zone: %q", zone)
 	}
 
-	log.Println("starting to listen on port 80")
-	http.HandleFunc("/", handle)
-	err := http.ListenAndServe(":80", nil)
-	log.Fatal(err)
+	log.Printf("starting to listen on port %d", *healthCheckPort)
+	hcServer := http.NewServeMux()
+	hcServer.HandleFunc(*healthCheckPath, handleHealthCheck)
+	go func() {
+		portStr := fmt.Sprintf(":%d", *healthCheckPort)
+		log.Fatal(http.ListenAndServe(portStr, hcServer))
+	}()
+
+	log.Printf("starting to listen on port %d", mainPort)
+	mainServer := http.NewServeMux()
+	mainServer.HandleFunc("/", handleLocation)
+	mainServer.HandleFunc("/ping", handlePing)
+	mainServer.HandleFunc("/location", handleLocation)
+	mainServer.HandleFunc("/toggleKill", handleKill)
+	portStr := fmt.Sprintf(":%d", mainPort)
+	log.Fatal(http.ListenAndServe(portStr, mainServer))
 }
 
-func handle(w http.ResponseWriter, r *http.Request) {
+type pingResponse struct {
+	Hostname string
+	Version  string
+	GCPZone  string
+	Backend  string
+}
+
+func handlePing(w http.ResponseWriter, r *http.Request) {
+	podHostname, err := os.Hostname()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	pr := &pingResponse{Hostname: r.Host, Version: *version, GCPZone: computeZone, Backend: podHostname}
+	j, err := json.Marshal(pr)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(j)
+}
+
+func handleKill(w http.ResponseWriter, r *http.Request) {
+	lock.Lock()
+	defer lock.Unlock()
+
+	killed = !killed
+	fmt.Fprintf(w, "Successfully toggled kill status")
+}
+
+func handleHealthCheck(w http.ResponseWriter, r *http.Request) {
+	lock.RLock()
+	defer lock.RUnlock()
+
+	if !killed {
+		fmt.Fprintf(w, "OK")
+	} else {
+		http.Error(w, "Not OK", http.StatusInternalServerError)
+	}
+}
+
+func handleLocation(w http.ResponseWriter, r *http.Request) {
 	var srcIP string
 	if ipHeader := r.Header.Get("X-Forwarded-For"); ipHeader != "" {
 		srcIP = ipHeader
