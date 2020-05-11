@@ -11,6 +11,10 @@
 [Slack Widget]: https://s3.eu-central-1.amazonaws.com/ngtuna/join-us-on-slack.png
 [Slack]: http://slack.kubernetes.io#sig-multicluster
 
+
+[DEPRECATED] This has now been deprecated in favor of [Ingress for Anthos](https://cloud.google.com/kubernetes-engine/docs/concepts/ingress-for-anthos).
+Ingress for Anthos is the recommended way to deploy multi-cluster ingress.
+
 kubemci is a tool to configure Kubernetes ingress to load balance traffic across
 multiple Kubernetes clusters.
 
