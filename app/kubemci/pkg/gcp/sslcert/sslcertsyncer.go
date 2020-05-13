@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"net/http"
 	"reflect"
+	"strings"
 
 	compute "google.golang.org/api/compute/v1"
 
@@ -53,27 +54,36 @@ var _ SyncerInterface = &Syncer{}
 
 // EnsureSSLCert ensures that the required ssl certs exist for the given ingress.
 // See the interface for more details.
-func (s *Syncer) EnsureSSLCert(lbName string, ing *v1beta1.Ingress, client kubeclient.Interface, forceUpdate bool) (string, error) {
+func (s *Syncer) EnsureSSLCerts(lbName string, ing *v1beta1.Ingress, client kubeclient.Interface, forceUpdate bool) ([]string, error) {
 	fmt.Println("Ensuring ssl cert")
 	annotations := annotations.FromIngress(ing)
 	if annotations.UseNamedTLS() != "" {
-		return s.ensurePreSharedSSLCert(lbName, ing, forceUpdate)
+		return s.ensurePreSharedSSLCerts(lbName, ing, forceUpdate)
 	}
-	return s.ensureSecretSSLCert(lbName, ing, client, forceUpdate)
+	// TODO: Support multiple secret SSL certs.
+	cert, err := s.ensureSecretSSLCert(lbName, ing, client, forceUpdate)
+	if err != nil {
+		return nil, err
+	}
+	return []string{cert}, err
 }
 
-func (s *Syncer) ensurePreSharedSSLCert(lbName string, ing *v1beta1.Ingress, forceUpdate bool) (string, error) {
+func (s *Syncer) ensurePreSharedSSLCerts(lbName string, ing *v1beta1.Ingress, forceUpdate bool) ([]string, error) {
 	ingAnnotations := annotations.FromIngress(ing)
-	certName := ingAnnotations.UseNamedTLS()
-	if certName == "" {
-		return "", fmt.Errorf("unexpected empty value for %s annotation", annotations.PreSharedCertKey)
+	certNames := ingAnnotations.UseNamedTLS()
+	if certNames == "" {
+		return nil, fmt.Errorf("unexpected empty value for %s annotation", annotations.PreSharedCertKey)
 	}
-	// Fetch the certificate and return its self link.
-	cert, err := s.scp.GetSslCertificate(certName)
-	if err != nil {
-		return "", err
+	var certs []string
+	for _, certName := range strings.Split(certNames, ",") {
+		// Fetch the certificate and return its self link.
+		cert, err := s.scp.GetSslCertificate(certName)
+		if err != nil {
+			return nil, err
+		}
+		certs = append(certs, cert.SelfLink)
 	}
-	return cert.SelfLink, nil
+	return certs, nil
 }
 
 func (s *Syncer) ensureSecretSSLCert(lbName string, ing *v1beta1.Ingress, client kubeclient.Interface, forceUpdate bool) (string, error) {
@@ -110,7 +120,7 @@ func (s *Syncer) ensureSecretSSLCert(lbName string, ing *v1beta1.Ingress, client
 
 // DeleteSSLCert deletes the ssl certs that EnsureSSLCert would have created.
 // See the interface for more details.
-func (s *Syncer) DeleteSSLCert() error {
+func (s *Syncer) DeleteSSLCerts() error {
 	name := s.namer.SSLCertName()
 	fmt.Println("Deleting SSL cert", name)
 	err := s.scp.DeleteSslCertificate(name)

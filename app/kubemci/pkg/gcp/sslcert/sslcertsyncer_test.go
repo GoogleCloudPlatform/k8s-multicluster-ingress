@@ -34,7 +34,7 @@ import (
 	"github.com/golang/glog"
 )
 
-func TestEnsureSSLCertForSecret(t *testing.T) {
+func TestEnsureSSLCertsForSecret(t *testing.T) {
 	lbName := "lb-name"
 	scp := ingresslb.NewFakeLoadBalancers("" /* name */, nil /* namer */)
 	namer := utilsnamer.NewNamer("mci1", lbName)
@@ -79,10 +79,10 @@ func TestEnsureSSLCertForSecret(t *testing.T) {
 	}
 
 	ing, client := setupIng(true /* withSecret */)
-	if _, err := scs.EnsureSSLCert(lbName, ing, client, false /*forceUpdate*/); err != nil {
+	if _, err := scs.EnsureSSLCerts(lbName, ing, client, false /*forceUpdate*/); err != nil {
 		for _, c := range testCases {
 			glog.Infof("\nTest case: %s", c.desc)
-			ensuredCertName, err := scs.EnsureSSLCert(c.lBName, ing, client, c.forceUpdate)
+			ensuredCertNames, err := scs.EnsureSSLCerts(c.lBName, ing, client, c.forceUpdate)
 			if (err != nil) != c.ensureErr {
 				t.Errorf("Ensuring SSL cert... expected err? %v. actual: %v", c.ensureErr, err)
 			}
@@ -90,8 +90,8 @@ func TestEnsureSSLCertForSecret(t *testing.T) {
 				t.Logf("Skipping validation.")
 				continue
 			}
-			if ensuredCertName != certName {
-				t.Errorf("unexpected cert name, expected: %s, actual: %s", certName, ensuredCertName)
+			if ensuredCertNames[0] != certName {
+				t.Errorf("unexpected cert name, expected: %s, actual: %s", certName, ensuredCertNames[0])
 			}
 			// Verify that GET does not return NotFound.
 			cert, err := scp.GetSslCertificate(certName)
@@ -105,44 +105,53 @@ func TestEnsureSSLCertForSecret(t *testing.T) {
 	}
 }
 
-func TestEnsureSSLCertForPreShared(t *testing.T) {
+func TestEnsureSSLCertsForPreShared(t *testing.T) {
 	lbName := "lb-name"
-	certName := "testCert"
+	certNames := []string{"testCert1", "testCert2"}
 	scp := ingresslb.NewFakeLoadBalancers("" /* name */, nil /* namer */)
 	namer := utilsnamer.NewNamer("mci1", lbName)
 	scs := NewSSLCertSyncer(namer, scp)
 	// GET should return NotFound.
-	if _, err := scp.GetSslCertificate(certName); err == nil {
-		t.Fatalf("expected NotFound error, got nil")
+	for _, certName := range certNames {
+		if _, err := scp.GetSslCertificate(certName); err == nil {
+			t.Fatalf("expected NotFound error, got nil")
+		}
 	}
 	ing, client := setupIng(false /* withSecret */)
 
-	// EnsureSSLCert should give an error when both the secret and pre shared annotation are missing.
-	_, err := scs.EnsureSSLCert(lbName, ing, client, false /*forceUpdate*/)
+	// EnsureSSLCerts should give an error when both the secret and pre shared annotation are missing.
+	_, err := scs.EnsureSSLCerts(lbName, ing, client, false /*forceUpdate*/)
 	if err == nil {
 		t.Errorf("unexpected nil error, expected error since both secret and pre shared cert annotation are missing")
 	}
 	// Adding the annotation without a cert should still return an error.
 	ing.ObjectMeta.Annotations = map[string]string{
-		annotations.PreSharedCertKey: certName,
+		annotations.PreSharedCertKey: strings.Join(certNames, ","),
 	}
-	_, err = scs.EnsureSSLCert(lbName, ing, client, false /*forceUpdate*/)
+	_, err = scs.EnsureSSLCerts(lbName, ing, client, false /*forceUpdate*/)
 	if err == nil {
 		t.Errorf("unexpected nil error, expected error since the pre shared cert is missing")
 	}
 
-	// EnsureSSLCert should return success if the cert exists as expected.
-	if _, err := scp.CreateSslCertificate(&compute.SslCertificate{
-		Name: certName,
-	}); err != nil {
-		t.Errorf("unexpected error in creating ssl cert: %s", err)
+	// EnsureSSLCerts should return success if the cert exists as expected.
+	for _, certName := range certNames {
+		if _, err := scp.CreateSslCertificate(&compute.SslCertificate{
+			Name: certName,
+		}); err != nil {
+			t.Errorf("unexpected error in creating ssl cert: %s", err)
+		}
 	}
-	ensuredCertName, err := scs.EnsureSSLCert(lbName, ing, client, false /*forceUpdate*/)
+	ensuredCertNames, err := scs.EnsureSSLCerts(lbName, ing, client, false /*forceUpdate*/)
 	if err != nil {
 		t.Errorf("unexpected error in ensuring ssl cert: %s", err)
 	}
-	if ensuredCertName != certName {
-		t.Errorf("unexpected ensured cert name, expected: %s, actual: %s", certName, ensuredCertName)
+	if len(ensuredCertNames) != len(certNames) {
+		t.Errorf("unexpected number of ensured cert names, expected: %d, actual: %d", len(certNames), len(ensuredCertNames))
+	}
+	for i, certName := range certNames {
+		if ensuredCertNames[i] != certName {
+			t.Errorf("unexpected ensured cert name, expected: %s, actual: %s", certName, ensuredCertNames[i])
+		}
 	}
 }
 
@@ -185,26 +194,26 @@ func setupIngAndClientForSecret(ing *v1beta1.Ingress, client *fake.Clientset, se
 	})
 }
 
-func TestDeleteSSLCert(t *testing.T) {
+func TestDeleteSSLCerts(t *testing.T) {
 	lbName := "lb-name"
 	// Should create the ssl cert as expected.
 	scp := ingresslb.NewFakeLoadBalancers("" /* name */, nil /* namer */)
 	namer := utilsnamer.NewNamer("mci1", lbName)
 	certName := namer.SSLCertName()
 	scs := NewSSLCertSyncer(namer, scp)
-	// Calling DeleteSSLCert when cert does not exist should not return an error.
-	if err := scs.DeleteSSLCert(); err != nil {
+	// Calling DeleteSSLCerts when cert does not exist should not return an error.
+	if err := scs.DeleteSSLCerts(); err != nil {
 		t.Fatalf("unexpected err while deleting SSL cert that does not exist: %s", err)
 	}
 	ing, client := setupIng(true /* withSecret */)
-	if _, err := scs.EnsureSSLCert(lbName, ing, client, false /*forceUpdate*/); err != nil {
+	if _, err := scs.EnsureSSLCerts(lbName, ing, client, false /*forceUpdate*/); err != nil {
 		t.Fatalf("expected no error in ensuring ssl cert, actual: %v", err)
 	}
 	if _, err := scp.GetSslCertificate(certName); err != nil {
 		t.Fatalf("expected nil error, actual: %v", err)
 	}
 	// Verify that GET fails after DELETE
-	if err := scs.DeleteSSLCert(); err != nil {
+	if err := scs.DeleteSSLCerts(); err != nil {
 		t.Fatalf("unexpected err while deleting SSL cert: %s", err)
 	}
 	if _, err := scp.GetSslCertificate(certName); err == nil {

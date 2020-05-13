@@ -63,10 +63,10 @@ func (s *Syncer) EnsureHTTPTargetProxy(lbName, umLink string, forceUpdate bool) 
 
 // EnsureHTTPSTargetProxy ensures that the required https target proxy exists for the given url map.
 // Does nothing if it exists already, else creates a new one.
-func (s *Syncer) EnsureHTTPSTargetProxy(lbName, umLink, certLink string, forceUpdate bool) (string, error) {
+func (s *Syncer) EnsureHTTPSTargetProxy(lbName, umLink string, certLinks []string, forceUpdate bool) (string, error) {
 	fmt.Println("Ensuring http target proxy.")
 	var err error
-	tpLink, proxyErr := s.ensureHTTPSProxy(lbName, umLink, certLink, forceUpdate)
+	tpLink, proxyErr := s.ensureHTTPSProxy(lbName, umLink, certLinks, forceUpdate)
 	if proxyErr != nil {
 		proxyErr = fmt.Errorf("Error in ensuring https target proxy: %s", proxyErr)
 		err = multierror.Append(err, proxyErr)
@@ -147,8 +147,8 @@ func (s *Syncer) updateHTTPTargetProxy(desiredHTTPProxy *compute.TargetHttpProxy
 	name := desiredHTTPProxy.Name
 	fmt.Println("Updating existing target http proxy", name, "to match the desired state")
 	// There is no UpdateTargetHTTPProxy method.
-	// Apart from name, UrlMap is the only field that can be different. We update that field directly.
-	// TODO(nikhiljindal): Handle description field differences:
+	// We can only update the UrlMap via SetUrlMapForTargetHttpProxy.
+	// TODO(nikhiljindal): Handle sslcert and description field differences:
 	// https://github.com/GoogleCloudPlatform/k8s-multicluster-ingress/issues/94.
 	urlMap := &compute.UrlMap{SelfLink: desiredHTTPProxy.UrlMap}
 	glog.Infof("Setting URL Map to:%+v", urlMap)
@@ -211,9 +211,9 @@ func (s *Syncer) desiredHTTPTargetProxy(lbName, umLink string) *compute.TargetHt
 // ensureHTTPSProxy ensures that the required target proxy exists for the given port.
 // Does nothing if it exists already, else creates a new one.
 // Returns the self link for the ensured https proxy.
-func (s *Syncer) ensureHTTPSProxy(lbName, umLink, certLink string, forceUpdate bool) (string, error) {
+func (s *Syncer) ensureHTTPSProxy(lbName, umLink string, certLinks []string, forceUpdate bool) (string, error) {
 	fmt.Println("Ensuring target https proxy")
-	desiredHTTPSProxy := s.desiredHTTPSTargetProxy(lbName, umLink, certLink)
+	desiredHTTPSProxy := s.desiredHTTPSTargetProxy(lbName, umLink, certLinks)
 	name := desiredHTTPSProxy.Name
 	// Check if target proxy already exists.
 	existingHTTPSProxy, err := s.tpp.GetTargetHttpsProxy(name)
@@ -292,12 +292,12 @@ func targetHTTPSProxyMatches(desiredHTTPSProxy, existingHTTPSProxy compute.Targe
 	}
 	return equal
 }
-func (s *Syncer) desiredHTTPSTargetProxy(lbName, umLink, certLink string) *compute.TargetHttpsProxy {
+func (s *Syncer) desiredHTTPSTargetProxy(lbName, umLink string, certLinks []string) *compute.TargetHttpsProxy {
 	// Compute the desired target https proxy.
 	return &compute.TargetHttpsProxy{
 		Name:            s.namer.TargetHTTPSProxyName(),
 		Description:     fmt.Sprintf("Target https proxy for kubernetes multicluster loadbalancer %s", lbName),
 		UrlMap:          umLink,
-		SslCertificates: []string{certLink},
+		SslCertificates: certLinks,
 	}
 }

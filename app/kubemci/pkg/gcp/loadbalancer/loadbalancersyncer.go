@@ -185,15 +185,14 @@ func (l *Syncer) CreateLoadBalancer(ing *v1beta1.Ingress, forceUpdate, validate 
 	if (ingAnnotations.UseNamedTLS() != "") || len(ing.Spec.TLS) > 0 {
 		// Note that we expect to load the cert from any cluster,
 		// so users are required to create the secret in all clusters.
-		certLink, cErr := l.scs.EnsureSSLCert(l.lbName, ing, client, forceUpdate)
+		certLinks, cErr := l.scs.EnsureSSLCerts(l.lbName, ing, client, forceUpdate)
 		if cErr != nil {
 			// Aggregate errors and return all at the end.
 			cErr = fmt.Errorf("Error ensuring SSL certs: %s", cErr)
 			fmt.Println(cErr)
 			err = multierror.Append(err, cErr)
 		}
-
-		tpLink, tpErr := l.tps.EnsureHTTPSTargetProxy(l.lbName, umLink, certLink, forceUpdate)
+		tpLink, tpErr := l.tps.EnsureHTTPSTargetProxy(l.lbName, umLink, certLinks, forceUpdate)
 		if tpErr != nil {
 			// Aggregate errors and return all at the end.
 			tpErr = fmt.Errorf("Error ensuring HTTPS target proxy: %s", tpErr)
@@ -246,7 +245,7 @@ func (l *Syncer) DeleteLoadBalancer(ing *v1beta1.Ingress, forceDelete bool) erro
 		// Aggregate errors and return all at the end.
 		err = multierror.Append(err, tpErr)
 	}
-	if scErr := l.scs.DeleteSSLCert(); scErr != nil {
+	if scErr := l.scs.DeleteSSLCerts(); scErr != nil {
 		// Aggregate errors and return all at the end.
 		err = multierror.Append(err, scErr)
 	}

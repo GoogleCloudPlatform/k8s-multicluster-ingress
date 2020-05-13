@@ -27,7 +27,7 @@ type SyncerInterface interface {
 	// overwrite an existing and different http target proxy if forceUpdate
 	// is true.
 	// Returns the self link for the ensured proxy.
-	EnsureHTTPSTargetProxy(lbName, urlMapLink, certLink string, forceUpdate bool) (string, error)
+	EnsureHTTPSTargetProxy(lbName, urlMapLink string, certLinks []string, forceUpdate bool) (string, error)
 	// DeleteTargetProxies deletes the target proxies that EnsureHTTPTargetProxy
 	// and EnsureHTTPSTargetProxy would have created.
 	DeleteTargetProxies() error
