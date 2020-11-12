@@ -38,6 +38,8 @@ type listOptions struct {
 	// Required
 	// TODO(nikhiljindal): This should be optional. Figure it out from gcloud settings.
 	GCPProject string
+	// Access token with which to access gpc resources.
+	AccessToken string
 }
 
 func newCmdList(out, err io.Writer) *cobra.Command {
@@ -63,6 +65,7 @@ func newCmdList(out, err io.Writer) *cobra.Command {
 
 func addListFlags(cmd *cobra.Command, options *listOptions) error {
 	cmd.Flags().StringVarP(&options.GCPProject, "gcp-project", "", options.GCPProject, "[optional] name of the gcp project. Is fetched using 'gcloud config get-value project' if unset here")
+	cmd.Flags().StringVarP(&options.AccessToken, "access-token", "t", options.AccessToken, "[optional] access token for gcp resources (defaults to GOOGLE_APPLICATION_CREDENTIALS).")
 	return nil
 }
 
@@ -84,7 +87,7 @@ func validateListArgs(options *listOptions, args []string) error {
 
 // runList prints a list of all mcis that we've created.
 func runList(options *listOptions, args []string) error {
-	cloudInterface, err := cloudinterface.NewGCECloudInterface(options.GCPProject)
+	cloudInterface, err := cloudinterface.NewGCECloudInterface(options.GCPProject, options.AccessToken)
 	if err != nil {
 		fmt.Println("error creating cloud interface:", err)
 		return fmt.Errorf("error in creating cloud interface: %s", err)

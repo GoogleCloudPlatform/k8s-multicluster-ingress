@@ -21,6 +21,7 @@ import (
 	multierror "github.com/hashicorp/go-multierror"
 	"github.com/spf13/cobra"
 	"k8s.io/api/extensions/v1beta1"
+
 	// gcp is needed for GKE cluster auth to work.
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 
@@ -46,6 +47,8 @@ type deleteOptions struct {
 	KubeconfigFilename string
 	// Names of the contexts to use from the kubeconfig file.
 	KubeContexts []string
+	// Access token with which to access gpc resources.
+	AccessToken string
 	// Name of the load balancer.
 	// Required.
 	LBName string
@@ -86,6 +89,7 @@ func addDeleteFlags(cmd *cobra.Command, options *deleteOptions) error {
 	cmd.Flags().StringVarP(&options.IngressFilename, "ingress", "i", options.IngressFilename, "[required] filename containing ingress spec")
 	cmd.Flags().StringVarP(&options.KubeconfigFilename, "kubeconfig", "k", options.KubeconfigFilename, "[required] path to kubeconfig file")
 	cmd.Flags().StringSliceVar(&options.KubeContexts, "kubecontexts", options.KubeContexts, "[optional] contexts in the kubeconfig file to delete the ingress from")
+	cmd.Flags().StringVarP(&options.AccessToken, "access-token", "t", options.AccessToken, "[optional] access token for gcp resources (defaults to GOOGLE_APPLICATION_CREDENTIALS).")
 	// TODO(nikhiljindal): Add a short flag "-p" if it seems useful.
 	cmd.Flags().StringVarP(&options.GCPProject, "gcp-project", "", options.GCPProject, "[optional] name of the gcp project. Is fetched using gcloud config get-value project if unset here")
 	cmd.Flags().BoolVarP(&options.ForceDelete, "force", "f", options.ForceDelete, "[optional] delete whatever can be deleted in case of errors. This should only be used in exceptional cases (for example: when the clusters are deleted before the ingress was deleted)")
@@ -124,7 +128,7 @@ func runDelete(options *deleteOptions, args []string) error {
 	if ingErr := ingress.UnmarshallAndApplyDefaults(options.IngressFilename, options.Namespace, &ing); ingErr != nil {
 		return fmt.Errorf("error in unmarshalling the yaml file %s, err: %s", options.IngressFilename, ingErr)
 	}
-	cloudInterface, ciErr := cloudinterface.NewGCECloudInterface(options.GCPProject)
+	cloudInterface, ciErr := cloudinterface.NewGCECloudInterface(options.GCPProject, options.AccessToken)
 	if ciErr != nil {
 		return fmt.Errorf("error in creating cloud interface: %s", ciErr)
 	}

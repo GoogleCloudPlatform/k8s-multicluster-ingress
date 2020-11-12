@@ -29,6 +29,14 @@ Follow the instructions as detailed [here](/examples/zone-printer/README.md).
 
 To create an HTTPS ingress, follow the instructions [here](/examples/zone-printer/https.md).
 
+## Authorization
+
+By default, kubemci relies on the discovery of [Application Default Credentials](https://cloud.google.com/docs/authentication/production#finding_credentials_automatically) to authorize access to GCP resources.
+
+As an alternative, kubemci accepts an `--access-token` argument that takes an oauth access token,
+such as one generated for a service account via `gcloud --impersonate-service-account ... auth print-access-token`.
+This method obviates the need to distribute private keys.
+
 ## More information
 
 We have a [video](https://www.youtube.com/watch?v=0_Yt_1yICfk) explaining what

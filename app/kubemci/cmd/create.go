@@ -22,6 +22,7 @@ import (
 	"k8s.io/api/extensions/v1beta1"
 	kubeclient "k8s.io/client-go/kubernetes"
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce"
+
 	// gcp is needed for GKE cluster auth to work.
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 
@@ -48,6 +49,8 @@ type createOptions struct {
 	KubeconfigFilename string
 	// Names of the contexts to use from the kubeconfig file.
 	KubeContexts []string
+	// Access token with which to access gpc resources.
+	AccessToken string
 	// Name of the load balancer.
 	// Required.
 	LBName string
@@ -98,6 +101,8 @@ func addCreateFlags(cmd *cobra.Command, options *createOptions) error {
 	cmd.Flags().StringVarP(&options.IngressFilename, "ingress", "i", options.IngressFilename, "[required] filename containing ingress spec")
 	cmd.Flags().StringVarP(&options.KubeconfigFilename, "kubeconfig", "k", options.KubeconfigFilename, "[required] path to kubeconfig file")
 	cmd.Flags().StringSliceVar(&options.KubeContexts, "kubecontexts", options.KubeContexts, "[optional] contexts in the kubeconfig file to install the ingress into")
+	cmd.Flags().StringVarP(&options.AccessToken, "access-token", "t", options.AccessToken, "[optional] access token for gcp resources (defaults to GOOGLE_APPLICATION_CREDENTIALS).")
+
 	// TODO(nikhiljindal): Add a short flag "-p" if it seems useful.
 	cmd.Flags().StringVarP(&options.GCPProject, "gcp-project", "", options.GCPProject, "[optional] name of the gcp project. Is fetched using gcloud config get-value project if unset here")
 	cmd.Flags().BoolVarP(&options.ForceUpdate, "force", "f", options.ForceUpdate, "[optional] overwrite existing settings if they are different")
@@ -140,7 +145,7 @@ func runCreate(options *createOptions, args []string) error {
 		return fmt.Errorf("error in verifying static IP for ingress %s, err: %s", options.IngressFilename, err)
 	}
 
-	cloudInterface, err := cloudinterface.NewGCECloudInterface(options.GCPProject)
+	cloudInterface, err := cloudinterface.NewGCECloudInterface(options.GCPProject, options.AccessToken)
 	if err != nil {
 		return fmt.Errorf("error in creating cloud interface: %s", err)
 	}

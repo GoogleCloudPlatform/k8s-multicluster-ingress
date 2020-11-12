@@ -42,6 +42,8 @@ type getStatusOptions struct {
 	// Required
 	// TODO(nikhiljindal): This should be optional. Figure it out from gcloud settings.
 	GCPProject string
+	// Access token with which to access gpc resources.
+	AccessToken string
 }
 
 func newCmdGetStatus(out, err io.Writer) *cobra.Command {
@@ -69,6 +71,7 @@ func newCmdGetStatus(out, err io.Writer) *cobra.Command {
 func addGetStatusFlags(cmd *cobra.Command, options *getStatusOptions) error {
 	// TODO(nikhiljindal): Add a short flag "-p" if it seems useful.
 	cmd.Flags().StringVarP(&options.GCPProject, "gcp-project", "", options.GCPProject, "[optional] name of the gcp project. Is fetched using gcloud config get-value project if unset here")
+	cmd.Flags().StringVarP(&options.AccessToken, "access-token", "t", options.AccessToken, "[optional] access token for gcp resources (defaults to GOOGLE_APPLICATION_CREDENTIALS).")
 	// TODO Add a verbose flag that turns on glog logging.
 	return nil
 }
@@ -92,7 +95,7 @@ func validateGetStatusArgs(options *getStatusOptions, args []string) error {
 func runGetStatus(options *getStatusOptions, args []string) error {
 	options.LBName = args[0]
 
-	cloudInterface, err := cloudinterface.NewGCECloudInterface(options.GCPProject)
+	cloudInterface, err := cloudinterface.NewGCECloudInterface(options.GCPProject, options.AccessToken)
 	if err != nil {
 		return fmt.Errorf("error in creating cloud interface: %s", err)
 	}

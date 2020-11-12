@@ -15,17 +15,18 @@
 package cloudinterface
 
 import (
+	"golang.org/x/oauth2"
 	"k8s.io/kubernetes/pkg/cloudprovider/providers/gce"
 )
 
 // NewGCECloudInterface returns a new GCECloud.
-func NewGCECloudInterface(projectID string) (*gce.GCECloud, error) {
-	config := getCloudConfig(projectID)
+func NewGCECloudInterface(projectID, accessToken string) (*gce.GCECloud, error) {
+	config := getCloudConfig(projectID, accessToken)
 	return gce.CreateGCECloud(&config)
 }
 
-func getCloudConfig(projectID string) gce.CloudConfig {
-	return gce.CloudConfig{
+func getCloudConfig(projectID, accessToken string) gce.CloudConfig {
+	c := gce.CloudConfig{
 		ProjectID: projectID,
 		// TODO(nikhiljindal): Set the following properties.
 		// ApiEndpoint
@@ -33,4 +34,8 @@ func getCloudConfig(projectID string) gce.CloudConfig {
 		// Zone, Region
 		// NetworkName, SubnetworkName
 	}
+	if len(accessToken) > 0 {
+		c.TokenSource = oauth2.StaticTokenSource(&oauth2.Token{AccessToken: accessToken})
+	}
+	return c
 }
